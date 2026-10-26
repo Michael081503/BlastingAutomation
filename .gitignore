@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.streamlit/secrets.toml
+uploads/
+output/
+.env
+.env.*
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.zip
+*.log
