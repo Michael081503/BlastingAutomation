@@ -9,18 +9,18 @@ GEO names below already include the Area. The app adds _Email or _Viber and .csv
 # Each entry is the full base filename for one group. All levels are combined.
 GEO_OUTPUT_FILENAMES = {
     # MINDANAO: edit the five filenames on the right.
-    "mindanao_qualified_cards": "CS AMNESTY GEO CARDS_MINDANAO",
-    "mindanao_qualified_bel": "CS AMNESTY GEO BEL_MINDANAO",
-    "mindanao_blank_cards": "GEO_BLANK_CARDS_MINDANAO",
-    "mindanao_blank_bel": "GEO_BLANK_BEL_MINDANAO",
-    "mindanao_blank_other_products": "GEO_BLANK_OTHER_PRODUCTS_MINDANAO",
+    "mindanao_qualified_cards": "CS AMNESTY GEO CARDS - MINDANAO",
+    "mindanao_qualified_bel": "CS AMNESTY GEO BEL - MINDANAO",
+    "mindanao_blank_cards": "GEO NEGA CARDS - MINDANAO",
+    "mindanao_blank_bel": "GEO NEGA BEL - MINDANAO",
+    "mindanao_blank_other_products": "GEO NEGA LOANS - MINDANAO",
 
     # REGION 3: edit the five filenames on the right.
-    "r3_qualified_cards": "CS AMNESTY GEO CARDS_R3",
-    "r3_qualified_bel": "CS AMNESTY GEO BEL_R3",
-    "r3_blank_cards": "GEO_BLANK_CARDS_R3",
-    "r3_blank_bel": "GEO_BLANK_BEL_R3",
-    "r3_blank_other_products": "GEO_BLANK_OTHER_PRODUCTS_R3",
+    "r3_qualified_cards": "CS AMNESTY GEO CARDS - R3",
+    "r3_qualified_bel": "CS AMNESTY GEO BEL - R3",
+    "r3_blank_cards": "GEO NEGA CARDS - R3",
+    "r3_blank_bel": "GEO NEGA BEL - R3",
+    "r3_blank_other_products": "GEO NEGA LOANS - R3",
 
     # Review files, used only when unmatched products or Areas are present.
     "mindanao_qualified_review": "GEO_QUALIFIED_OTHER_PRODUCTS_REVIEW_MINDANAO",
@@ -46,10 +46,10 @@ OUTPUT_FILENAMES = {
     "qualified_cards_level_1": "CS AMNESTY NEGA CARDS - L1",
     "qualified_cards_level_6": "CS AMNESTY NEGA CARDS - L6",
     "qualified_bel": "CS AMNESTY NEGA BEL - PL",
-    "blank_cards_level_1": "NEGATIVE_BLANK_CARDS_LEVEL_1",
-    "blank_cards_level_6": "NEGATIVE_BLANK_CARDS_LEVEL_6",
-    "blank_bel": "NEGATIVE_BLANK_BEL",
-    "blank_other_products": "NEGATIVE_BLANK_OTHER_PRODUCTS",
+    "blank_cards_level_1": "RECO NEGA CARDS - L1",
+    "blank_cards_level_6": "RECO NEGA CARDS - L6",
+    "blank_bel": "RECO NEGA BEL - PL",
+    "blank_other_products": "RECO NEGA LOANS - PL",
     # Used only if qualified rows do not match any of the three rules above.
     "qualified_review": "NEGATIVE_QUALIFIED_REVIEW",
     # Used only for blank-status CARDS at levels other than Level 1 or Level 6.
