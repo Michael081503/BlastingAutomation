@@ -14,6 +14,7 @@ from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
 
 from automation import (
+    DEFAULT_TEMPLATE_HEADERS,
     FIELD_MAPPING,
     TARGET_HEADERS,
     AutomationError,
@@ -38,8 +39,14 @@ def workbook_info(data: bytes, *, template: bool = False):
     return previous[2]
 
 
-def show_preview(records: list[dict], count: int) -> None:
-    preview = pd.DataFrame(records, columns=TARGET_HEADERS, dtype=object)
+def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
+    targets = {normalize_header(target): target for target in TARGET_HEADERS}
+    columns = [targets.get(normalize_header(header)) for header in headers]
+    preview = pd.DataFrame(
+        [[record.get(target) for target in columns] for record in records],
+        columns=headers,
+        dtype=object,
+    )
     st.dataframe(
         preview.map(lambda value: "" if value is None else str(value)),
         hide_index=True,
@@ -76,9 +83,9 @@ def main() -> None:
     st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
     st.title("Workbook to template")
     st.write("Upload your source file, choose a sheet, and export the mapped values as CSV files.")
-    if st.session_state.get("blank_template_headers") != (TARGET_HEADERS, ".csv"):
+    if st.session_state.get("blank_template_headers") != (DEFAULT_TEMPLATE_HEADERS, ".csv"):
         st.session_state["blank_template"] = create_default_csv_template()
-        st.session_state["blank_template_headers"] = (TARGET_HEADERS, ".csv")
+        st.session_state["blank_template_headers"] = (DEFAULT_TEMPLATE_HEADERS, ".csv")
     blank_template = st.session_state["blank_template"]
 
     with st.sidebar:
@@ -110,7 +117,7 @@ def main() -> None:
             "2. Template (optional)",
             type=["xlsx", "csv"],
             key="template_upload",
-            help="Upload your template, or use the blank template with all mapped target headers.",
+            help="Upload your template, or use the built-in template with all 16 campaign headers.",
         )
 
     if source_file is None:
@@ -167,7 +174,7 @@ def main() -> None:
     if not any(normalize_header(sheet.name) == "negative" for sheet in source_sheets):
         st.info("No NEGATIVE sheet was found. Choose the sheet you want to process.")
     if template_file is None:
-        st.caption("Using the built-in CSV template with all mapped target headers. Upload your template to use its column layout.")
+        st.caption("Using the built-in CSV template with all 16 campaign headers. Upload your template to use its column layout.")
     else:
         st.caption(
             "Outputs are always CSV, using only the selected template headers and column order. "
@@ -228,7 +235,7 @@ def main() -> None:
     signature = (
         source_digest, template_digest, source_sheet, source_header,
         template_sheet, template_header, template_extension,
-        TARGET_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
+        TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv",
     )
     previous_result = st.session_state.get("result")
@@ -339,7 +346,7 @@ def main() -> None:
         key=f"preview_file_{hash(signature)}",
     )
     file = next(file for file in files if file.filename == selected_file)
-    show_preview(file.preview, file.count)
+    show_preview(file.preview, file.count, file.headers)
 
 
 if __name__ == "__main__":

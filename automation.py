@@ -36,6 +36,12 @@ FIELD_MAPPING = {
     "Christmas Amnesty": "ChristmasAmnesty",
 }
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
+# Keep the full campaign layout separate from the fields required for mapping.
+DEFAULT_TEMPLATE_HEADERS = (
+    "email", "primary_key", "indexoneuid", "cardnumber", "FullName", "phone", "OB",
+    "Monthly", "Terms", "doclass", "Level", "Product", "EndoDate", "AREA",
+    "ChristmasAmnesty", "NewEndo",
+)
 IDENTIFIER_FIELDS = frozenset({"indexoneuid", "primary_key", "cardnumber", "phone"})
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -262,7 +268,7 @@ def create_default_template() -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Template"
-    sheet.append(TARGET_HEADERS)
+    sheet.append(DEFAULT_TEMPLATE_HEADERS)
     sheet.freeze_panes = "A2"
     for cell in sheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
@@ -385,7 +391,7 @@ def _csv_header(headers: list[Any] | tuple[str, ...]) -> bytes:
 
 
 def create_default_csv_template() -> bytes:
-    return _csv_header(TARGET_HEADERS)
+    return _csv_header(DEFAULT_TEMPLATE_HEADERS)
 
 
 def excel_template_to_csv(template: bytes, sheet_name: str, header_row: int) -> bytes:

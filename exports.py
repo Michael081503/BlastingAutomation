@@ -10,6 +10,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from automation import (
     AutomationError,
+    csv_template_headers,
     excel_template_to_csv,
     fill_csv_template,
     has_contact_details,
@@ -45,6 +46,7 @@ class ExportFile:
     data: bytes
     count: int
     missing_emails: int
+    headers: list[str]
     preview: list[dict[str, Any]]
 
 
@@ -144,6 +146,7 @@ def _build_channel_files(
 ) -> list[ExportFile]:
     if not records:
         return []
+    headers = csv_template_headers(template)
     files = []
     for channel, rows in separate_channels(records).items():
         filename = channel_filename(base_name, channel, ".csv")
@@ -157,6 +160,7 @@ def _build_channel_files(
             data=data,
             count=len(rows),
             missing_emails=sum(not has_contact_value(row.get("email")) for row in rows),
+            headers=headers,
             preview=rows[:100],
         ))
     return files

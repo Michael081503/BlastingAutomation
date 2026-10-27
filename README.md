@@ -33,7 +33,7 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 ## Use
 
 1. Upload your source `.xlsx` workbook.
-2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template. Both template formats produce CSV outputs.
+2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template with all 16 campaign headers. Both template formats produce CSV outputs.
 3. Choose the source sheet. **NEGATIVE** is selected automatically.
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
@@ -143,7 +143,7 @@ Keep the keys on the left unchanged. Edit the base names in `OUTPUT_FILENAMES`; 
 
 Header matching ignores capitalization, whitespace, and punctuation. `Product Type` is also accepted for `product`, matching your sample workbook. `OB` is also accepted as a source header for `OB (Masterlist)`. All eleven source and destination headers must be present; missing or ambiguous headers are reported before export. Header detection scans the first 50 rows; enter a row manually when headers appear later.
 
-Your supplied template has 16 columns. The five columns without mapping rules (`Monthly`, `Terms`, `doclass`, `AREA`, and `NewEndo`) are retained and left blank.
+The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. The five columns without mapping rules (`Monthly`, `Terms`, `doclass`, `AREA`, and `NewEndo`) are retained and left blank. Uploaded templates keep their own header labels and order. Export previews show all file headers, including columns with blank values and channels with no rows.
 
 ## Output behavior
 

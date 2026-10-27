@@ -15,10 +15,13 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from streamlit.testing.v1 import AppTest
 
 from automation import (
+    DEFAULT_TEMPLATE_HEADERS,
     FIELD_MAPPING,
     TARGET_HEADERS,
     AutomationError,
+    create_default_csv_template,
     create_default_template,
+    csv_template_headers,
     default_source_sheet,
     fill_csv_template,
     fill_excel_template,
@@ -312,6 +315,17 @@ class TemplateTests(unittest.TestCase):
     def setUp(self):
         self.records = read_source(source_file(), "NEGATIVE", 1).records
 
+    def test_default_templates_include_all_sixteen_campaign_headers(self):
+        expected = [
+            "email", "primary_key", "indexoneuid", "cardnumber", "FullName", "phone", "OB",
+            "Monthly", "Terms", "doclass", "Level", "Product", "EndoDate", "AREA",
+            "ChristmasAmnesty", "NewEndo",
+        ]
+        self.assertEqual(csv_template_headers(create_default_csv_template()), expected)
+        workbook = loaded(create_default_template())
+        self.addCleanup(workbook.close)
+        self.assertEqual([cell.value for cell in workbook.active[1]], expected)
+
     def test_template_styles_other_sheets_and_stale_rows(self):
         workbook = loaded(create_default_template())
         sheet = workbook.active
@@ -334,7 +348,7 @@ class TemplateTests(unittest.TestCase):
         self.assertFalse(sheet.row_dimensions[3].hidden)
         self.assertIsNone(sheet.cell(4, 5).value)
         self.assertIsNone(sheet.cell(4, 1).hyperlink)
-        self.assertEqual(sheet.auto_filter.ref, "A2:K3")
+        self.assertEqual(sheet.auto_filter.ref, "A2:P3")
         self.assertEqual(result["Instructions"].cell(1, 1).value, "Keep this")
 
     def test_table_range_grows_to_fit_output(self):
@@ -555,7 +569,7 @@ class ChannelTests(unittest.TestCase):
         )
         self.assertEqual([file.count for file in bundle.files], [1, 0])
         rows = list(csv.reader(StringIO(bundle.files[1].data.decode("utf-8-sig"))))
-        self.assertEqual(rows, [list(TARGET_HEADERS)])
+        self.assertEqual(rows, [list(DEFAULT_TEMPLATE_HEADERS)])
 
     def test_excel_template_headers_are_validated_before_csv_export(self):
         for headers, message in (
@@ -738,7 +752,8 @@ class AppTests(unittest.TestCase):
 
     def test_uploaded_csv_template_and_missing_header_error(self):
         upload = FakeUpload("source.xlsx", source_file())
-        template = FakeUpload("template.csv", (",".join(TARGET_HEADERS) + "\n").encode())
+        headers = ["Custom Field"] + list(reversed(TARGET_HEADERS))
+        template = FakeUpload("template.csv", (";".join(headers) + "\n").encode())
 
         def uploader(label, **kwargs):
             return upload if kwargs.get("key") == "source_upload" else template
@@ -751,6 +766,10 @@ class AppTests(unittest.TestCase):
             self.assertEqual([file.filename for file in app.session_state["result"]["files"]], [
                 "source_NEGATIVE_filled_Email.csv", "source_NEGATIVE_filled_Viber.csv",
             ])
+            preview = app.main.dataframe[-1].value
+            self.assertEqual(list(preview.columns), headers)
+            self.assertEqual(preview.loc[0, "Custom Field"], "")
+            self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
             upload = FakeUpload("bad.xlsx", source_file(headers=[header for header in FIELD_MAPPING if header != "phone_1"]))
             app.run(timeout=20)
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
@@ -787,6 +806,11 @@ class AppTests(unittest.TestCase):
                     self.assertEqual(len(app.error), 0)
                     result = app.session_state["result"]
                     self.assertEqual(len(result["files"]), 2)
+                    preview = app.main.dataframe[-1].value
+                    self.assertEqual(list(preview.columns), headers)
+                    self.assertEqual(preview.loc[0, "Extra"], "")
+                    self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
+                    self.assertEqual(preview.loc[0, "endodate"], "2026-10-26 00:00:00")
                     with ZipFile(BytesIO(result["zip_data"])) as archive:
                         self.assertEqual(archive.namelist(), [file.filename for file in result["files"]])
                         for file in result["files"]:
@@ -830,6 +854,17 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.session_state["result"]["files"]), 14)
+            for file in app.session_state["result"]["files"]:
+                self.assertEqual(csv_template_headers(file.data), list(DEFAULT_TEMPLATE_HEADERS))
+                rows = list(csv.DictReader(StringIO(file.data.decode("utf-8-sig"))))
+                for row in rows:
+                    for header in ("Monthly", "Terms", "doclass", "AREA", "NewEndo"):
+                        self.assertEqual(row[header], "")
+            preview = app.main.dataframe[-1].value
+            self.assertEqual(list(preview.columns), list(DEFAULT_TEMPLATE_HEADERS))
+            self.assertEqual(preview.loc[0, "Level"], "Level 1")
+            self.assertEqual(preview.loc[0, "Product"], "CARDS")
+            self.assertEqual(preview.loc[0, "Monthly"], "")
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
             self.assertEqual(len(app.get("download_button")), 16)
@@ -839,6 +874,39 @@ class AppTests(unittest.TestCase):
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             self.assertEqual(len(app.success), 0)
             self.assertEqual(len(app.get("download_button")), 1)
+
+    def test_default_headers_refresh_cached_template_and_remain_in_empty_channel(self):
+        upload = FakeUpload("source.xlsx", source_file([
+            sample_row(phone_1=None, product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
+        ]))
+
+        def uploader(label, **kwargs):
+            return upload if kwargs.get("key") == "source_upload" else None
+
+        with patch("streamlit.file_uploader", side_effect=uploader):
+            app = AppTest.from_file(str(APP_PATH))
+            app.session_state["blank_template_headers"] = (TARGET_HEADERS, ".csv")
+            app.session_state["blank_template"] = (",".join(TARGET_HEADERS) + "\n").encode()
+            app.run(timeout=20)
+            self.assertEqual(
+                csv_template_headers(app.session_state["blank_template"]), list(DEFAULT_TEMPLATE_HEADERS),
+            )
+            for mode in ("Separate Christmas Amnesty groups", "All accounts in one group"):
+                with self.subTest(mode=mode):
+                    app.radio[0].set_value(mode).run(timeout=20)
+                    app.button[0].click().run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    files = app.session_state["result"]["files"]
+                    self.assertEqual([file.count for file in files], [1, 0])
+                    with ZipFile(BytesIO(app.session_state["result"]["zip_data"])) as archive:
+                        for file in files:
+                            self.assertEqual(csv_template_headers(archive.read(file.filename)), list(DEFAULT_TEMPLATE_HEADERS))
+                    app.selectbox[-1].select(files[1].filename).run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    preview = app.main.dataframe[-1].value
+                    self.assertTrue(preview.empty)
+                    self.assertEqual(list(preview.columns), list(DEFAULT_TEMPLATE_HEADERS))
 
     def test_all_accounts_without_contacts_show_exclusions_and_no_download(self):
         upload = FakeUpload("source.xlsx", source_file([sample_row(debtor_email=None, phone_1=None)]))
@@ -884,6 +952,7 @@ class AppTests(unittest.TestCase):
                 self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in files})
                 for file in files:
                     self.assertEqual((saved / file.filename).read_bytes(), file.data)
+                    self.assertEqual(csv_template_headers(file.data), list(DEFAULT_TEMPLATE_HEADERS))
                 app.run(timeout=20)
                 self.assertEqual(list(parent.iterdir()), [saved])
 
