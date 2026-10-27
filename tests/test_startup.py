@@ -79,11 +79,36 @@ class StartupTests(unittest.TestCase):
                 automation.create_default_csv_template(), records, '', 1, '.csv',
             )
             assert len(bundle.files) == 2
-            assert all(file.group_key == 'r3_qualified_cards_level_6' for file in bundle.files)
+            assert all(file.group_key == 'r3_qualified_cards' for file in bundle.files)
             for file in bundle.files:
                 rows = list(csv.DictReader(StringIO(file.data.decode('cp1252'))))
                 assert rows[0]['AREA'] == 'Region 3'
                 assert rows[0]['primary_key'] == '0001'
+        """)
+
+    def test_cached_level_grouping_and_old_bootstrap_refresh_to_product_groups(self):
+        self.run_isolated("""
+            import app_startup, automation, export_config, exports
+            error_class = automation.AutomationError
+            export_config.GEO_OUTPUT_FILENAMES = {
+                'qualified_cards_level_1': 'Old Level 1',
+                'qualified_cards_level_6': 'Old Level 6',
+            }
+            del exports.GEO_PRODUCT_GROUP_LABELS
+            app_startup.refresh_application_modules = lambda: set()
+            import app
+            assert 'qualified_cards' in app.GEO_OUTPUT_FILENAMES
+            assert 'blank_cards' in app.GEO_OUTPUT_FILENAMES
+            assert 'qualified_cards_level_1' not in app.GEO_OUTPUT_FILENAMES
+            assert app.AutomationError is error_class
+            records = [
+                {'email': 'ana@example.com', 'phone': '09171234567', 'AREA': 'Mindanao',
+                 'ChristmasAmnesty': 'QUALIFIED', 'product': 'CARDS', 'level': level}
+                for level in (1, 2, 3, 4, 5, 6)
+            ]
+            bundle = app.build_geo_exports(automation.create_default_csv_template(), records, '', 1, '.csv')
+            assert len(bundle.files) == 2
+            assert all(file.group_key == 'mindanao_qualified_cards' and file.count == 6 for file in bundle.files)
         """)
 
 

@@ -109,13 +109,23 @@ Before email validation, the sample dated October 26, 2026 had qualified group c
 
 ## GEO Area separation
 
-For GEO workbooks, the app detects the **Area** source column and defaults to **Separate Area and Christmas Amnesty groups**. `Mindanao` and `Region 3` / `R3` form separate groups, ignoring case, spacing, and punctuation. Each Area then uses the same qualified/blank, product, and level rules above, followed by Email/Viber routing. Qualified or blank product/level exceptions still go to review files. Other or missing Area values are kept in separate Area review files.
+For GEO workbooks, the app detects the **Area** source column and defaults to **Separate Area and Christmas Amnesty groups**. `Mindanao` and `Region 3` / `R3` form separate groups, ignoring case, spacing, and punctuation. Each Area uses these five main groups, combining **all levels** within each product:
+
+| Christmas Amnesty | Product |
+| --- | --- |
+| QUALIFIED | CARDS |
+| QUALIFIED | BEL |
+| Blank / not qualified | CARDS |
+| Blank / not qualified | BEL |
+| Blank / not qualified | Other than CARDS and BEL |
+
+Every nonempty group then produces Email and Viber CSV files, so five populated groups in each Area produce **20 files**. Level values are retained in the output column and do not affect GEO grouping. Qualified products other than CARDS and BEL, and other or missing Area values, are kept in clearly named review files when present. The standard NEGATIVE workflow without an Area column retains its original level rules.
 
 The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `placement`, `Product`, `OB (MASTERLIST}`, and `Phone 1` are accepted. `assign_date` supplies `EndoDate`; `placement` supplies `Level`. The source Area is copied into `AREA`, preserving `Region 3` as the source value even though its group is named R3. Area is optional for existing workbooks. GEO grouped exports require an AREA template header; the built-in 16-column template already includes it.
 
 GEO grouping works on each worksheet with an Area column. **NEGATIVE** remains the default; select one source sheet at a time. **OVERALL** and the other sheets may overlap, so processing them separately does not create a deduplicated combined export.
 
-Edit `GEO_OUTPUT_FILENAMES`, `GEO_AREA_SUFFIXES`, and `GEO_ZIP_FILENAME` in [export_config.py](export_config.py) to change GEO filenames. For example, qualified CARDS Level 6 produces `CS AMNESTY GEO CARDS - L6_MINDANAO_Email.csv`, `CS AMNESTY GEO CARDS - L6_MINDANAO_Viber.csv`, and the matching `_R3` files when those groups have accounts. Individual downloads, ZIP downloads, previews, and folder saves use the same separation.
+Edit `GEO_OUTPUT_FILENAMES`, `GEO_AREA_SUFFIXES`, and `GEO_ZIP_FILENAME` in [export_config.py](export_config.py) to change GEO filenames. For example, qualified CARDS at all levels produce `CS AMNESTY GEO CARDS_MINDANAO_Email.csv`, `CS AMNESTY GEO CARDS_MINDANAO_Viber.csv`, and the matching `_R3` files when those groups have accounts. Individual downloads, ZIP downloads, previews, and folder saves use the same separation.
 
 ## Edit filenames
 

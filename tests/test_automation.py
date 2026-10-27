@@ -689,13 +689,13 @@ class GeoTests(unittest.TestCase):
                 with self.assertRaisesRegex(AutomationError, "Duplicate or ambiguous"):
                     read_source(save(workbook), "NEGATIVE", 1)
 
-    def test_area_groups_keep_product_levels_and_review_accounts(self):
-        cases = [
-            ("QUALIFIED", "CARDS", 1), ("QUALIFIED", "CARDS", 6),
+    def test_area_product_groups_combine_all_levels_and_retain_review_accounts(self):
+        levels = [1, 2, 3, 4, 5, 6, None]
+        cases = [(status, "CARDS", level) for status in ("QUALIFIED", None) for level in levels]
+        cases.extend([
             ("QUALIFIED", "BEL", 3), ("QUALIFIED", "PL", 5),
-            (None, "CARDS", 1), (None, "CARDS", 6), (None, "BEL", 5),
-            (None, "PL", 3), (None, "CARDS", 2),
-        ]
+            (None, "BEL", 5), (None, "PL", 3),
+        ])
         rows = [
             sample_row(Area=area, product=product, level=level, **{"Christmas Amnesty": status})
             for area in (" Mindanao ", "REGION 3") for status, product, level in cases
@@ -709,14 +709,18 @@ class GeoTests(unittest.TestCase):
         mapped = read_source(geo_source_file(rows), "NEGATIVE", 1)
         groups = separate_geo(mapped.records)
         self.assertEqual(mapped.no_contact_rows_skipped, 1)
-        self.assertEqual(sum(map(len, groups.values())), 21)
-        self.assertEqual(len(groups["mindanao_qualified_cards_level_1"]), 1)
+        self.assertEqual(sum(map(len, groups.values())), len(cases) * 2 + 3)
+        self.assertEqual([row["level"] for row in groups["mindanao_qualified_cards"]], levels)
+        self.assertEqual([row["level"] for row in groups["mindanao_blank_cards"]], levels)
+        self.assertEqual([row["level"] for row in groups["r3_qualified_cards"]], levels)
+        self.assertEqual([row["level"] for row in groups["r3_blank_cards"]], levels)
+        self.assertFalse(any("level" in key for key in groups))
         self.assertEqual(len(groups["r3_qualified_bel"]), 2)
-        self.assertEqual(len(groups["area_review_blank_cards_level_1"]), 1)
+        self.assertEqual(len(groups["area_review_blank_cards"]), 1)
         self.assertEqual(len(groups["area_review_blank_bel"]), 1)
         bundle = build_geo_exports(create_default_csv_template(), mapped.records, "", 1, ".csv")
-        self.assertEqual(sum(bundle.counts.values()), 21)
-        self.assertEqual(sum(file.count for file in bundle.files), 42)
+        self.assertEqual(sum(bundle.counts.values()), len(cases) * 2 + 3)
+        self.assertEqual(sum(file.count for file in bundle.files), (len(cases) * 2 + 3) * 2)
         with ZipFile(BytesIO(bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
             for file in bundle.files:
@@ -732,6 +736,22 @@ class GeoTests(unittest.TestCase):
                         self.assertIn(record["AREA"], ("Other", ""))
                     self.assertEqual(record["ChristmasAmnesty"], "QUALIFIED" if "_qualified_" in file.group_key else "")
                     self.assertEqual(record["phone" if file.channel == "email" else "email"], "")
+
+    def test_five_main_groups_per_area_produce_twenty_channel_files(self):
+        rows = [
+            sample_row(Area=area, product=product, level=level, **{"Christmas Amnesty": status})
+            for area in ("Mindanao", "Region 3")
+            for status, product in (("QUALIFIED", "CARDS"), ("QUALIFIED", "BEL"),
+                                    (None, "CARDS"), (None, "BEL"), (None, "PL"))
+            for level in (1, 2, 3, 4, 5, 6)
+        ]
+        records = read_source(geo_source_file(rows), "NEGATIVE", 1).records
+        bundle = build_geo_exports(create_default_csv_template(), records, "", 1, ".csv")
+        self.assertEqual(len(bundle.files), 20)
+        self.assertEqual(sum(bundle.counts.values()), 60)
+        self.assertTrue(all(file.count == 6 for file in bundle.files))
+        self.assertTrue(all("LEVEL" not in file.filename and " - L" not in file.filename for file in bundle.files))
+        self.assertFalse(any(bundle.counts[key] for key in GEO_REVIEW_GROUP_KEYS))
 
     def test_geo_channel_exclusions_header_only_files_and_configured_names(self):
         data = geo_source_file([
@@ -824,6 +844,7 @@ class AppTests(unittest.TestCase):
     def test_geo_area_grouping_preview_review_and_single_group_mode(self):
         upload = FakeUpload("GEO ACTIVE ACCOUNTS.xlsx", geo_source_file([
             sample_row(Area="Mindanao", product="CARDS", level=6, **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Mindanao", product="CARDS", level=2, **{"Christmas Amnesty": "QUALIFIED"}),
             sample_row(Area="Region 3", product="BEL", debtor_email=None),
             sample_row(Area="Mindanao", product="PL", phone_1=None),
             sample_row(Area="Other", product="CARDS", level=2, **{"Christmas Amnesty": "QUALIFIED"}),
@@ -840,9 +861,11 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]
-            self.assertEqual(result["count"], 4)
+            self.assertEqual(result["count"], 5)
             self.assertEqual(result["no_contact_rows"], 1)
             self.assertEqual(len(result["files"]), 8)
+            self.assertEqual(result["group_counts"]["mindanao_qualified_cards"], 2)
+            self.assertFalse(any("level" in key for key in result["group_counts"]))
             self.assertTrue(any("need review" in warning.value for warning in app.warning))
             file = next(file for file in result["files"] if file.group_key == "r3_blank_bel" and file.channel == "viber")
             app.main.selectbox[-1].select(file.filename).run(timeout=20)
@@ -853,7 +876,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.session_state["result"]["files"]), 2)
-            self.assertEqual(app.session_state["result"]["count"], 4)
+            self.assertEqual(app.session_state["result"]["count"], 5)
 
     def test_file_type_defaults_to_standard_csv_and_change_refreshes_exports(self):
         upload = FakeUpload("source.xlsx", source_file([sample_row(Name="Pe\u00f1a, Ana")]))

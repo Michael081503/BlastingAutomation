@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from app_startup import refresh_application_modules
+import app_startup
 
-refresh_application_modules()
+importlib.reload(app_startup).refresh_application_modules()
 
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AREA_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
@@ -225,13 +226,19 @@ def main() -> None:
         if grouped:
             if geo:
                 st.caption(
-                    "Mindanao and R3 (Region 3) are separated first, then each Area uses the groups below. "
+                    "Mindanao and R3 (Region 3) are separated first. "
                     "Other or missing Area values go to separate review files. AREA retains its source value."
                 )
-            st.caption(
-                "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
-                "BLANK: the same three groups, plus other products. Empty groups produce no file."
-            )
+                st.caption(
+                    "QUALIFIED: CARDS and BEL. BLANK: CARDS, BEL, and other products. "
+                    "Each product group combines all levels. Empty groups produce no file. "
+                    "Qualified other products go to a separate review group."
+                )
+            else:
+                st.caption(
+                    "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
+                    "BLANK: the same three groups, plus other products. Empty groups produce no file."
+                )
             with st.expander("Filename settings (export_config.py)"):
                 st.caption(
                     "Edit the quoted filename values in export_config.py, save, and rerun the app. "

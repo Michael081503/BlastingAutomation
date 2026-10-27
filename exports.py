@@ -38,13 +38,21 @@ GROUP_LABELS = {
 REVIEW_GROUP_KEYS = frozenset({"qualified_review", "blank_review"})
 CHANNEL_LABELS = {"email": "Email", "viber": "Viber"}
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
+GEO_PRODUCT_GROUP_LABELS = {
+    "qualified_cards": "QUALIFIED / CARDS",
+    "qualified_bel": "QUALIFIED / BEL",
+    "blank_cards": "BLANK / CARDS",
+    "blank_bel": "BLANK / BEL",
+    "blank_other_products": "BLANK / Other than CARDS and BEL",
+    "qualified_review": "QUALIFIED / Other products (review)",
+}
 GEO_GROUP_LABELS = {
     f"{area}_{key}": f"{label} / {group_label}"
-    for area, label in AREA_LABELS.items() for key, group_label in GROUP_LABELS.items()
+    for area, label in AREA_LABELS.items() for key, group_label in GEO_PRODUCT_GROUP_LABELS.items()
 }
 GEO_REVIEW_GROUP_KEYS = frozenset(
-    f"{area}_{key}" for area in AREA_LABELS for key in GROUP_LABELS
-    if area == "area_review" or key in REVIEW_GROUP_KEYS
+    f"{area}_{key}" for area in AREA_LABELS for key in GEO_PRODUCT_GROUP_LABELS
+    if area == "area_review" or key == "qualified_review"
 )
 
 
@@ -108,13 +116,22 @@ def separate_negative(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
 
 
 def separate_geo(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Apply the existing groups within Mindanao and R3 without losing other areas."""
+    """Group each Area by Christmas Amnesty and product, combining all levels."""
     groups = {key: [] for key in GEO_GROUP_LABELS}
-    for key, rows in separate_negative(records).items():
-        for record in rows:
-            area = normalize_header(record.get("AREA"))
-            area_key = "mindanao" if area == "mindanao" else "r3" if area in {"r3", "region3"} else "area_review"
-            groups[f"{area_key}_{key}"].append(record)
+    for record in records:
+        if not has_contact_details(record):
+            continue
+        area = normalize_header(record.get("AREA"))
+        area_key = "mindanao" if area == "mindanao" else "r3" if area in {"r3", "region3"} else "area_review"
+        qualified = normalize_header(record.get("ChristmasAmnesty")) == "qualified"
+        product = normalize_header(record.get("product"))
+        if product in {"cards", "bel"}:
+            key = f"{'qualified' if qualified else 'blank'}_{product}"
+        else:
+            key = "qualified_review" if qualified else "blank_other_products"
+        groups[f"{area_key}_{key}"].append({
+            **record, "ChristmasAmnesty": "QUALIFIED" if qualified else None,
+        })
     return groups
 
 
@@ -263,7 +280,7 @@ def build_geo_exports(
     *,
     encoding: str = "cp1252",
 ) -> ExportBundle:
-    """Create CSV files by Area, Christmas Amnesty, product/level, and channel."""
+    """Create CSV files by Area, Christmas Amnesty, product, and channel."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     if not any(normalize_header(header) == "area" for header in csv_template_headers(template)):
         raise AutomationError("GEO exports need an AREA header in the template. Use the built-in 16-column template.")
@@ -274,7 +291,7 @@ def build_geo_exports(
         suffix = GEO_AREA_SUFFIXES[area]
         if not isinstance(suffix, str) or not suffix.strip():
             raise AutomationError(f'The "{area}" Area suffix is empty. Check export_config.py.')
-        for key in GROUP_LABELS:
+        for key in GEO_PRODUCT_GROUP_LABELS:
             if key not in GEO_OUTPUT_FILENAMES:
                 raise AutomationError(f'Missing GEO filename for "{key}" in export_config.py.')
             base = export_filename(GEO_OUTPUT_FILENAMES[key], ".csv")[:-4]

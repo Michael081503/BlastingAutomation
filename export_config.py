@@ -19,17 +19,14 @@ OUTPUT_FILENAMES = {
     "blank_review": "NEGATIVE_BLANK_REVIEW",
 }
 
-# GEO workbooks also split each group by Area. Keep the keys unchanged.
+# GEO groups combine ALL levels within each Area, Christmas Amnesty, and product.
 GEO_OUTPUT_FILENAMES = {
-    "qualified_cards_level_1": "CS AMNESTY GEO CARDS - L1",
-    "qualified_cards_level_6": "CS AMNESTY GEO CARDS - L6",
-    "qualified_bel": "CS AMNESTY GEO BEL - PL",
-    "blank_cards_level_1": "GEO_BLANK_CARDS_LEVEL_1",
-    "blank_cards_level_6": "GEO_BLANK_CARDS_LEVEL_6",
+    "qualified_cards": "CS AMNESTY GEO CARDS",
+    "qualified_bel": "CS AMNESTY GEO BEL",
+    "blank_cards": "GEO_BLANK_CARDS",
     "blank_bel": "GEO_BLANK_BEL",
     "blank_other_products": "GEO_BLANK_OTHER_PRODUCTS",
-    "qualified_review": "GEO_QUALIFIED_REVIEW",
-    "blank_review": "GEO_BLANK_REVIEW",
+    "qualified_review": "GEO_QUALIFIED_OTHER_PRODUCTS_REVIEW",
 }
 GEO_AREA_SUFFIXES = {"mindanao": "_MINDANAO", "r3": "_R3", "area_review": "_AREA_REVIEW"}
 GEO_ZIP_FILENAME = "GEO_AREA_CHRISTMAS_AMNESTY_FILES.zip"
