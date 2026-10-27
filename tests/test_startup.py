@@ -34,6 +34,24 @@ class StartupTests(unittest.TestCase):
             assert export_config.OUTPUT_FILENAMES is filenames
         """)
 
+    def test_cached_autostat_refreshes_to_cardnumber_mapping(self):
+        self.run_isolated("""
+            import autostat, autostat_page
+            del autostat.PREFERRED_ACCOUNT_HEADER
+            autostat.AUTOSTAT_VERSION = 1
+            autostat.ACCOUNT_ALIASES = ('primary_key', 'Account No.')
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert 'autostat' in refreshed
+            assert 'autostat_page' in refreshed
+            data = b'primary_key,cardnumber,email\\nOTHER,000123,first@example.com\\n'
+            sheet = autostat.inspect_contact_source(data, '.csv')[0]
+            contacts = autostat.extract_contacts(autostat.SourceSelection('contacts.csv', data, sheet))
+            assert contacts.emails == [('000123', 'first@example.com')]
+            assert autostat_page.AUTOSTAT_VERSION == autostat.AUTOSTAT_VERSION
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_old_configuration_is_refreshed_before_app_import(self):
         self.run_isolated("""
             import automation, export_config, exports, folder_output

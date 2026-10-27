@@ -39,6 +39,10 @@ def refresh_application_modules() -> set[str]:
             "GEO_FILENAME_CONFIG_VERSION",
         ), ("email_validation", "export_config", "automation")),
         ("folder_output", ("save_files_to_folder",), ("automation", "exports")),
+        ("autostat", (
+            "AUTOSTAT_VERSION", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
+        ), ("automation", "email_validation")),
+        ("autostat_page", ("render_autostat",), ("autostat", "automation", "folder_output", "export_config")),
     )
     refreshed = set()
     for name, required, dependencies in modules:

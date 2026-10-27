@@ -96,8 +96,7 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
         st.code(result["saved_folder"], language=None)
 
 
-def main() -> None:
-    st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
+def render_workbook_page() -> None:
     st.title("Workbook to template")
     st.write("Upload your source file, choose a sheet, and export the mapped values as CSV files.")
     with st.sidebar:
@@ -395,6 +394,15 @@ def main() -> None:
     )
     file = next(file for file in files if file.filename == selected_file)
     show_preview(file.preview, file.count, file.headers)
+
+
+def main() -> None:
+    st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
+    page = st.navigation([
+        st.Page(render_workbook_page, title="Workbook to template", default=True),
+        st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", url_path="AUTOSTAT"),
+    ])
+    page.run()
 
 
 if __name__ == "__main__":

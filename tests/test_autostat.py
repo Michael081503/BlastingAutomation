@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+import csv
+import unittest
+from dataclasses import replace
+from datetime import datetime
+from io import BytesIO, StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from zipfile import ZipFile
+
+from openpyxl import Workbook
+from streamlit.testing.v1 import AppTest
+
+from automation import AutomationError
+from autostat import (
+    EMAIL_HEADERS, REMARK_PREFIX, VIBER_HEADERS, SourceSelection,
+    build_autostat_exports, extract_contacts, inspect_contact_source, validated_phone,
+)
+from folder_output import MANILA_TIMEZONE
+
+
+ROOT = Path(__file__).resolve().parents[1]
+NOW = datetime(2026, 10, 28, 15, 4, 5, tzinfo=MANILA_TIMEZONE)
+
+
+class Upload(BytesIO):
+    def __init__(self, name, data):
+        super().__init__(data)
+        self.name = name
+
+
+def workbook_bytes():
+    workbook = Workbook()
+    summary = workbook.active
+    summary.title = "Summary"
+    summary.append(["Account totals"])
+    sheet = workbook.create_sheet("Contacts")
+    sheet.append(["Exported contacts"])
+    sheet.append(["Account no.", "debtor_email", "phone_1", "Phone 2", "Other data"])
+    for row in (
+        ["00001", " Ana.Cruz+tag@EXAMPLE.COM ", "+63 (917) 123-4567", "09171234567", None],
+        ["00002", "bad..email@example.com;other@example.com", "08171234567", "09181234567", None],
+        ["00003", "bad email@example.com", "123", None, None],
+        [None, "orphan@example.com", "09191234567", None, None],
+        [None, None, None, None, None],
+        ["00004", "repeat@example.com;repeat@example.com", 9171234567.0, None, None],
+    ):
+        sheet.append(row)
+    next_sheet = workbook.create_sheet("Phone only")
+    next_sheet.append(["primary_key", "phone"])
+    next_sheet.append([123, 639201234567])
+    next_sheet["A2"].number_format = "000000"
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
+def exported_rows(file):
+    return list(csv.DictReader(StringIO(file.data.decode("utf-8-sig" if file.data.startswith(b"\xef\xbb\xbf") else "cp1252"))))
+
+
+class PhoneTests(unittest.TestCase):
+    def test_rightmost_ten_digits_and_numeric_inputs(self):
+        for value in ("09171234567", "+63 (917) 123-4567", "917 123 4567", "917.123.4567",
+                      "000639171234567", 9171234567, 639171234567.0, "9171234567.0", "9.171234567E9"):
+            with self.subTest(value=value):
+                self.assertEqual(validated_phone(value), "9171234567")
+
+    def test_invalid_values_are_not_repaired_into_mobile_numbers(self):
+        for value in (None, "", "  ", True, "8171234567", "0917123456", "123", "call 09171234567",
+                      "09171234567 ext 9", -9171234567, 9171234567.5, float("nan"), float("inf"), "9e999"):
+            with self.subTest(value=value):
+                self.assertIsNone(validated_phone(value))
+
+
+class AutostatTests(unittest.TestCase):
+    def test_cardnumber_is_used_for_both_logs_ahead_of_other_account_headers(self):
+        for header in ("cardnumber", "Card Number", " CARDNUMBER "):
+            with self.subTest(header=header):
+                data = (
+                    f"primary_key,Account No.,email,{header},phone\n"
+                    "INTERNAL-1,OTHER-1,first@example.com,000123456789012345,09171234567\n"
+                    "INTERNAL-2,OTHER-2,second@example.com,000000000000000002,09181234567\n"
+                    "INTERNAL-3,OTHER-3,missing@example.com,,09191234567\n"
+                ).encode()
+                sheet = inspect_contact_source(data, ".csv")[0]
+                bundle = build_autostat_exports([SourceSelection("contacts.csv", data, sheet)], timestamp=NOW)
+                self.assertEqual(bundle.summary[0]["Missing account"], 1)
+                for file in bundle.files:
+                    rows = exported_rows(file)
+                    self.assertEqual([row["Account No."] for row in rows], ["000123456789012345", "000000000000000002"])
+                    self.assertEqual([row["Account No."] for row in file.preview], ["000123456789012345", "000000000000000002"])
+                    for row, contact in zip(rows, ("first@example.com", "second@example.com") if "_Email" in file.filename else ("9171234567", "9181234567")):
+                        self.assertIn(contact, row["Remark"])
+
+    def test_workbook_with_cardnumber_and_contacts_is_detected_and_preserves_zero_mask(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["Contact list"])
+        sheet.append(["email", "phone", "cardnumber"])
+        sheet.append(["first@example.com", "09171234567", 123])
+        sheet["C3"].number_format = "000000"
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        data = output.getvalue()
+        detected = inspect_contact_source(data, ".xlsx")[0]
+        self.assertTrue(detected.ready)
+        self.assertEqual(detected.header_row, 2)
+        bundle = build_autostat_exports([SourceSelection("contacts.xlsx", data, detected)], timestamp=NOW)
+        for file in bundle.files:
+            self.assertEqual(exported_rows(file)[0]["Account No."], "000123")
+
+    def test_detection_multiple_contact_columns_and_validation_counts(self):
+        data = workbook_bytes()
+        sheets = inspect_contact_source(data, ".xlsx")
+        self.assertFalse(sheets[0].ready)
+        self.assertEqual(sheets[1].header_row, 2)
+        self.assertEqual(sheets[1].phone_columns, (2, 3))
+        rows = extract_contacts(SourceSelection("source.xlsx", data, sheets[1]))
+        self.assertEqual(rows.emails, [("00001", "Ana.Cruz+tag@example.com"), ("00002", "other@example.com"), ("00004", "repeat@example.com")])
+        self.assertEqual(rows.phones, [("00001", "9171234567"), ("00002", "9181234567"), ("00004", "9171234567")])
+        self.assertEqual((rows.checked_rows, rows.blank_rows, rows.missing_accounts, rows.no_contacts), (5, 1, 1, 1))
+        self.assertEqual((rows.invalid_emails, rows.invalid_phones), (2, 2))
+
+    def test_exact_template_values_numeric_ids_multiple_sheets_and_zip(self):
+        data = workbook_bytes()
+        sheets = inspect_contact_source(data, ".xlsx")
+        bundle = build_autostat_exports([SourceSelection("source.xlsx", data, sheet) for sheet in sheets if sheet.ready], timestamp=NOW)
+        self.assertEqual(len(bundle.files), 4)
+        email, viber, empty_email, next_viber = bundle.files
+        self.assertEqual(tuple(exported_rows(email)[0]), EMAIL_HEADERS)
+        self.assertEqual(tuple(exported_rows(viber)[0]), VIBER_HEADERS)
+        first = exported_rows(email)[0]
+        self.assertEqual(first["Time"], "2026-10-28 03:04:05 PM")
+        self.assertEqual(first["Account No."], "00001")
+        self.assertEqual(first["Status"], "EMAIL BLAST SENT - WAITING FOR REPLY")
+        self.assertEqual(first["Remark By"], "MBURGOS")
+        self.assertEqual(first["Remark"], f"{REMARK_PREFIX} - Ana.Cruz+tag@example.com - FOLLOW UP EMAIL SENT")
+        self.assertEqual(first["EMAIL/ NUMBER"], "Ana.Cruz+tag@example.com")
+        self.assertTrue(all(first[header] == "" for header in EMAIL_HEADERS[6:]))
+        first_viber = exported_rows(viber)[0]
+        self.assertEqual(first_viber["Status"], "SMS BLAST SENT - WAITING FOR REPLY")
+        self.assertEqual(first_viber["Remark"], f"{REMARK_PREFIX} - 9171234567 - VIBER SENT - BLASTING")
+        self.assertEqual(exported_rows(next_viber)[0]["Account No."], "000123")
+        self.assertEqual(exported_rows(next_viber)[0]["Remark"], f"{REMARK_PREFIX} - 9201234567 - VIBER SENT - BLASTING")
+        self.assertEqual(empty_email.count, 0)
+        self.assertEqual(empty_email.preview, [])
+        with ZipFile(BytesIO(bundle.zip_data)) as archive:
+            self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
+            for file in bundle.files:
+                self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_csv_mixed_contacts_manual_mapping_and_duplicate_filenames(self):
+        data = 'Report\r\nAccount;EMAIL/ NUMBER\r\n0001;good@example.com|09171234567\r\n'.encode()
+        sheet = inspect_contact_source(data, ".csv")[0]
+        self.assertEqual(sheet.header_row, 2)
+        self.assertEqual(sheet.email_columns, sheet.phone_columns)
+        selection = SourceSelection("same.csv", data, sheet)
+        contacts = extract_contacts(selection)
+        self.assertEqual(contacts.emails, [("0001", "good@example.com")])
+        self.assertEqual(contacts.phones, [("0001", "9171234567")])
+        self.assertEqual((contacts.invalid_emails, contacts.invalid_phones), (0, 0))
+        bundle = build_autostat_exports([selection, selection], timestamp=NOW)
+        self.assertEqual(len({file.filename.casefold() for file in bundle.files}), 4)
+        custom = b'Notes\nCustomer,Mail contact,Cell detail\n00002,next@example.com,09181234567\n'
+        detected = inspect_contact_source(custom, ".csv", sheet_name="CSV", header_row=2)[0]
+        mapped = replace(detected, account_column=0, email_columns=(1,), phone_columns=(2,))
+        rows = extract_contacts(SourceSelection("custom.csv", custom, mapped))
+        self.assertEqual(rows.phones, [("00002", "9181234567")])
+
+    def test_actionable_errors_and_formula_cache(self):
+        with self.assertRaisesRegex(AutomationError, "empty"):
+            inspect_contact_source(b"", ".xlsx")
+        with self.assertRaisesRegex(AutomationError, "Cannot read"):
+            inspect_contact_source(b"broken", ".xlsx")
+        with self.assertRaisesRegex(AutomationError, "Select at least"):
+            build_autostat_exports([], timestamp=NOW)
+        workbook = Workbook()
+        workbook.active.append(["Account", "email"])
+        workbook.active.append(["0001", '=CONCAT("a", "@example.com")'])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        data = output.getvalue()
+        source = SourceSelection("formula.xlsx", data, inspect_contact_source(data, ".xlsx")[0])
+        with self.assertRaisesRegex(AutomationError, "formula has no saved value"):
+            extract_contacts(source)
+        data = 'Account,email\n0001,ana\u6f22@example.com\n'.encode()
+        source = SourceSelection("unicode.csv", data, inspect_contact_source(data, ".csv")[0])
+        with self.assertRaisesRegex(AutomationError, "CSV UTF-8"):
+            build_autostat_exports([source], timestamp=NOW)
+        self.assertEqual(build_autostat_exports([source], timestamp=NOW, encoding="utf-8-sig").files[0].count, 1)
+
+
+class AutostatAppTests(unittest.TestCase):
+    def test_cardnumber_is_selected_automatically_for_export(self):
+        upload = Upload("contacts.csv", b"primary_key,email,cardnumber,phone\nINTERNAL-1,first@example.com,00001234,09171234567\n")
+        with patch("streamlit.file_uploader", return_value=[upload]):
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            account = next(widget for widget in app.selectbox if widget.label == "Account number column")
+            self.assertEqual(account.value, 2)
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            for file in app.session_state["autostat_result"]["bundle"].files:
+                self.assertEqual(exported_rows(file)[0]["Account No."], "00001234")
+
+    def test_navigation_registers_autostat(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+        self.assertEqual(len(app.exception), 0)
+        app.switch_page("pages/AUTOSTAT.py").run(timeout=20)
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.title[0].value, "AUTOSTAT")
+
+    def test_multiple_uploads_preview_download_folder_and_input_invalidation(self):
+        uploads = [Upload("source.xlsx", workbook_bytes()), Upload("extra.csv", b"Account,email,phone\n00999,extra@example.com,09191234567\n")]
+        def uploader(label, **kwargs):
+            return uploads if kwargs.get("key") == "autostat_uploads" else None
+
+        with patch("streamlit.file_uploader", side_effect=uploader), TemporaryDirectory(prefix="autostat-test-") as directory:
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state["autostat_result"]
+            self.assertEqual(len(result["bundle"].files), 6)
+            self.assertEqual(len(app.get("download_button")), 7)
+            self.assertEqual(sum(row["Viber rows"] for row in result["bundle"].summary), 5)
+            self.assertFalse(Path(directory).joinpath("AUTOSTAT").exists())
+            app.run(timeout=20)
+            self.assertEqual(app.session_state["autostat_result"]["timestamp"], result["timestamp"])
+            app.text_input(key="autostat_output_folder").set_value(directory).run(timeout=20)
+            app.button(key="autostat_save").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            saved = Path(app.session_state["autostat_result"]["saved_folder"])
+            self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in result["bundle"].files})
+            app.text_input(key="autostat_remark_by").set_value("USER2").run(timeout=20)
+            self.assertNotIn("autostat_result", app.session_state)
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertTrue(all(file.preview[0]["Remark By"] == "USER2" for file in app.session_state["autostat_result"]["bundle"].files if file.count))
+            uploads.pop()
+            app.run(timeout=20)
+            self.assertNotIn("autostat_result", app.session_state)
+
+
+if __name__ == "__main__":
+    unittest.main()

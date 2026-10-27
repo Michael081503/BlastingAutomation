@@ -14,6 +14,28 @@ python -m venv .venv
 
 Open **http://localhost:8501**. If the dependencies are already installed, run `python -m streamlit run app.py` directly. Stop the server with **Ctrl+C**.
 
+Use the sidebar to switch between **Workbook to template** and **AUTOSTAT**.
+
+## AUTOSTAT
+
+AUTOSTAT checks account lists for valid email addresses and mobile numbers, then creates activity logs using the supplied `TEMPLATE_EMAIL.xlsx` and `TEMPLATE_VIBER.xlsx` layouts. Both layouts are built in; the sample account, email address, and old timestamp are not included. Outputs are CSV files, as in the existing workflow.
+
+1. Open **AUTOSTAT** in the sidebar and upload one or more `.xlsx` or `.csv` source files.
+2. Review **Check source columns**. All workbook sheets with recognized account and contact headers are selected by default. For other layouts, select the sheet, set its header row, and choose its account, email, and phone columns. Several email or phone columns can be selected. Account numbers must use a separate column from contacts.
+3. Check **Remark By**, which defaults to `MBURGOS`. The log timestamp defaults to the time you prepare the files in Asia/Manila. Uncheck **Use current Manila date and time** to enter a date and time.
+4. Click **Preview and prepare AUTOSTAT files**. Review the per-sheet counts for invalid contacts, missing accounts, and rows with no valid contacts, then preview the logs.
+5. Download the separate CSVs, download all files as a ZIP, or save them directly to a folder on the computer running the app.
+
+Email validation uses the same local format checks as the existing workflow. For phones, AUTOSTAT removes spaces and common phone formatting, keeps the **rightmost 10 digits**, and accepts the result only when it **starts with 9**. For example, `09171234567`, `+63 (917) 123-4567`, and `9171234567` become `9171234567`. Short numbers, results beginning with another digit, and text containing letters are rejected. Numeric Excel phones and integral CSV numbers with `.0` or scientific notation are supported.
+
+AUTOSTAT automatically selects **`cardnumber`** as the source for **`Account No.`** in both logs, taking priority over `primary_key` and other account headers when present. Header matching ignores case, spaces, and punctuation. When `cardnumber` is absent, the existing account-header detection and manual column selection remain available. A blank `cardnumber` value is treated as a missing account; another identifier from the same row is never substituted automatically.
+
+Each distinct valid contact within a source row creates a log entry linked to that row's selected account number. Multiple contacts in one cell can be separated by commas, semicolons, pipes, or line breaks. The same normalized contact repeated within one row is included once; separate rows, sheets, and files are retained, including overlaps between worksheets. Leading zeros in text account numbers and simple Excel zero masks are preserved. Missing account numbers are excluded. A row with valid email and phone details appears in both logs; a row with neither appears in neither.
+
+Each selected sheet creates `AUTOSTAT_<source>_<sheet>_Email.csv` and `AUTOSTAT_<source>_<sheet>_Viber.csv`. If a channel has no valid contacts, its file contains headers only. Duplicate source names receive numbered suffixes. The Email output keeps all 11 supplied headers, including the extra reference header at the end; unused fields stay blank. The Viber output keeps its five headers. The Email remark formula is rendered as text with the validated address; the Viber `NUMBER` placeholder is replaced with the normalized phone. Template statuses are copied exactly, and Remark By and Time are filled from the page settings.
+
+Preparing these logs does not send emails or Viber messages. Source files are never modified. Changing source files, sheets, columns, header rows, remark author, timestamp settings, or CSV encoding clears the prepared result so it can be rebuilt from the new inputs.
+
 ## Deploy on Streamlit Community Cloud
 
 1. Sign in at [share.streamlit.io](https://share.streamlit.io/) with the GitHub account that can access the repository.
