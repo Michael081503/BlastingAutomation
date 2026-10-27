@@ -32,9 +32,11 @@ def refresh_application_modules() -> set[str]:
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
             "create_default_csv_template",
+            "MappedData.valid_email_rows", "MappedData.missing_email_rows",
         ), ("email_validation",)),
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
+            "rename_export_files", "zip_export_files",
         ), ("email_validation", "export_config", "automation")),
         ("folder_output", ("save_files_to_folder",), ("automation", "exports")),
     )

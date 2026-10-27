@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import unittest
 from datetime import datetime
 from io import BytesIO, StringIO
@@ -13,6 +14,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import get_widget_state as native_widget_state
+from streamlit.proto.WidgetStates_pb2 import WidgetState
 
 from automation import (
     DEFAULT_TEMPLATE_HEADERS,
@@ -33,6 +36,7 @@ from email_validation import validated_email
 from exports import (
     GEO_REVIEW_GROUP_KEYS, build_geo_exports, build_negative_exports, build_sheet_exports,
     channel_filename, export_filename, separate_channels, separate_geo, separate_negative,
+    rename_export_files, zip_export_files,
 )
 from folder_output import save_files_to_folder
 
@@ -99,6 +103,28 @@ def geo_source_file(rows):
     )
 
 
+def edit_output_names(app, changes):
+    editor = next(frame for frame in app.main.dataframe if list(frame.value.columns) == ["Group", "Channel", "Filename"])
+    # AppTest exposes data editors as dataframes; send their normal browser state.
+    states = app._tree.get_widget_states()
+    state = next((state for state in states.widgets if state.id == editor.proto.id), None)
+    if state is None:
+        state = states.widgets.add()
+    state.id = editor.proto.id
+    state.string_value = json.dumps({
+        "edited_rows": {index: {"Filename": name} for index, name in changes.items()},
+        "added_rows": [], "deleted_rows": [],
+    })
+    app._run(states, timeout=20)
+
+
+def widget_state_with_editors(node):
+    # AppTest omits data-editor state on ordinary reruns; browsers send it.
+    if node.type == "arrow_data_frame" and getattr(node.proto, "id", ""):
+        return WidgetState(id=node.proto.id, string_value=json.dumps(node.root.session_state[node.proto.id]))
+    return native_widget_state(node)
+
+
 class EmailValidationTests(unittest.TestCase):
     def test_trim_spaces_without_changing_valid_dots_or_plus_tags(self):
         self.assertEqual(
@@ -130,6 +156,8 @@ class EmailValidationTests(unittest.TestCase):
         ])
         result = read_source(source, "NEGATIVE", 1)
         self.assertEqual(result.invalid_email_rows, 3)
+        self.assertEqual(result.valid_email_rows, 1)
+        self.assertEqual(result.missing_email_rows, 1)
         self.assertEqual(result.no_contact_rows_skipped, 2)
         self.assertEqual(result.blank_rows_skipped, 1)
         self.assertEqual(result.source_rows, [2, 4, 5])
@@ -775,6 +803,40 @@ class GeoTests(unittest.TestCase):
             build_geo_exports((",".join(TARGET_HEADERS) + "\n").encode(), mapped.records, "", 1, ".csv")
 
 
+class FilenameEditingTests(unittest.TestCase):
+    def bundle(self):
+        records = read_source(geo_source_file([
+            sample_row(Area="Mindanao", product="CARDS", **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Region 3", product="BEL"),
+        ]), "NEGATIVE", 1).records
+        return build_geo_exports(create_default_csv_template(), records, "", 1, ".csv")
+
+    def test_renaming_changes_zip_names_and_preserves_all_data(self):
+        bundle = self.bundle()
+        original_names = [file.filename for file in bundle.files]
+        names = {file.key: f"My campaign {index}" for index, file in enumerate(bundle.files)}
+        renamed = rename_export_files(bundle.files, names)
+        self.assertEqual([file.filename for file in bundle.files], original_names)
+        with ZipFile(BytesIO(zip_export_files(renamed))) as archive:
+            self.assertEqual(archive.namelist(), [f"My campaign {index}.csv" for index in range(4)])
+            for original, edited in zip(bundle.files, renamed):
+                self.assertIs(edited.data, original.data)
+                self.assertEqual(edited.group_key, original.group_key)
+                self.assertEqual(edited.channel, original.channel)
+                self.assertEqual(edited.count, original.count)
+                self.assertEqual(archive.read(edited.filename), original.data)
+
+    def test_invalid_duplicate_and_unknown_names_are_rejected(self):
+        files = self.bundle().files
+        for name in ("", "../outside", "folder/file.csv", "CON.csv", "bad:name"):
+            with self.subTest(name=name), self.assertRaises(AutomationError):
+                rename_export_files(files, {files[0].key: name})
+        with self.assertRaisesRegex(AutomationError, "unique"):
+            rename_export_files(files, {files[0].key: "Same", files[1].key: "same.csv"})
+        with self.assertRaisesRegex(AutomationError, "does not match"):
+            rename_export_files(files, {"unknown_file": "Other.csv"})
+
+
 class FolderOutputTests(unittest.TestCase):
     def test_extracted_csv_can_be_edited_and_saved_in_place(self):
         records = read_source(source_file(), "NEGATIVE", 1).records
@@ -841,6 +903,111 @@ class FolderOutputTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_filename_edits_apply_to_zip_preview_and_folder_and_survive_rerun(self):
+        upload = FakeUpload("GEO.xlsx", geo_source_file([
+            sample_row(Area="Mindanao", product="CARDS", **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Region 3", product="BEL"),
+        ]))
+
+        def uploader(label, **kwargs):
+            return upload if kwargs.get("key") == "source_upload" else None
+
+        with TemporaryDirectory(prefix="blasting-renaming-test-") as directory:
+            with patch("streamlit.file_uploader", side_effect=uploader), patch(
+                "streamlit.testing.v1.element_tree.get_widget_state", side_effect=widget_state_with_editors,
+            ):
+                app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+                app.button[0].click().run(timeout=20)
+                original_names = [file.filename for file in app.session_state["result"]["files"]]
+                edit_output_names(app, {0: "Mindanao campaign", 2: "R3 campaign.csv"})
+                self.assertEqual(len(app.exception), 0)
+                self.assertEqual(len(app.error), 0)
+                result = app.session_state["result"]
+                files = result["download_files"]
+                self.assertEqual(files[0].filename, "Mindanao campaign.csv")
+                self.assertEqual(files[2].filename, "R3 campaign.csv")
+                self.assertEqual([file.filename for file in result["files"]], original_names)
+                next(field for field in app.text_input if field.label == "ZIP filename").set_value("My GEO batch").run(timeout=20)
+                self.assertEqual(app.session_state["result"]["download_zip_filename"], "My GEO batch.zip")
+                with ZipFile(BytesIO(app.session_state["result"]["download_zip_data"])) as archive:
+                    self.assertEqual(archive.namelist(), [file.filename for file in files])
+                    for original, edited in zip(result["files"], files):
+                        self.assertEqual(archive.read(edited.filename), original.data)
+                app.main.selectbox[-1].select("R3 campaign.csv").run(timeout=20)
+                self.assertEqual(app.main.dataframe[-1].value.loc[0, "AREA"], "Region 3")
+                app.text_input(key="output_folder").set_value(directory).run(timeout=20)
+                app.button(key="save_to_folder").click().run(timeout=20)
+                self.assertEqual(len(app.exception), 0)
+                self.assertEqual(len(app.error), 0)
+                saved = Path(app.session_state["result"]["saved_folder"])
+                self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in files})
+                app.run(timeout=20)
+                self.assertEqual(app.session_state["result"]["download_files"][0].filename, "Mindanao campaign.csv")
+                self.assertEqual(app.session_state["result"]["saved_folder"], str(saved))
+                edit_output_names(app, {0: "Changed Mindanao", 2: "R3 campaign.csv"})
+                self.assertNotIn("saved_folder", app.session_state["result"])
+                self.assertTrue((saved / "Mindanao campaign.csv").exists())
+
+    def test_invalid_filename_edits_block_downloads_until_corrected(self):
+        upload = FakeUpload("GEO.xlsx", geo_source_file([sample_row(Area="Mindanao", product="BEL")]))
+
+        def uploader(label, **kwargs):
+            return upload if kwargs.get("key") == "source_upload" else None
+
+        with patch("streamlit.file_uploader", side_effect=uploader), patch(
+            "streamlit.testing.v1.element_tree.get_widget_state", side_effect=widget_state_with_editors,
+        ):
+            app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            app.button[0].click().run(timeout=20)
+            for changes, message in (({0: "Same", 1: "same.csv"}, "unique"), ({0: "../outside"}, "Invalid filename")):
+                edit_output_names(app, changes)
+                self.assertEqual(len(app.exception), 0)
+                self.assertIn(message, app.error[0].value)
+                self.assertEqual(len(app.get("download_button")), 1)
+                self.assertEqual(app.session_state["result"]["count"], 1)
+            edit_output_names(app, {0: "Mindanao Email", 1: "Mindanao Viber"})
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(len(app.get("download_button")), 4)
+
+    def test_geo_email_validation_counts_every_account_in_all_product_groups(self):
+        rows = []
+        for area in ("Mindanao", "Region 3"):
+            for status, product in (("QUALIFIED", "CARDS"), ("QUALIFIED", "BEL"), (None, "CARDS"), (None, "BEL"), (None, "PL")):
+                for email, phone in ((" Ana.Cruz+tag@EXAMPLE.COM ", "09000000000"),
+                                     ("bad..email@example.com", "09000000000"),
+                                     ("bad email@example.com", None), (None, "09000000000"), (None, None)):
+                    rows.append(sample_row(Area=area, product=product, debtor_email=email, phone_1=phone, **{"Christmas Amnesty": status}))
+        rows.insert(1, {})
+        upload = FakeUpload("GEO.xlsx", geo_source_file(rows))
+
+        def uploader(label, **kwargs):
+            return upload if kwargs.get("key") == "source_upload" else None
+
+        with patch("streamlit.file_uploader", side_effect=uploader):
+            app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            app.button[0].click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state["result"]
+            self.assertEqual(result["emails_checked"], 50)
+            self.assertEqual(result["valid_emails"], 10)
+            self.assertEqual(result["invalid_emails"], 20)
+            self.assertEqual(result["missing_email_rows"], 20)
+            self.assertEqual(result["blank_rows"], 1)
+            self.assertEqual(result["count"], 30)
+            self.assertEqual(result["no_contact_rows"], 20)
+            self.assertEqual(len(result["files"]), 20)
+            metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(metrics["Accounts checked for email"], "50")
+            for file in result["files"]:
+                exported = list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
+                if file.channel == "email":
+                    self.assertEqual([row["email"] for row in exported], ["Ana.Cruz+tag@example.com"])
+                else:
+                    self.assertEqual(len(exported), 3)
+                    self.assertTrue(all(row["email"] == "" for row in exported))
+
     def test_geo_area_grouping_preview_review_and_single_group_mode(self):
         upload = FakeUpload("GEO ACTIVE ACCOUNTS.xlsx", geo_source_file([
             sample_row(Area="Mindanao", product="CARDS", level=6, **{"Christmas Amnesty": "QUALIFIED"}),
@@ -1075,7 +1242,7 @@ class AppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
-            self.assertIn("OUTPUT_FILENAMES", app.code[0].value)
+            self.assertTrue(any("Edit output filenames" in caption.value for caption in app.caption))
             app.button[0].click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -1167,7 +1334,7 @@ class AppTests(unittest.TestCase):
             with patch("streamlit.file_uploader", side_effect=uploader):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
                 app.button[0].click().run(timeout=20)
-                app.text_input[0].set_value(str(parent)).run(timeout=20)
+                app.text_input(key="output_folder").set_value(str(parent)).run(timeout=20)
                 self.assertEqual(list(parent.iterdir()), [])
                 app.button(key="save_to_folder").click().run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
@@ -1194,7 +1361,7 @@ class AppTests(unittest.TestCase):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
                 app.radio[0].set_value("All accounts in one group").run(timeout=20)
                 app.button[0].click().run(timeout=20)
-                app.text_input[0].set_value(directory).run(timeout=20)
+                app.text_input(key="output_folder").set_value(directory).run(timeout=20)
                 app.button(key="save_to_folder").click().run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
                 self.assertEqual(len(app.error), 0)

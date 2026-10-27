@@ -111,6 +111,22 @@ class StartupTests(unittest.TestCase):
             assert all(file.group_key == 'mindanao_qualified_cards' and file.count == 6 for file in bundle.files)
         """)
 
+    def test_cached_modules_refresh_for_filename_editor_and_email_counts(self):
+        self.run_isolated("""
+            import automation, exports, folder_output
+            del automation.MappedData.valid_email_rows
+            del automation.MappedData.missing_email_rows
+            del exports.rename_export_files
+            del exports.zip_export_files
+            import app
+            assert hasattr(automation.MappedData, 'valid_email_rows')
+            assert hasattr(automation.MappedData, 'missing_email_rows')
+            assert callable(app.rename_export_files)
+            assert callable(app.zip_export_files)
+            assert exports.AutomationError is automation.AutomationError
+            assert folder_output.AutomationError is automation.AutomationError
+        """)
+
 
 if __name__ == "__main__":
     unittest.main()

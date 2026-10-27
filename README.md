@@ -41,10 +41,10 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
 6. For NEGATIVE, keep **Separate Christmas Amnesty groups** selected to create the groups below. Worksheets with Area default to **Separate Area and Christmas Amnesty groups** instead. **All accounts in one group** skips these group filters. Every group is still split into Email and Viber files.
-7. Click **Preview and prepare files** and review the group counts and previews.
+7. Click **Preview and prepare files**, review the email-validation counts, and edit names in **Edit output filenames**. Double-click a **Filename** cell to rename any CSV, including Mindanao and R3 files separately. The ZIP download name is editable too.
 8. Under **Save to a folder**, enter an output location and click **Save files to folder**. The app displays the full path of the created folder. Individual downloads and **Download all files (ZIP)** are also available.
 
-Changing a file, sheet, header row, export mode, or filename configuration clears the previous result. Prepare a new download after changing inputs.
+Changing a file, sheet, header row, export mode, or default filename configuration clears the previous result. Prepare a new download after changing inputs. Filename edits in the app immediately update individual downloads, ZIP contents, previews, and future folder saves using the prepared data. Duplicate or invalid filenames must be corrected before downloading or saving.
 
 After downloading the ZIP, right-click it and choose **Extract All**, then open the CSV files from the extracted folder to edit them. Opening a CSV directly inside the ZIP can make Excel show a read-only temporary copy and ask you to save another file. Individual CSV downloads and local folder saves can also be opened from their saved location. The app does not set read-only permissions or protect the exported files. See Microsoft's [ZIP extraction instructions](https://support.microsoft.com/en-us/windows/experience/storage-filemanagement/zip-and-unzip-files).
 
@@ -83,7 +83,9 @@ The app shows account counts separately from Email and Viber row counts. Account
 
 Email addresses are checked automatically before export using `email-validator`. Leading and trailing whitespace is trimmed, and valid addresses are normalized. Internal spaces, consecutive dots, dots at the start or end of the local part, missing `@` signs, incomplete domains, and other invalid formats are removed from Email exports. Valid dots and plus tags are retained; the app does not guess corrections to malformed addresses.
 
-An account with an invalid email still goes into its Viber file when it has a phone number. Without a phone number, the account is excluded from both files. The app displays **Invalid emails removed**, including invalid addresses on accounts excluded entirely. Blank email cells are counted as missing, not invalid. This applies to grouped and single-group CSV exports with either template format, ZIP downloads, and folder saves. Source workbooks are never changed.
+Every nonempty source account is checked, including accounts later excluded for having no valid contact details. The app displays **Accounts checked for email**, **Valid email formats**, **Invalid emails removed**, and **Missing emails**. The three email-status counts add up to the accounts checked; entirely empty rows are counted separately.
+
+An account with an invalid email still goes into its Viber file when it has a phone number. Without a phone number, the account is excluded from both files. Invalid-address counts include accounts excluded entirely. Blank email cells are counted as missing, not invalid. This applies to GEO groups, standard NEGATIVE groups, and single-group CSV exports with either template format, ZIP downloads, and folder saves. Source workbooks are never changed.
 
 Validation runs locally without DNS queries, sending messages, or contacting mail servers. It checks the address format, not whether the individual mailbox exists or whether a message will be delivered. A well-formed address may still bounce.
 
@@ -125,11 +127,13 @@ The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `
 
 GEO grouping works on each worksheet with an Area column. **NEGATIVE** remains the default; select one source sheet at a time. **OVERALL** and the other sheets may overlap, so processing them separately does not create a deduplicated combined export.
 
-Edit `GEO_OUTPUT_FILENAMES`, `GEO_AREA_SUFFIXES`, and `GEO_ZIP_FILENAME` in [export_config.py](export_config.py) to change GEO filenames. For example, qualified CARDS at all levels produce `CS AMNESTY GEO CARDS_MINDANAO_Email.csv`, `CS AMNESTY GEO CARDS_MINDANAO_Viber.csv`, and the matching `_R3` files when those groups have accounts. Individual downloads, ZIP downloads, previews, and folder saves use the same separation.
+Rename prepared GEO files directly in the app's **Edit output filenames** table. Group and Channel identify each CSV; only the Filename column is editable. You can use independent names for Mindanao, R3, Email, and Viber files. The app adds `.csv` if omitted. Names are retained for the current prepared batch across ordinary reruns. Renaming preserves all account data and validation results. Saving after a rename creates a new export folder.
+
+To change the defaults, edit `GEO_OUTPUT_FILENAMES`, `GEO_AREA_SUFFIXES`, and `GEO_ZIP_FILENAME` in [export_config.py](export_config.py). For example, qualified CARDS at all levels default to `CS AMNESTY GEO CARDS_MINDANAO_Email.csv`, `CS AMNESTY GEO CARDS_MINDANAO_Viber.csv`, and the matching `_R3` files when those groups have accounts. Individual downloads, ZIP downloads, previews, and folder saves use the same separation.
 
 ## Edit filenames
 
-Open **[export_config.py](export_config.py)** and edit the quoted values on the right:
+Use **Edit output filenames** in the app to rename the prepared CSVs and ZIP. To change the defaults used for new batches, open **[export_config.py](export_config.py)** and edit the quoted values on the right:
 
 ```python
 OUTPUT_FILENAMES = {
@@ -148,7 +152,7 @@ ZIP_FILENAME = "NEGATIVE_CHRISTMAS_AMNESTY_FILES.zip"
 OUTPUT_FOLDER = "output"
 ```
 
-Keep the keys on the left unchanged. Edit the base names in `OUTPUT_FILENAMES`; the app adds `_Email` or `_Viber` before `.csv`. You can edit these suffixes separately in `CHANNEL_SUFFIXES`. Final filenames must be unique and must not contain folder paths. Save the code, rerun the app, and prepare the files again. The app also shows this code under **Filename settings (export_config.py)**.
+Keep the keys on the left unchanged. Edit the base names in `OUTPUT_FILENAMES`; the app adds `_Email` or `_Viber` before `.csv`. You can edit these suffixes separately in `CHANNEL_SUFFIXES`. Final filenames must be unique and must not contain folder paths. Save the code, rerun the app, and prepare the files again to use updated defaults.
 
 ## Mapping
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -138,14 +138,14 @@ def separate_geo(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
 def export_filename(name: str, extension: str) -> str:
     """Allow editable basenames while keeping downloads valid on Windows."""
     if not isinstance(name, str) or not name.strip():
-        raise AutomationError("An export filename is empty. Check export_config.py.")
+        raise AutomationError("Enter a filename for every output.")
     name = name.strip()
     if re.search(r'[<>:"/\\|?*\x00-\x1f]', name) or name.endswith("."):
-        raise AutomationError(f'Invalid export filename "{name}". Edit export_config.py.')
+        raise AutomationError(f'Invalid filename "{name}". Use a plain filename without folder paths or reserved characters.')
     if name.lower().endswith((".xlsx", ".csv", ".zip")):
         name = name.rsplit(".", 1)[0]
     if not name or re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?", name, re.I):
-        raise AutomationError(f'Invalid export filename "{name}". Edit export_config.py.')
+        raise AutomationError(f'Invalid filename "{name}". Choose another name.')
     return name + extension
 
 
@@ -207,17 +207,35 @@ def _build_channel_files(
     return files
 
 
-def _bundle(
-    files: list[ExportFile], counts: dict[str, int], zip_name: str, excluded: int,
-) -> ExportBundle:
+def _check_unique_filenames(files: list[ExportFile]) -> None:
     names = [file.filename.casefold() for file in files]
     if len(set(names)) != len(names):
-        raise AutomationError("Export filenames must be unique. Check export_config.py and CHANNEL_SUFFIXES.")
+        raise AutomationError("Output filenames must be unique. Give each file a different name.")
+
+
+def rename_export_files(files: list[ExportFile], filenames: dict[str, str]) -> list[ExportFile]:
+    """Rename prepared CSVs without changing their data, groups, or routing."""
+    if set(filenames) - {file.key for file in files}:
+        raise AutomationError("The filename list does not match these exports. Prepare the files again.")
+    renamed = [replace(file, filename=export_filename(filenames.get(file.key, file.filename), ".csv")) for file in files]
+    _check_unique_filenames(renamed)
+    return renamed
+
+
+def zip_export_files(files: list[ExportFile]) -> bytes:
+    """Package the currently named CSVs for download."""
+    _check_unique_filenames(files)
     output = BytesIO()
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
         for file in files:
             archive.writestr(file.filename, file.data)
-    return ExportBundle(files, counts, output.getvalue(), zip_name, excluded)
+    return output.getvalue()
+
+
+def _bundle(
+    files: list[ExportFile], counts: dict[str, int], zip_name: str, excluded: int,
+) -> ExportBundle:
+    return ExportBundle(files, counts, zip_export_files(files), zip_name, excluded)
 
 
 def _csv_export_template(

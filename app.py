@@ -18,8 +18,9 @@ from export_config import (
     OUTPUT_FILENAMES, OUTPUT_FOLDER, ZIP_FILENAME,
 )
 from exports import (
-    GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
+    GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS, ExportFile,
     build_geo_exports, build_negative_exports, build_sheet_exports,
+    export_filename, rename_export_files, zip_export_files,
 )
 from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
@@ -72,7 +73,49 @@ def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
     st.caption(f"Showing the first {min(count, 100):,} rows. The file contains all {count:,} rows.")
 
 
-def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
+def show_filename_editor(result: dict) -> tuple[list[ExportFile], bytes, str] | None:
+    """Apply filename edits to downloads and saves while retaining prepared data."""
+    base_files = result["files"]
+    widget_suffix = hash(result["signature"])
+    with st.expander("Edit output filenames", expanded=True):
+        st.caption(
+            "Double-click a Filename cell to rename that CSV. You can name Mindanao and R3 files separately. "
+            "These names apply to individual downloads, the ZIP contents, and folder saves. "
+            "The .csv extension is added automatically if omitted."
+        )
+        edited = st.data_editor(
+            pd.DataFrame([
+                {"Group": file.label.rsplit(" / ", 1)[0], "Channel": file.channel.title(), "Filename": file.filename}
+                for file in base_files
+            ]),
+            disabled=["Group", "Channel"], hide_index=True, num_rows="fixed", width="stretch",
+            column_config={"Filename": st.column_config.TextColumn("Filename", required=True, width="large")},
+            key=f"output_filenames_{widget_suffix}",
+        )
+        zip_name = st.text_input("ZIP filename", value=result["zip_filename"], key=f"zip_filename_{widget_suffix}")
+        try:
+            files = rename_export_files(
+                base_files, {file.key: name for file, name in zip(base_files, edited["Filename"], strict=True)},
+            )
+            zip_name = export_filename(zip_name, ".zip")
+        except AutomationError as exc:
+            st.error(str(exc))
+            return None
+    names = tuple(file.filename for file in files)
+    name_signature = (names, zip_name)
+    if result.get("download_name_signature") != name_signature:
+        result.pop("saved_folder", None)
+        result.pop("saved_file_count", None)
+        result["download_files"] = files
+        result["download_zip_data"] = (
+            result["zip_data"] if names == tuple(file.filename for file in base_files) else zip_export_files(files)
+        )
+        result["download_zip_filename"] = zip_name
+        result["download_name_signature"] = name_signature
+    return result["download_files"], result["download_zip_data"], result["download_zip_filename"]
+
+
+def show_folder_save(result: dict, source_name: str, sheet_name: str, files: list[ExportFile]) -> None:
     st.subheader("Save to a folder")
     output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key="output_folder")
     st.caption(
@@ -81,13 +124,13 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
         "When hosted online, the folder is on the server; use the downloads to save files on your PC."
     )
     if st.button("Save files to folder", type="primary", key="save_to_folder"):
-        files = [(file.filename, file.data) for file in result["files"]]
+        output_files = [(file.filename, file.data) for file in files]
         try:
             folder = save_files_to_folder(
-                files, output_folder, batch_name=f"{Path(source_name).stem}_{sheet_name}",
+                output_files, output_folder, batch_name=f"{Path(source_name).stem}_{sheet_name}",
             )
             result["saved_folder"] = str(folder)
-            result["saved_file_count"] = len(files)
+            result["saved_file_count"] = len(output_files)
             st.session_state["result"] = result
         except AutomationError as exc:
             st.error(str(exc))
@@ -239,12 +282,7 @@ def main() -> None:
                     "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
                     "BLANK: the same three groups, plus other products. Empty groups produce no file."
                 )
-            with st.expander("Filename settings (export_config.py)"):
-                st.caption(
-                    "Edit the quoted filename values in export_config.py, save, and rerun the app. "
-                    "The app adds _Email or _Viber, followed by .csv."
-                )
-                st.code(Path(__file__).with_name("export_config.py").read_text(encoding="utf-8"), language="python")
+    st.caption("After preparing files, use Edit output filenames to rename each CSV and the ZIP directly here.")
 
     with st.expander("Header rows", expanded=False):
         st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
@@ -275,6 +313,7 @@ def main() -> None:
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), tuple(GEO_AREA_SUFFIXES.items()), GEO_ZIP_FILENAME,
+        "editable-filenames-and-email-summary-v1",
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result["signature"] != signature:
@@ -313,6 +352,9 @@ def main() -> None:
                     "blank_rows": mapped.blank_rows_skipped,
                     "no_contact_rows": mapped.no_contact_rows_skipped,
                     "invalid_emails": mapped.invalid_email_rows,
+                    "valid_emails": mapped.valid_email_rows,
+                    "missing_email_rows": mapped.missing_email_rows,
+                    "emails_checked": mapped.valid_email_rows + mapped.invalid_email_rows + mapped.missing_email_rows,
                     "missing_emails": sum(not record["email"] for record in mapped.records),
                     **export_result,
                 }
@@ -336,7 +378,11 @@ def main() -> None:
     blank_col.metric("Empty rows skipped", f"{result['blank_rows']:,}")
     excluded_col.metric("Removed: no valid email or phone", f"{result['no_contact_rows']:,}")
     email_col.metric("Phone-only accounts", f"{result['missing_emails']:,}")
-    st.metric("Invalid emails removed", f"{result['invalid_emails']:,}")
+    checked_col, valid_col, invalid_col, missing_col = st.columns(4)
+    checked_col.metric("Accounts checked for email", f"{result['emails_checked']:,}")
+    valid_col.metric("Valid email formats", f"{result['valid_emails']:,}")
+    invalid_col.metric("Invalid emails removed", f"{result['invalid_emails']:,}")
+    missing_col.metric("Missing emails", f"{result['missing_email_rows']:,}")
     if result["invalid_emails"]:
         st.info(
             f"Removed {result['invalid_emails']:,} invalid email address(es) from Email exports. "
@@ -344,8 +390,11 @@ def main() -> None:
         )
     if not result["count"]:
         return
-    show_folder_save(result, source_file.name, source_sheet)
-    files = result["files"]
+    edited_exports = show_filename_editor(result)
+    if edited_exports is None:
+        return
+    files, zip_data, zip_filename = edited_exports
+    show_folder_save(result, source_file.name, source_sheet, files)
     counts = result["group_counts"]
     labels = (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet}
     review_keys = GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS
@@ -377,7 +426,7 @@ def main() -> None:
         "then open the CSVs in the extracted folder. Individual CSV downloads also work."
     )
     st.download_button(
-        "Download all files (ZIP)", result["zip_data"], result["zip_filename"],
+        "Download all files (ZIP)", zip_data, zip_filename,
         mime="application/zip", type="primary", on_click="ignore",
     )
     for file in files:
@@ -388,7 +437,7 @@ def main() -> None:
     st.subheader("Preview an export")
     selected_file = st.selectbox(
         "File to preview", [file.filename for file in files],
-        key=f"preview_file_{hash(signature)}",
+        key=f"preview_file_{hash((signature, result['download_name_signature']))}",
     )
     file = next(file for file in files if file.filename == selected_file)
     show_preview(file.preview, file.count, file.headers)

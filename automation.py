@@ -80,6 +80,8 @@ class MappedData:
     blank_rows_skipped: int = 0
     no_contact_rows_skipped: int = 0
     invalid_email_rows: int = 0
+    valid_email_rows: int = 0
+    missing_email_rows: int = 0
 
 
 def normalize_header(value: Any) -> str:
@@ -265,6 +267,10 @@ def read_source(data: bytes, sheet_name: str, header_row: int) -> MappedData:
             if not invalid_email and all(_is_blank(value) for value in record.values()):
                 result.blank_rows_skipped += 1
                 continue
+            if record.get("email") is not None:
+                result.valid_email_rows += 1
+            elif not invalid_email:
+                result.missing_email_rows += 1
             if not has_contact_details(record):
                 result.no_contact_rows_skipped += 1
                 continue
