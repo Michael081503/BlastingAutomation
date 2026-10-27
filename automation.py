@@ -42,6 +42,10 @@ DEFAULT_TEMPLATE_HEADERS = (
     "Monthly", "Terms", "doclass", "Level", "Product", "EndoDate", "AREA",
     "ChristmasAmnesty", "NewEndo",
 )
+CSV_OUTPUT_ENCODINGS = {
+    "CSV (Comma delimited)": "cp1252",
+    "CSV UTF-8 (Comma delimited)": "utf-8-sig",
+}
 IDENTIFIER_FIELDS = frozenset({"indexoneuid", "primary_key", "cardnumber", "phone"})
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -384,14 +388,26 @@ def csv_template_headers(data: bytes) -> list[str]:
     return _csv_contents(data)[0]
 
 
-def _csv_header(headers: list[Any] | tuple[str, ...]) -> bytes:
+def _encode_csv(text: str, encoding: str) -> bytes:
+    if encoding not in CSV_OUTPUT_ENCODINGS.values():
+        raise AutomationError("Choose a supported CSV file type.")
+    try:
+        return text.encode(encoding)
+    except UnicodeEncodeError as exc:
+        raise AutomationError(
+            "Some characters cannot be saved in CSV (Comma delimited). "
+            "Select CSV UTF-8 (Comma delimited) to keep the original text."
+        ) from exc
+
+
+def _csv_header(headers: list[Any] | tuple[str, ...], encoding: str = "utf-8-sig") -> bytes:
     output = StringIO(newline="")
     csv.writer(output).writerow(headers)
-    return output.getvalue().encode("utf-8-sig")
+    return _encode_csv(output.getvalue(), encoding)
 
 
-def create_default_csv_template() -> bytes:
-    return _csv_header(DEFAULT_TEMPLATE_HEADERS)
+def create_default_csv_template(*, encoding: str = "cp1252") -> bytes:
+    return _csv_header(DEFAULT_TEMPLATE_HEADERS, encoding)
 
 
 def excel_template_to_csv(template: bytes, sheet_name: str, header_row: int) -> bytes:
@@ -405,11 +421,14 @@ def excel_template_to_csv(template: bytes, sheet_name: str, header_row: int) -> 
         workbook.close()
 
 
-def fill_csv_template(template: bytes, records: list[dict[str, Any]]) -> bytes:
-    headers, delimiter = _csv_contents(template)
+def fill_csv_template(
+    template: bytes, records: list[dict[str, Any]], *, encoding: str = "cp1252",
+) -> bytes:
+    """Always write comma-delimited CSV, regardless of the template delimiter."""
+    headers, _ = _csv_contents(template)
     positions = _column_lookup(headers, template=True)
     output = StringIO(newline="")
-    writer = csv.writer(output, delimiter=delimiter)
+    writer = csv.writer(output, delimiter=",", lineterminator="\r\n")
     writer.writerow(headers)
     for record in records:
         row = [""] * len(headers)
@@ -419,7 +438,7 @@ def fill_csv_template(template: bytes, records: list[dict[str, Any]]) -> bytes:
                 value = value.isoformat(sep=" ") if isinstance(value, datetime) else value.isoformat()
             row[position] = "" if value is None else value
         writer.writerow(row)
-    return output.getvalue().encode("utf-8-sig")
+    return _encode_csv(output.getvalue(), encoding)
 
 
 def output_filename(source_name: str, sheet_name: str, extension: str = ".csv") -> str:

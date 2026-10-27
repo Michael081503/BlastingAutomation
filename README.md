@@ -34,6 +34,7 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 
 1. Upload your source `.xlsx` workbook.
 2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template with all 16 campaign headers. Both template formats produce CSV outputs.
+   **CSV file type** defaults to **CSV (Comma delimited)**, using Windows-1252 without a UTF-8 marker. Choose **CSV UTF-8 (Comma delimited)** when your data needs characters beyond that format. Both choices use commas and `.csv` filenames.
 3. Choose the source sheet. **NEGATIVE** is selected automatically.
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
@@ -42,6 +43,8 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 8. Under **Save to a folder**, enter an output location and click **Save files to folder**. The app displays the full path of the created folder. Individual downloads and **Download all files (ZIP)** are also available.
 
 Changing a file, sheet, header row, export mode, or filename configuration clears the previous result. Prepare a new download after changing inputs.
+
+After downloading the ZIP, right-click it and choose **Extract All**, then open the CSV files from the extracted folder to edit them. Opening a CSV directly inside the ZIP can make Excel show a read-only temporary copy and ask you to save another file. Individual CSV downloads and local folder saves can also be opened from their saved location. The app does not set read-only permissions or protect the exported files. See Microsoft's [ZIP extraction instructions](https://support.microsoft.com/en-us/windows/experience/storage-filemanagement/zip-and-unzip-files).
 
 ## Save directly to a folder
 
@@ -151,9 +154,9 @@ The built-in template uses your original 16-column layout: `email`, `primary_key
 - Rows with no values in any mapped field are skipped. Accounts with neither a valid email nor a phone are removed and counted separately. Invalid emails are removed and counted. Duplicates are retained. Accounts with only a valid email or only a phone go to that channel; accounts with both go to both channels.
 - All generated Email/Viber files are CSV, including individual downloads, files inside ZIP downloads, and folder saves. The blank template download is also CSV.
 - IDs, account numbers, card numbers, and phones retain existing text leading zeros and simple Excel zero masks such as `000000` in the CSV data. Digits already lost in the original Excel file cannot be recovered. CSV has no text column types: import identifier columns as text when opening it in Excel to preserve leading zeros.
-- Dates use ISO text, balances use their source values without currency formatting, and files use UTF-8 with BOM.
+- Dates use ISO text and balances use their source values without currency formatting. The default **CSV (Comma delimited)** uses Windows-1252 without a BOM and Windows line endings. **CSV UTF-8 (Comma delimited)** uses UTF-8 with BOM. Characters unsupported by the standard format produce an actionable error; they are never silently replaced or dropped.
 - Excel templates supply the selected sheet's header labels and column order from the chosen header row. Their CSV outputs use commas. Content above the header, stale template rows, styles, and other worksheets are omitted. Extra template columns are blank. The original template is never changed.
-- CSV templates supply their first-row headers, column order, and delimiter. Extra template columns are blank.
+- CSV templates supply their first-row headers and column order. Comma, semicolon, tab, and pipe delimiters are accepted as inputs; outputs always use commas. Extra template columns are blank.
 - Formula source cells use values cached by Excel. A mapped formula without a saved result stops processing; recalculate and save the source in Excel before uploading again.
 - Use ordinary `.xlsx` or `.csv` templates with a single, unambiguous header row containing all mapped fields. Excel formatting and workbook objects are not included in CSV outputs.
 - Uploaded files and prepared outputs are held in memory. Clicking **Save files to folder** writes output copies to a new folder. Originals are never overwritten. Files are not emailed or sent to external services.

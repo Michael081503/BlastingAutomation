@@ -158,7 +158,7 @@ class EmailValidationTests(unittest.TestCase):
                         for file in bundle.files:
                             self.assertEqual(archive.read(file.filename), file.data)
                             self.assertTrue(file.filename.endswith(".csv"))
-                            self.assertTrue(file.data.startswith(b"\xef\xbb\xbf"))
+                            self.assertFalse(file.data.startswith(b"\xef\xbb\xbf"))
                             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
                             for row in rows[1:]:
                                 values = dict(zip(rows[0], row))
@@ -374,13 +374,38 @@ class TemplateTests(unittest.TestCase):
         template = (";".join(headers) + "\r\n").encode("utf-8-sig")
         self.records[0]["FullName"] = 'Peña, Ana "A"'
         output = fill_csv_template(template, self.records)
-        rows = list(csv.reader(StringIO(output.decode("utf-8-sig")), delimiter=";"))
+        self.assertFalse(output.startswith(b"\xef\xbb\xbf"))
+        rows = list(csv.reader(StringIO(output.decode("cp1252"))))
         self.assertEqual(rows[0], headers)
         row = dict(zip(headers, rows[1]))
         self.assertEqual(row["primary_key"], "0000000456")
         self.assertEqual(row["FullName"], 'Peña, Ana "A"')
         self.assertEqual(row["Extra"], "")
         self.assertEqual(row["endodate"], "2026-10-26 00:00:00")
+
+    def test_every_template_delimiter_produces_comma_delimited_csv(self):
+        for delimiter in (",", ";", "\t", "|"):
+            with self.subTest(delimiter=delimiter):
+                template = StringIO(newline="")
+                csv.writer(template, delimiter=delimiter).writerow(DEFAULT_TEMPLATE_HEADERS)
+                records = [{**self.records[0], "FullName": 'Pe\u00f1a, Ana "A"\nSecond line'}]
+                output = fill_csv_template(template.getvalue().encode("utf-8"), records)
+                rows = list(csv.reader(StringIO(output.decode("cp1252"))))
+                self.assertEqual(rows[0], list(DEFAULT_TEMPLATE_HEADERS))
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(rows[1][DEFAULT_TEMPLATE_HEADERS.index("FullName")], records[0]["FullName"])
+                self.assertEqual(rows[1][DEFAULT_TEMPLATE_HEADERS.index("primary_key")], "0000000456")
+                self.assertIn(b"\r\n", output)
+
+    def test_unsupported_characters_require_utf8_without_losing_data(self):
+        records = [{**self.records[0], "FullName": "Ana \u674e"}]
+        template = create_default_csv_template()
+        with self.assertRaisesRegex(AutomationError, "CSV UTF-8"):
+            fill_csv_template(template, records)
+        output = fill_csv_template(template, records, encoding="utf-8-sig")
+        self.assertTrue(output.startswith(b"\xef\xbb\xbf"))
+        rows = list(csv.DictReader(StringIO(output.decode("utf-8-sig"))))
+        self.assertEqual(rows[0]["FullName"], records[0]["FullName"])
 
     def test_missing_template_headers_and_merged_data_fail(self):
         workbook = Workbook()
@@ -609,7 +634,7 @@ class ChannelTests(unittest.TestCase):
             template, self.records(), "", 1, base_name="Campaign.csv", label="Test", template_extension=".csv",
         )
         for file in bundle.files:
-            rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig")), delimiter=";"))
+            rows = list(csv.reader(StringIO(file.data.decode("cp1252"))))
             self.assertEqual(rows[0], headers)
             expected_keys = ["0001", "0003"] if file.channel == "email" else ["0002", "0003"]
             self.assertEqual([row[headers.index("primary_key")] for row in rows[1:]], expected_keys)
@@ -617,7 +642,7 @@ class ChannelTests(unittest.TestCase):
         bundle = build_sheet_exports(
             template, [self.records()[0]], "", 1, base_name="Only email", label="Test", template_extension=".csv",
         )
-        self.assertEqual(list(csv.reader(StringIO(bundle.files[1].data.decode("utf-8-sig")), delimiter=";")), [headers])
+        self.assertEqual(list(csv.reader(StringIO(bundle.files[1].data.decode("cp1252")))), [headers])
 
     def test_channel_suffix_names_can_be_edited_and_must_be_unique(self):
         self.assertEqual(channel_filename("My campaign.xlsx", "email", ".csv"), "My campaign_Email.csv")
@@ -629,6 +654,20 @@ class ChannelTests(unittest.TestCase):
 
 
 class FolderOutputTests(unittest.TestCase):
+    def test_extracted_csv_can_be_edited_and_saved_in_place(self):
+        records = read_source(source_file(), "NEGATIVE", 1).records
+        bundle = build_sheet_exports(
+            create_default_template(), records, "Template", 1, base_name="Campaign", label="Test",
+        )
+        with TemporaryDirectory(prefix="blasting-extracted-test-") as directory:
+            with ZipFile(BytesIO(bundle.zip_data)) as archive:
+                archive.extractall(directory)
+            filename = Path(directory) / bundle.files[0].filename
+            edited = filename.read_bytes().replace(b"Ana Cruz", b"Ana Updated")
+            filename.write_bytes(edited)
+            rows = list(csv.DictReader(StringIO(filename.read_text(encoding="cp1252"))))
+            self.assertEqual(rows[0]["FullName"], "Ana Updated")
+
     def test_all_files_saved_without_zip_and_previous_exports_kept(self):
         with TemporaryDirectory(prefix="blasting-folder-test-") as directory:
             parent = Path(directory).resolve()
@@ -680,6 +719,34 @@ class FolderOutputTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_file_type_defaults_to_standard_csv_and_change_refreshes_exports(self):
+        upload = FakeUpload("source.xlsx", source_file([sample_row(Name="Pe\u00f1a, Ana")]))
+
+        def uploader(label, **kwargs):
+            return upload if kwargs.get("key") == "source_upload" else None
+
+        with patch("streamlit.file_uploader", side_effect=uploader):
+            app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            self.assertEqual(app.selectbox(key="csv_file_type").value, "CSV (Comma delimited)")
+            for output_format, encoding, has_bom in (
+                ("CSV (Comma delimited)", "cp1252", False),
+                ("CSV UTF-8 (Comma delimited)", "utf-8-sig", True),
+            ):
+                with self.subTest(output_format=output_format):
+                    app.selectbox(key="csv_file_type").set_value(output_format).run(timeout=20)
+                    self.assertEqual(len(app.get("download_button")), 1)
+                    app.button[0].click().run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    result = app.session_state["result"]
+                    with ZipFile(BytesIO(result["zip_data"])) as archive:
+                        for file in result["files"]:
+                            self.assertEqual(file.data.startswith(b"\xef\xbb\xbf"), has_bom)
+                            self.assertEqual(archive.read(file.filename), file.data)
+                            rows = list(csv.DictReader(StringIO(file.data.decode(encoding))))
+                            self.assertEqual(rows[0]["FullName"], "Pe\u00f1a, Ana")
+                            self.assertEqual(list(rows[0]), list(DEFAULT_TEMPLATE_HEADERS))
+
     def test_invalid_emails_removed_and_reported_in_both_export_modes(self):
         invalid_only = sample_row(debtor_email="bad..email@example.com", phone_1=None)
         cases = [
@@ -868,7 +935,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
             self.assertEqual(len(app.get("download_button")), 16)
-            app.selectbox[-1].select(OUTPUT_FILENAMES["blank_other_products"] + "_Email.csv").run(timeout=20)
+            app.main.selectbox[-1].select(OUTPUT_FILENAMES["blank_other_products"] + "_Email.csv").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["count"], 7)
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
@@ -902,7 +969,7 @@ class AppTests(unittest.TestCase):
                     with ZipFile(BytesIO(app.session_state["result"]["zip_data"])) as archive:
                         for file in files:
                             self.assertEqual(csv_template_headers(archive.read(file.filename)), list(DEFAULT_TEMPLATE_HEADERS))
-                    app.selectbox[-1].select(files[1].filename).run(timeout=20)
+                    app.main.selectbox[-1].select(files[1].filename).run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     preview = app.main.dataframe[-1].value
                     self.assertTrue(preview.empty)

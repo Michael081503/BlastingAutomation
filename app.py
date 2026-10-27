@@ -14,6 +14,7 @@ from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
 
 from automation import (
+    CSV_OUTPUT_ENCODINGS,
     DEFAULT_TEMPLATE_HEADERS,
     FIELD_MAPPING,
     TARGET_HEADERS,
@@ -83,9 +84,15 @@ def main() -> None:
     st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
     st.title("Workbook to template")
     st.write("Upload your source file, choose a sheet, and export the mapped values as CSV files.")
-    if st.session_state.get("blank_template_headers") != (DEFAULT_TEMPLATE_HEADERS, ".csv"):
-        st.session_state["blank_template"] = create_default_csv_template()
-        st.session_state["blank_template_headers"] = (DEFAULT_TEMPLATE_HEADERS, ".csv")
+    with st.sidebar:
+        output_format = st.selectbox(
+            "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
+            help="Use CSV UTF-8 for names or other text that the standard CSV format cannot represent.",
+        )
+    encoding = CSV_OUTPUT_ENCODINGS[output_format]
+    if st.session_state.get("blank_template_headers") != (DEFAULT_TEMPLATE_HEADERS, encoding):
+        st.session_state["blank_template"] = create_default_csv_template(encoding=encoding)
+        st.session_state["blank_template_headers"] = (DEFAULT_TEMPLATE_HEADERS, encoding)
     blank_template = st.session_state["blank_template"]
 
     with st.sidebar:
@@ -169,7 +176,7 @@ def main() -> None:
         else:
             template_sheet = ""
             template_info = None
-            st.caption("CSV output uses the template's column order and delimiter.")
+            st.caption("CSV output keeps the template's column order and always separates columns with commas.")
 
     if not any(normalize_header(sheet.name) == "negative" for sheet in source_sheets):
         st.info("No NEGATIVE sheet was found. Choose the sheet you want to process.")
@@ -236,7 +243,7 @@ def main() -> None:
         source_digest, template_digest, source_sheet, source_header,
         template_sheet, template_header, template_extension,
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
-        tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv",
+        tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding,
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result["signature"] != signature:
@@ -252,13 +259,13 @@ def main() -> None:
                     if grouped:
                         bundle = build_negative_exports(
                             template_bytes, mapped.records, template_sheet,
-                            template_header, template_extension,
+                            template_header, template_extension, encoding=encoding,
                         )
                     else:
                         bundle = build_sheet_exports(
                             template_bytes, mapped.records, template_sheet, template_header,
                             base_name=output_filename(source_file.name, source_sheet),
-                            label=source_sheet, template_extension=template_extension,
+                            label=source_sheet, template_extension=template_extension, encoding=encoding,
                         )
                     export_result = {
                         "files": bundle.files,
@@ -331,6 +338,10 @@ def main() -> None:
                     f"{counts[key]:,} rows need review ({GROUP_LABELS[key]}). "
                     "They are included in a separate review file."
                 )
+    st.caption(
+        "To edit files from the ZIP, right-click the downloaded ZIP and choose Extract All, "
+        "then open the CSVs in the extracted folder. Individual CSV downloads also work."
+    )
     st.download_button(
         "Download all files (ZIP)", result["zip_data"], result["zip_filename"],
         mime="application/zip", type="primary", on_click="ignore",

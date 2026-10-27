@@ -143,6 +143,7 @@ def _build_channel_files(
     base_name: str,
     group_key: str,
     group_label: str,
+    encoding: str,
 ) -> list[ExportFile]:
     if not records:
         return []
@@ -150,7 +151,7 @@ def _build_channel_files(
     files = []
     for channel, rows in separate_channels(records).items():
         filename = channel_filename(base_name, channel, ".csv")
-        data = fill_csv_template(template, rows)
+        data = fill_csv_template(template, rows, encoding=encoding)
         files.append(ExportFile(
             key=f"{group_key}_{channel}",
             group_key=group_key,
@@ -198,13 +199,14 @@ def build_sheet_exports(
     base_name: str,
     label: str,
     template_extension: str = ".xlsx",
+    encoding: str = "cp1252",
 ) -> ExportBundle:
     """Export CSV channels using an Excel or CSV template's headers."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     contactable = [record for record in records if has_contact_details(record)]
     files = _build_channel_files(
         template, contactable, base_name=base_name,
-        group_key="all", group_label=label,
+        group_key="all", group_label=label, encoding=encoding,
     )
     return _bundle(
         files, {"all": len(contactable)}, export_filename(base_name, ".zip"),
@@ -218,6 +220,8 @@ def build_negative_exports(
     sheet_name: str,
     header_row: int,
     template_extension: str = ".xlsx",
+    *,
+    encoding: str = "cp1252",
 ) -> ExportBundle:
     """Export every nonempty NEGATIVE group as Email and Viber CSV files."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
@@ -237,7 +241,7 @@ def build_negative_exports(
             continue
         files.extend(_build_channel_files(
             template, rows, base_name=filenames[key],
-            group_key=key, group_label=GROUP_LABELS[key],
+            group_key=key, group_label=GROUP_LABELS[key], encoding=encoding,
         ))
     return _bundle(
         files, counts, zip_name,
