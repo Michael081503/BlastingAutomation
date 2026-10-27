@@ -20,7 +20,7 @@ def save_files_to_folder(
     *,
     batch_name: str,
 ) -> Path:
-    """Create a unique batch folder and save the Excel/CSV files without a ZIP.
+    """Create a unique batch folder and save the CSV files without a ZIP.
 
     Relative paths are resolved from the project folder. Existing export folders
     and files are kept; same-second exports receive a numbered suffix.
@@ -32,7 +32,7 @@ def save_files_to_folder(
     names = []
     for name, _ in files:
         extension = Path(name).suffix.lower()
-        if extension not in {".xlsx", ".csv"} or export_filename(name, extension) != name:
+        if extension != ".csv" or export_filename(name, extension) != name:
             raise AutomationError(f'Invalid output filename "{name}". Check export_config.py.')
         names.append(name.casefold())
     if len(set(names)) != len(names):

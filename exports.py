@@ -1,4 +1,4 @@
-"""Group accounts and fill separate Email/Viber copies of the same template."""
+"""Group accounts and create separate Email/Viber CSV files."""
 
 from __future__ import annotations
 
@@ -10,13 +10,14 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from automation import (
     AutomationError,
+    excel_template_to_csv,
     fill_csv_template,
-    fill_excel_template,
     has_contact_details,
     has_contact_value,
     normalize_header,
 )
 from export_config import CHANNEL_SUFFIXES, OUTPUT_FILENAMES, ZIP_FILENAME
+from email_validation import validated_email
 
 
 GROUP_LABELS = {
@@ -67,7 +68,7 @@ def separate_negative(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
 
     Both statuses split CARDS by Level 1/6 and include BEL at every level.
     Other blank-status products get one file together. Unmatched levels/products
-    get a review file. Accounts missing both email and phone are excluded.
+    get a review file. Accounts without a valid email or phone are excluded.
     """
     groups = {key: [] for key in GROUP_LABELS}
     for record in records:
@@ -110,12 +111,14 @@ def separate_channels(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
     """Route both-contact accounts twice and blank the other contact column.
 
     The source records are not changed. Source order and every other mapped
-    value are retained in each channel; neither-contact records go nowhere.
+    value are retained in each channel. Only valid, normalized email addresses
+    enter Email files; an invalid address does not prevent Viber routing.
     """
     channels = {key: [] for key in CHANNEL_LABELS}
     for record in records:
-        if has_contact_value(record.get("email")):
-            channels["email"].append({**record, "phone": None})
+        email = validated_email(record.get("email"))
+        if email is not None:
+            channels["email"].append({**record, "email": email, "phone": None})
         if has_contact_value(record.get("phone")):
             channels["viber"].append({**record, "email": None})
     return channels
@@ -134,23 +137,17 @@ def channel_filename(base_name: str, channel: str, extension: str) -> str:
 def _build_channel_files(
     template: bytes,
     records: list[dict[str, Any]],
-    sheet_name: str,
-    header_row: int,
     *,
     base_name: str,
     group_key: str,
     group_label: str,
-    extension: str,
 ) -> list[ExportFile]:
     if not records:
         return []
     files = []
     for channel, rows in separate_channels(records).items():
-        filename = channel_filename(base_name, channel, extension)
-        data = (
-            fill_csv_template(template, rows) if extension == ".csv"
-            else fill_excel_template(template, rows, sheet_name, header_row)
-        )
+        filename = channel_filename(base_name, channel, ".csv")
+        data = fill_csv_template(template, rows)
         files.append(ExportFile(
             key=f"{group_key}_{channel}",
             group_key=group_key,
@@ -178,6 +175,16 @@ def _bundle(
     return ExportBundle(files, counts, output.getvalue(), zip_name, excluded)
 
 
+def _csv_export_template(
+    template: bytes, sheet_name: str, header_row: int, template_extension: str,
+) -> bytes:
+    if template_extension == ".xlsx":
+        return excel_template_to_csv(template, sheet_name, header_row)
+    if template_extension == ".csv":
+        return template
+    raise AutomationError("Upload an .xlsx or .csv template. Outputs are always CSV.")
+
+
 def build_sheet_exports(
     template: bytes,
     records: list[dict[str, Any]],
@@ -186,13 +193,14 @@ def build_sheet_exports(
     *,
     base_name: str,
     label: str,
-    extension: str = ".xlsx",
+    template_extension: str = ".xlsx",
 ) -> ExportBundle:
-    """Apply the same channel split when a sheet is exported as one group."""
+    """Export CSV channels using an Excel or CSV template's headers."""
+    template = _csv_export_template(template, sheet_name, header_row, template_extension)
     contactable = [record for record in records if has_contact_details(record)]
     files = _build_channel_files(
-        template, contactable, sheet_name, header_row, base_name=base_name,
-        group_key="all", group_label=label, extension=extension,
+        template, contactable, base_name=base_name,
+        group_key="all", group_label=label,
     )
     return _bundle(
         files, {"all": len(contactable)}, export_filename(base_name, ".zip"),
@@ -205,15 +213,17 @@ def build_negative_exports(
     records: list[dict[str, Any]],
     sheet_name: str,
     header_row: int,
-    extension: str = ".xlsx",
+    template_extension: str = ".xlsx",
 ) -> ExportBundle:
+    """Export every nonempty NEGATIVE group as Email and Viber CSV files."""
+    template = _csv_export_template(template, sheet_name, header_row, template_extension)
     groups = separate_negative(records)
     counts = {key: len(rows) for key, rows in groups.items()}
     filenames = {}
     for key in groups:
         if key not in OUTPUT_FILENAMES:
             raise AutomationError(f'Missing filename for "{key}" in export_config.py.')
-        filenames[key] = export_filename(OUTPUT_FILENAMES[key], extension)
+        filenames[key] = export_filename(OUTPUT_FILENAMES[key], ".csv")
     if len({name.casefold() for name in filenames.values()}) != len(filenames):
         raise AutomationError("Export filenames must be unique. Check export_config.py.")
     zip_name = export_filename(ZIP_FILENAME, ".zip")
@@ -222,8 +232,8 @@ def build_negative_exports(
         if not rows:
             continue
         files.extend(_build_channel_files(
-            template, rows, sheet_name, header_row, base_name=filenames[key],
-            group_key=key, group_label=GROUP_LABELS[key], extension=extension,
+            template, rows, base_name=filenames[key],
+            group_key=key, group_label=GROUP_LABELS[key],
         ))
     return _bundle(
         files, counts, zip_name,

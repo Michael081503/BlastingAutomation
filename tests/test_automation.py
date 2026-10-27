@@ -26,6 +26,7 @@ from automation import (
     read_source,
 )
 from export_config import CHANNEL_SUFFIXES, OUTPUT_FILENAMES
+from email_validation import validated_email
 from exports import (
     build_negative_exports, build_sheet_exports, channel_filename,
     export_filename, separate_channels, separate_negative,
@@ -45,7 +46,7 @@ def save(workbook: Workbook) -> bytes:
 
 def sample_row(**updates):
     row = {
-        "debtor_email": "ana@example.test",
+        "debtor_email": "ana@example.com",
         "OLD I.C": "000123",
         "Account no.": "0000000456",
         "financing/Card no.": "000123456789012345",
@@ -79,6 +80,93 @@ def source_file(rows=None, *, headers=None, title_rows=0, other_sheet=True):
 
 def loaded(data):
     return load_workbook(BytesIO(data))
+
+
+class EmailValidationTests(unittest.TestCase):
+    def test_trim_spaces_without_changing_valid_dots_or_plus_tags(self):
+        self.assertEqual(
+            validated_email(" \tJohn.Smith+campaign@EXAMPLE.COM\n"),
+            "John.Smith+campaign@example.com",
+        )
+
+    def test_malformed_and_non_text_addresses_are_rejected(self):
+        for value in (
+            "john smith@example.com", "john\tsmith@example.com",
+            "john..smith@example.com", ".john@example.com", "john.@example.com",
+            "john@example..com", "john@.example.com", "john@example.com.",
+            "johnexample.com", "john@@example.com", "john@", "@example.com",
+            "john@example", "john@example.invalid", "john@example.test",
+            "john@example.com;other@example.com", "a" * 65 + "@example.com",
+            1234, None, "", " \t",
+        ):
+            with self.subTest(value=value):
+                self.assertIsNone(validated_email(value))
+
+    def test_source_counts_invalid_emails_and_keeps_phone_accounts(self):
+        source = source_file([
+            sample_row(debtor_email="ana..cruz@example.com"),
+            sample_row(debtor_email="ana cruz@example.com", phone_1=None),
+            sample_row(debtor_email=" Ana.Cruz+tag@EXAMPLE.COM ", phone_1=None),
+            sample_row(debtor_email=None),
+            {},
+            {"debtor_email": "not-an-email"},
+        ])
+        result = read_source(source, "NEGATIVE", 1)
+        self.assertEqual(result.invalid_email_rows, 3)
+        self.assertEqual(result.no_contact_rows_skipped, 2)
+        self.assertEqual(result.blank_rows_skipped, 1)
+        self.assertEqual(result.source_rows, [2, 4, 5])
+        self.assertEqual([row["email"] for row in result.records], [None, "Ana.Cruz+tag@example.com", None])
+        # Reading and cleaning the source must not modify the original workbook.
+        workbook = loaded(source)
+        self.addCleanup(workbook.close)
+        self.assertEqual(workbook["NEGATIVE"].cell(2, 1).value, "ana..cruz@example.com")
+
+    def test_invalid_addresses_cannot_enter_grouped_or_single_exports(self):
+        base = read_source(source_file(), "NEGATIVE", 1).records[0]
+        cases = [
+            ("invalid-with-phone", "bad..address@example.com", "09171234567", "QUALIFIED", "CARDS", 1),
+            ("invalid-only", "bad address@example.com", None, "QUALIFIED", "CARDS", 1),
+            ("trimmed", " John.Smith+tag@EXAMPLE.COM ", None, None, "BEL", 5),
+            ("valid", "ana.cruz@example.com", "09181234567", "QUALIFIED", "OTHER", 1),
+        ]
+        records = [
+            {**base, "primary_key": key, "email": email, "phone": phone,
+             "ChristmasAmnesty": status, "product": product, "level": level}
+            for key, email, phone, status, product, level in cases
+        ]
+        original = [dict(row) for row in records]
+        for grouped in (False, True):
+            for extension in (".xlsx", ".csv"):
+                with self.subTest(grouped=grouped, extension=extension):
+                    template = (create_default_template() if extension == ".xlsx"
+                                else (",".join(TARGET_HEADERS) + "\n").encode())
+                    if grouped:
+                        bundle = build_negative_exports(template, records, "Template", 1, extension)
+                    else:
+                        bundle = build_sheet_exports(
+                            template, records, "Template", 1, base_name="Campaign", label="Test",
+                            template_extension=extension,
+                        )
+                    self.assertEqual(bundle.no_contact_rows_skipped, 1)
+                    self.assertEqual(sum(bundle.counts.values()), 3)
+                    actual = {"email": {}, "viber": {}}
+                    with ZipFile(BytesIO(bundle.zip_data)) as archive:
+                        for file in bundle.files:
+                            self.assertEqual(archive.read(file.filename), file.data)
+                            self.assertTrue(file.filename.endswith(".csv"))
+                            self.assertTrue(file.data.startswith(b"\xef\xbb\xbf"))
+                            rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
+                            for row in rows[1:]:
+                                values = dict(zip(rows[0], row))
+                                if values.get("primary_key"):
+                                    actual[file.channel][values["primary_key"]] = values["email"]
+                    self.assertEqual(actual["email"], {
+                        "trimmed": "John.Smith+tag@example.com", "valid": "ana.cruz@example.com",
+                    })
+                    self.assertEqual(set(actual["viber"]), {"invalid-with-phone", "valid"})
+                    self.assertTrue(all(not value for value in actual["viber"].values()))
+        self.assertEqual(records, original)
 
 
 class MappingTests(unittest.TestCase):
@@ -115,7 +203,7 @@ class MappingTests(unittest.TestCase):
         sheet.cell(1, 9, "OB")
         data = read_source(save(workbook), "NEGATIVE", 1)
         self.assertEqual(data.records[0]["OB"], 1250.75)
-        self.assertEqual(data.records[0]["email"], "ana@example.test")
+        self.assertEqual(data.records[0]["email"], "ana@example.com")
 
     def test_sample_product_type_header_and_sixteen_column_template(self):
         workbook = loaded(source_file())
@@ -159,9 +247,9 @@ class MappingTests(unittest.TestCase):
 
     def test_remove_only_accounts_missing_both_email_and_phone(self):
         contacts = [
-            (None, None), (None, "  "), ("a@example.test", None),
-            (None, "09171234567"), ("a@example.test", "09171234567"),
-            ("  ", "\t"), ("", "09171234567"), ("a@example.test", "  "),
+            (None, None), (None, "  "), ("a@example.com", None),
+            (None, "09171234567"), ("a@example.com", "09171234567"),
+            ("  ", "\t"), ("", "09171234567"), ("a@example.com", "  "),
         ]
         source = source_file([sample_row(debtor_email=email, phone_1=phone) for email, phone in contacts])
         result = read_source(source, "NEGATIVE", 1)
@@ -332,7 +420,7 @@ class SeparationTests(unittest.TestCase):
                             for key, rows in groups.items() if key.startswith("blank_") for row in rows))
         self.assertTrue(all(row["ChristmasAmnesty"] == "QUALIFIED" for row in groups["qualified_bel"]))
 
-    def test_zip_has_separate_templates_and_configured_filenames(self):
+    def test_zip_has_separate_csv_files_and_configured_filenames(self):
         records = self.records([
             ("QUALIFIED", "CARDS", "Level 1"),
             ("QUALIFIED", "CARDS", "Level 6"),
@@ -342,19 +430,18 @@ class SeparationTests(unittest.TestCase):
         with patch.dict(OUTPUT_FILENAMES, {"qualified_cards_level_1": "My custom file"}):
             bundle = build_negative_exports(create_default_template(), records, "Template", 1)
         self.assertEqual(len(bundle.files), 8)
-        self.assertEqual(bundle.files[0].filename, "My custom file_Email.xlsx")
-        self.assertEqual(bundle.files[1].filename, "My custom file_Viber.xlsx")
+        self.assertEqual(bundle.files[0].filename, "My custom file_Email.csv")
+        self.assertEqual(bundle.files[1].filename, "My custom file_Viber.csv")
         with ZipFile(BytesIO(bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
             for file in bundle.files:
-                workbook = loaded(archive.read(file.filename))
-                self.addCleanup(workbook.close)
-                headers = [cell.value for cell in workbook.active[1]]
-                actual = dict(zip(headers, [cell.value for cell in workbook.active[2]]))
-                self.assertEqual(workbook.active.max_row, 2)
-                self.assertEqual(actual["ChristmasAmnesty"], None if file.group_key.startswith("blank_") else "QUALIFIED")
+                self.assertTrue(file.filename.endswith(".csv"))
+                rows = list(csv.reader(StringIO(archive.read(file.filename).decode("utf-8-sig"))))
+                actual = dict(zip(rows[0], rows[1]))
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(actual["ChristmasAmnesty"], "" if file.group_key.startswith("blank_") else "QUALIFIED")
                 self.assertEqual(actual["primary_key"], "0000000456")
-                self.assertIsNone(actual["phone"] if file.channel == "email" else actual["email"])
+                self.assertEqual(actual["phone"] if file.channel == "email" else actual["email"], "")
 
     def test_empty_groups_omitted_and_missing_emails_kept(self):
         records = self.records([("QUALIFIED", "BEL", "Level 6")])
@@ -411,9 +498,9 @@ class ChannelTests(unittest.TestCase):
     def records(self):
         base = read_source(source_file(), "NEGATIVE", 1).records[0]
         return [
-            {**base, "primary_key": "0001", "email": "email-only@example.test", "phone": None},
+            {**base, "primary_key": "0001", "email": "email-only@example.com", "phone": None},
             {**base, "primary_key": "0002", "email": None, "phone": "09171234567"},
-            {**base, "primary_key": "0003", "email": "both@example.test", "phone": "09181234567"},
+            {**base, "primary_key": "0003", "email": "both@example.com", "phone": "09181234567"},
             {**base, "primary_key": "0004", "email": " \t", "phone": None},
         ]
 
@@ -427,39 +514,39 @@ class ChannelTests(unittest.TestCase):
         self.assertTrue(all(row["email"] is None for row in channels["viber"]))
         self.assertEqual(records, original)
 
-    def test_channel_workbooks_keep_all_sixteen_headers_and_other_values(self):
+    def test_excel_template_exports_csv_with_all_sixteen_headers_and_other_values(self):
         headers = [
             "email", "primary_key", "indexoneuid", "cardnumber", "FullName", "phone", "OB",
             "Monthly", "Terms", "doclass", "Level", "Product", "EndoDate", "AREA",
             "ChristmasAmnesty", "NewEndo",
         ]
         template = Workbook()
+        template.active.append(["Template title"])
         template.active.append(headers)
+        template.active.append(["Stale template data"] * len(headers))
         template.create_sheet("Instructions").cell(1, 1, "Keep these instructions")
         records = self.records()
         bundle = build_sheet_exports(
-            save(template), records, "Sheet", 1, base_name="Campaign.xlsx", label="Test sheet",
+            save(template), records, "Sheet", 2, base_name="Campaign.xlsx", label="Test sheet",
         )
         self.assertEqual(bundle.counts, {"all": 3})
         self.assertEqual(bundle.no_contact_rows_skipped, 1)
-        self.assertEqual([file.filename for file in bundle.files], ["Campaign_Email.xlsx", "Campaign_Viber.xlsx"])
+        self.assertEqual([file.filename for file in bundle.files], ["Campaign_Email.csv", "Campaign_Viber.csv"])
         self.assertEqual([file.count for file in bundle.files], [2, 2])
         expected_records = {record["primary_key"]: record for record in records}
         for file in bundle.files:
-            workbook = loaded(file.data)
-            self.addCleanup(workbook.close)
-            sheet = workbook["Sheet"]
-            self.assertEqual([cell.value for cell in sheet[1]], headers)
-            for row in sheet.iter_rows(min_row=2, values_only=True):
+            rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
+            self.assertEqual(rows[0], headers)
+            self.assertEqual(len(rows), 3)
+            for row in rows[1:]:
                 values = dict(zip(headers, row))
                 expected = expected_records[values["primary_key"]]
                 for source_header, target in FIELD_MAPPING.items():
                     actual_header = next(header for header in headers if header.casefold() == target.casefold())
                     value = None if target == ("phone" if file.channel == "email" else "email") else expected[target]
-                    self.assertEqual(values[actual_header], value)
+                    self.assertEqual(values[actual_header], "" if value is None else str(value))
                 for header in ("Monthly", "Terms", "doclass", "AREA", "NewEndo"):
-                    self.assertIsNone(values[header])
-            self.assertEqual(workbook["Instructions"].cell(1, 1).value, "Keep these instructions")
+                    self.assertEqual(values[header], "")
 
     def test_each_nonempty_group_keeps_both_files_even_when_one_channel_has_no_rows(self):
         records = [self.records()[0]]
@@ -467,11 +554,22 @@ class ChannelTests(unittest.TestCase):
             create_default_template(), records, "Template", 1, base_name="Email only", label="Test",
         )
         self.assertEqual([file.count for file in bundle.files], [1, 0])
-        workbook = loaded(bundle.files[1].data)
-        self.addCleanup(workbook.close)
-        self.assertEqual(tuple(cell.value for cell in workbook.active[1]), TARGET_HEADERS)
-        data = [row for row in workbook.active.iter_rows(min_row=2, values_only=True) if any(value is not None for value in row)]
-        self.assertEqual(data, [])
+        rows = list(csv.reader(StringIO(bundle.files[1].data.decode("utf-8-sig"))))
+        self.assertEqual(rows, [list(TARGET_HEADERS)])
+
+    def test_excel_template_headers_are_validated_before_csv_export(self):
+        for headers, message in (
+            (["email"], "Template headers are missing"),
+            ([*TARGET_HEADERS, "Email"], "Duplicate or ambiguous header"),
+        ):
+            with self.subTest(headers=headers):
+                template = Workbook()
+                template.active.append(headers)
+                with self.assertRaisesRegex(AutomationError, message):
+                    build_sheet_exports(
+                        save(template), self.records(), "Sheet", 1,
+                        base_name="Campaign", label="Test",
+                    )
 
     def test_every_group_including_review_files_gets_both_channels(self):
         cases = [
@@ -494,7 +592,7 @@ class ChannelTests(unittest.TestCase):
         headers = list(reversed(TARGET_HEADERS))
         template = (";".join(headers) + "\n").encode()
         bundle = build_sheet_exports(
-            template, self.records(), "", 1, base_name="Campaign.csv", label="Test", extension=".csv",
+            template, self.records(), "", 1, base_name="Campaign.csv", label="Test", template_extension=".csv",
         )
         for file in bundle.files:
             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig")), delimiter=";"))
@@ -503,14 +601,14 @@ class ChannelTests(unittest.TestCase):
             self.assertEqual([row[headers.index("primary_key")] for row in rows[1:]], expected_keys)
             self.assertTrue(all(row[headers.index("phone" if file.channel == "email" else "email")] == "" for row in rows[1:]))
         bundle = build_sheet_exports(
-            template, [self.records()[0]], "", 1, base_name="Only email", label="Test", extension=".csv",
+            template, [self.records()[0]], "", 1, base_name="Only email", label="Test", template_extension=".csv",
         )
         self.assertEqual(list(csv.reader(StringIO(bundle.files[1].data.decode("utf-8-sig")), delimiter=";")), [headers])
 
     def test_channel_suffix_names_can_be_edited_and_must_be_unique(self):
-        self.assertEqual(channel_filename("My campaign.xlsx", "email", ".xlsx"), "My campaign_Email.xlsx")
+        self.assertEqual(channel_filename("My campaign.xlsx", "email", ".csv"), "My campaign_Email.csv")
         with patch.dict(CHANNEL_SUFFIXES, {"viber": "_Phone"}):
-            self.assertEqual(channel_filename("My campaign", "viber", ".xlsx"), "My campaign_Phone.xlsx")
+            self.assertEqual(channel_filename("My campaign", "viber", ".csv"), "My campaign_Phone.csv")
         with patch.dict(CHANNEL_SUFFIXES, {"viber": "_Email"}):
             with self.assertRaisesRegex(AutomationError, "unique"):
                 build_sheet_exports(create_default_template(), self.records(), "Template", 1, base_name="Test", label="Test")
@@ -520,7 +618,7 @@ class FolderOutputTests(unittest.TestCase):
     def test_all_files_saved_without_zip_and_previous_exports_kept(self):
         with TemporaryDirectory(prefix="blasting-folder-test-") as directory:
             parent = Path(directory).resolve()
-            files = [("first.xlsx", create_default_template()), ("second.csv", b"email\r\n")]
+            files = [("first.csv", b"email\r\nana@example.com\r\n"), ("second.csv", b"email\r\n")]
             with patch("folder_output.datetime") as test_clock:
                 test_clock.now.return_value = datetime(2026, 10, 26, 21, 0)
                 first = save_files_to_folder(files, parent, batch_name="NEGATIVE")
@@ -533,9 +631,7 @@ class FolderOutputTests(unittest.TestCase):
             self.assertEqual({file.name for file in second.iterdir()}, {name for name, _ in files})
             for name, data in files:
                 self.assertEqual((second / name).read_bytes(), data)
-            workbook = loaded((second / "first.xlsx").read_bytes())
-            self.addCleanup(workbook.close)
-            self.assertEqual(tuple(cell.value for cell in workbook.active[1]), TARGET_HEADERS)
+            self.assertEqual((second / "first.csv").read_bytes(), files[0][1])
 
     def test_relative_output_folder_uses_project_directory(self):
         with TemporaryDirectory(prefix="blasting-folder-test-") as directory:
@@ -551,8 +647,8 @@ class FolderOutputTests(unittest.TestCase):
         with TemporaryDirectory(prefix="blasting-folder-test-") as directory:
             parent = Path(directory).resolve() / "not_created"
             invalid_batches = [
-                [], [("../outside.xlsx", b"data")], [("bad:name.xlsx", b"data")],
-                [("same.xlsx", b"one"), ("SAME.xlsx", b"two")],
+                [], [("../outside.csv", b"data")], [("bad:name.csv", b"data")],
+                [("same.csv", b"one"), ("SAME.csv", b"two")], [("not_csv.xlsx", b"data")],
             ]
             for files in invalid_batches:
                 with self.subTest(files=[name for name, _ in files]):
@@ -570,6 +666,40 @@ class FolderOutputTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_invalid_emails_removed_and_reported_in_both_export_modes(self):
+        invalid_only = sample_row(debtor_email="bad..email@example.com", phone_1=None)
+        cases = [
+            ([invalid_only], 0, 1),
+            ([invalid_only, sample_row(debtor_email="bad email@example.com"),
+              sample_row(debtor_email=" Ana.Cruz+tag@EXAMPLE.COM ", phone_1=None)], 2, 2),
+        ]
+        for rows, included, invalid in cases:
+            for mode in ("Separate Christmas Amnesty groups", "All accounts in one group"):
+                with self.subTest(included=included, mode=mode):
+                    upload = FakeUpload("source.xlsx", source_file(rows))
+
+                    def uploader(label, **kwargs):
+                        return upload if kwargs.get("key") == "source_upload" else None
+
+                    with patch("streamlit.file_uploader", side_effect=uploader):
+                        app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+                        app.radio[0].set_value(mode).run(timeout=20)
+                        app.button[0].click().run(timeout=20)
+                        self.assertEqual(len(app.exception), 0)
+                        self.assertEqual(len(app.error), 0)
+                        result = app.session_state["result"]
+                        self.assertEqual(result["count"], included)
+                        self.assertEqual(result["no_contact_rows"], 1)
+                        self.assertEqual(result["invalid_emails"], invalid)
+                        metrics = {metric.label: metric.value for metric in app.metric}
+                        self.assertEqual(metrics["Invalid emails removed"], str(invalid))
+                        if included:
+                            self.assertEqual([file.count for file in result["files"]], [1, 1])
+                            email_file = next(file for file in result["files"] if file.channel == "email")
+                            self.assertEqual(email_file.preview[0]["email"], "Ana.Cruz+tag@example.com")
+                        else:
+                            self.assertEqual(len(app.get("download_button")), 1)
+
     def test_initial_screen(self):
         app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
         self.assertEqual(len(app.exception), 0)
@@ -595,9 +725,10 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state["result"]["count"], 1)
             self.assertEqual(len(app.get("download_button")), 4)
-            output = loaded(app.session_state["result"]["files"][0].data)
-            self.addCleanup(output.close)
-            self.assertEqual(output.active.cell(2, 5).value, "Ana Cruz")
+            files = app.session_state["result"]["files"]
+            self.assertTrue(all(file.filename.endswith(".csv") for file in files))
+            rows = list(csv.DictReader(StringIO(files[0].data.decode("utf-8-sig"))))
+            self.assertEqual(rows[0]["FullName"], "Ana Cruz")
             # A routine rerun must retain the prepared download.
             app.run(timeout=20)
             self.assertEqual(app.session_state["result"]["count"], 1)
@@ -627,6 +758,49 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertIn("phone_1", app.error[0].value)
             self.assertEqual(len(app.get("download_button")), 1)
+
+    def test_uploaded_excel_template_produces_csv_in_both_export_modes(self):
+        upload = FakeUpload("source.xlsx", source_file([
+            sample_row(product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
+        ]))
+        headers = ["Extra"] + list(reversed(TARGET_HEADERS))
+        workbook = Workbook()
+        workbook.active.title = "Instructions"
+        workbook.active.append(["Instructions are not exported"])
+        sheet = workbook.create_sheet("Layout")
+        sheet.append(["Template title is not exported"])
+        sheet.append(headers)
+        sheet.append(["Stale data is not exported"] * len(headers))
+        template = FakeUpload("template.xlsx", save(workbook))
+
+        def uploader(label, **kwargs):
+            return upload if kwargs.get("key") == "source_upload" else template
+
+        with patch("streamlit.file_uploader", side_effect=uploader):
+            app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            self.assertEqual(app.selectbox[1].value, "Layout")
+            for mode in ("Separate Christmas Amnesty groups", "All accounts in one group"):
+                with self.subTest(mode=mode):
+                    app.radio[0].set_value(mode).run(timeout=20)
+                    app.button[0].click().run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    result = app.session_state["result"]
+                    self.assertEqual(len(result["files"]), 2)
+                    with ZipFile(BytesIO(result["zip_data"])) as archive:
+                        self.assertEqual(archive.namelist(), [file.filename for file in result["files"]])
+                        for file in result["files"]:
+                            self.assertTrue(file.filename.endswith(".csv"))
+                            self.assertEqual(archive.read(file.filename), file.data)
+                            rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
+                            self.assertEqual(rows[0], headers)
+                            self.assertEqual(len(rows), 2)
+                            values = dict(zip(headers, rows[1]))
+                            self.assertEqual(values["Extra"], "")
+                            self.assertEqual(values["primary_key"], "0000000456")
+                            self.assertEqual(values["FullName"], "Ana Cruz")
+                            self.assertEqual(values["endodate"], "2026-10-26 00:00:00")
+                            self.assertEqual(values["phone" if file.channel == "email" else "email"], "")
 
     def test_grouped_exports_default_preview_and_mode_change(self):
         rows = [sample_row(**{"product": product, "level": level, "Christmas Amnesty": status})
@@ -659,7 +833,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
             self.assertEqual(len(app.get("download_button")), 16)
-            app.selectbox[-1].select(OUTPUT_FILENAMES["blank_other_products"] + "_Email.xlsx").run(timeout=20)
+            app.selectbox[-1].select(OUTPUT_FILENAMES["blank_other_products"] + "_Email.csv").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["count"], 7)
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
@@ -706,6 +880,7 @@ class AppTests(unittest.TestCase):
                 self.assertEqual(len(app.error), 0)
                 saved = Path(app.session_state["result"]["saved_folder"])
                 files = app.session_state["result"]["files"]
+                self.assertTrue(all(file.filename.endswith(".csv") for file in files))
                 self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in files})
                 for file in files:
                     self.assertEqual((saved / file.filename).read_bytes(), file.data)

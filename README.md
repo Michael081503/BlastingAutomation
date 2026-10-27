@@ -1,6 +1,6 @@
 # Blasting Automation
 
-A local Streamlit app that copies data from an Excel worksheet into your template. It starts with **NEGATIVE**, separates rows by Christmas Amnesty, product, and level, then creates **Email** and **Viber** files for every group. Other sheets also get Email/Viber files while their grouping rules are pending.
+A local Streamlit app that copies data from an Excel worksheet into your template's column layout. It starts with **NEGATIVE**, separates rows by Christmas Amnesty, product, and level, then creates **Email** and **Viber CSV files** for every group. Other sheets also get Email/Viber CSV files while their grouping rules are pending. Outputs are always `.csv`, whether the template is Excel, CSV, or the built-in blank template.
 
 ## Run
 
@@ -33,7 +33,7 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 ## Use
 
 1. Upload your source `.xlsx` workbook.
-2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank template.
+2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template. Both template formats produce CSV outputs.
 3. Choose the source sheet. **NEGATIVE** is selected automatically.
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
@@ -45,33 +45,42 @@ Changing a file, sheet, header row, export mode, or filename configuration clear
 
 ## Save directly to a folder
 
-The default destination is the project's `output` folder. Each save creates a new folder, for example `output/your_workbook_NEGATIVE_2026-10-26_21-00-00/`, containing the separate Excel files directly. Dates and times use Asia/Manila. An existing export is never overwritten, even when you save twice in the same second. No ZIP is written into this folder.
+The default destination is the project's `output` folder. Each save creates a new folder, for example `output/your_workbook_NEGATIVE_2026-10-26_21-00-00/`, containing the separate CSV files directly. Dates and times use Asia/Manila. An existing export is never overwritten, even when you save twice in the same second. No ZIP is written into this folder.
 
 You can change the **Output folder** field in the app or edit `OUTPUT_FOLDER` in [export_config.py](export_config.py). Relative paths start in the project folder; an absolute path selects another location. Files are saved on the computer running Streamlit: your computer when running locally, or the server when deployed online.
 
-Files are written only after clicking **Save files to folder**. Preparing or previewing the files does not save them. The folder option also works with CSV templates and exports that keep all accounts in one group.
+Files are written only after clicking **Save files to folder**. Preparing or previewing the files does not save them. The folder option works with Excel or CSV templates and exports that keep all accounts in one group. Folder saves accept only CSV files.
 
 ## Email and Viber files
 
-Every nonempty group creates two files using the same template and all its original headers:
+Every nonempty group creates two CSV files using the same template and all its original headers:
 
-- **Email only:** included in `_Email` only.
+- **Valid email only:** included in `_Email` only.
 - **Phone only:** included in `_Viber` only.
-- **Both email and phone:** included in both files.
-- **Neither email nor phone:** excluded from both files.
+- **Valid email and phone:** included in both files.
+- **Invalid email and phone:** included in `_Viber` only.
+- **No valid email and no phone:** excluded from both files.
 
 The **email and phone headers remain in both files**. In `_Email` files, the `phone` column is blank; in `_Viber` files, the `email` column is blank. All other mapped values remain intact. Source rows are not changed, and their order is retained within each file.
 
 For example, the base name `CS AMNESTY NEGA CARDS - L1` produces:
 
 ```text
-CS AMNESTY NEGA CARDS - L1_Email.xlsx
-CS AMNESTY NEGA CARDS - L1_Viber.xlsx
+CS AMNESTY NEGA CARDS - L1_Email.csv
+CS AMNESTY NEGA CARDS - L1_Viber.csv
 ```
 
 If a group has accounts but one channel has no matching accounts, that channel's file still contains the template headers with no account data. A group with no accounts produces no files. This behavior applies to qualified, blank, review, and other-sheet exports, including folder saves, individual downloads, and ZIP downloads.
 
 The app shows account counts separately from Email and Viber row counts. Accounts with both contact details contribute a row to each channel, so adding the channel counts may exceed the number of included source accounts.
+
+### Email validation
+
+Email addresses are checked automatically before export using `email-validator`. Leading and trailing whitespace is trimmed, and valid addresses are normalized. Internal spaces, consecutive dots, dots at the start or end of the local part, missing `@` signs, incomplete domains, and other invalid formats are removed from Email exports. Valid dots and plus tags are retained; the app does not guess corrections to malformed addresses.
+
+An account with an invalid email still goes into its Viber file when it has a phone number. Without a phone number, the account is excluded from both files. The app displays **Invalid emails removed**, including invalid addresses on accounts excluded entirely. Blank email cells are counted as missing, not invalid. This applies to grouped and single-group CSV exports with either template format, ZIP downloads, and folder saves. Source workbooks are never changed.
+
+Validation runs locally without DNS queries, sending messages, or contacting mail servers. It checks the address format, not whether the individual mailbox exists or whether a message will be delivered. A well-formed address may still bounce.
 
 ## NEGATIVE separation
 
@@ -87,11 +96,11 @@ The app shows account counts separately from Email and Viber row counts. Account
 
 The template's `ChristmasAmnesty` column contains `QUALIFIED` when the source is qualified; otherwise it is blank. Matching ignores case and surrounding whitespace. `LEVEL 1` and `Level 1` belong to the same group. BEL includes every level.
 
-Accounts are removed only when **both `debtor_email` and `phone_1` are empty**. An account with either email or phone is kept in its matching channel file(s). Whitespace-only cells count as empty. This condition applies to qualified and blank groups, as well as other source sheets. The app displays the number of accounts removed separately from entirely empty rows.
+Accounts are removed when **there is no valid `debtor_email` and `phone_1` is empty**. An account with a valid email or a phone number is kept in its matching channel file(s). Whitespace-only cells count as empty. This condition applies to qualified and blank groups, as well as other source sheets. The app displays the number of accounts removed separately from entirely empty rows and the number of invalid emails removed.
 
 Empty groups produce no file. Qualified rows outside the product/level rules and blank-status CARDS at levels other than 1 or 6 are put in separate, clearly identified review groups with Email/Viber files. They are never mixed into the other-products group. Every account with at least one contact field is assigned to exactly one group, then routed to its matching channel(s).
 
-With the sample dated October 26, 2026, the three qualified group counts are **8**, **4,277**, and **131**. The four blank group counts are **3,066**, **2,155**, **121**, and **4,059**. This includes **13,817** source accounts after removing **541** without either contact field. The seven groups produce **14 files**, containing **12,414 Email rows** and **13,489 Viber rows**. No accounts need review in this sample.
+Before email validation, the sample dated October 26, 2026 had qualified group counts of **8**, **4,277**, and **131**, and blank group counts of **3,066**, **2,155**, **121**, and **4,059**. It included **13,817** source accounts after removing **541** without either contact field, with **12,414 Email rows** and **13,489 Viber rows**. Validation can reduce Email counts and remove accounts with an invalid email and no phone; prepare the sample again to see its current counts.
 
 ## Edit filenames
 
@@ -114,7 +123,7 @@ ZIP_FILENAME = "NEGATIVE_CHRISTMAS_AMNESTY_FILES.zip"
 OUTPUT_FOLDER = "output"
 ```
 
-Keep the keys on the left unchanged. Edit the base names in `OUTPUT_FILENAMES`; the app adds `_Email` or `_Viber` before `.xlsx` or `.csv`. You can edit these suffixes separately in `CHANNEL_SUFFIXES`. Final filenames must be unique and must not contain folder paths. Save the code, rerun the app, and prepare the files again. The app also shows this code under **Filename settings (export_config.py)**.
+Keep the keys on the left unchanged. Edit the base names in `OUTPUT_FILENAMES`; the app adds `_Email` or `_Viber` before `.csv`. You can edit these suffixes separately in `CHANNEL_SUFFIXES`. Final filenames must be unique and must not contain folder paths. Save the code, rerun the app, and prepare the files again. The app also shows this code under **Filename settings (export_config.py)**.
 
 ## Mapping
 
@@ -139,13 +148,14 @@ Your supplied template has 16 columns. The five columns without mapping rules (`
 ## Output behavior
 
 - Source order is retained within each output group. Hidden and filtered source rows are included.
-- Rows with no values in any mapped field are skipped. Accounts with neither email nor phone are removed and counted separately. Duplicates are retained. Accounts with only email or only phone go to that channel; accounts with both go to both channels.
-- IDs, account numbers, card numbers, and phones are written as Excel text. Existing text leading zeros and simple Excel zero masks such as `000000` are preserved. Digits already lost in the original Excel file cannot be recovered.
-- Dates remain Excel dates and balances retain their original value type. No currency or date-string conversion is applied.
-- Excel exports retain the destination header labels/order, content above the header, the first data row's cell styles, and other worksheets. Data below the selected header is cleared and replaced. Extra template columns are blank. Do not use the selected template sheet to store footer notes or formulas that must be kept.
-- CSV exports retain the template's first-row headers, column order, and delimiter; dates use ISO text, and files use UTF-8 with BOM. CSV has no text column types: import identifier columns as text when opening it in Excel. Use `.xlsx` output when Excel must preserve leading zeros automatically.
+- Rows with no values in any mapped field are skipped. Accounts with neither a valid email nor a phone are removed and counted separately. Invalid emails are removed and counted. Duplicates are retained. Accounts with only a valid email or only a phone go to that channel; accounts with both go to both channels.
+- All generated Email/Viber files are CSV, including individual downloads, files inside ZIP downloads, and folder saves. The blank template download is also CSV.
+- IDs, account numbers, card numbers, and phones retain existing text leading zeros and simple Excel zero masks such as `000000` in the CSV data. Digits already lost in the original Excel file cannot be recovered. CSV has no text column types: import identifier columns as text when opening it in Excel to preserve leading zeros.
+- Dates use ISO text, balances use their source values without currency formatting, and files use UTF-8 with BOM.
+- Excel templates supply the selected sheet's header labels and column order from the chosen header row. Their CSV outputs use commas. Content above the header, stale template rows, styles, and other worksheets are omitted. Extra template columns are blank. The original template is never changed.
+- CSV templates supply their first-row headers, column order, and delimiter. Extra template columns are blank.
 - Formula source cells use values cached by Excel. A mapped formula without a saved result stops processing; recalculate and save the source in Excel before uploading again.
-- Use ordinary `.xlsx` templates. Macros, merged data areas, and tables with totals rows are unsupported. Advanced Excel objects such as shapes may not survive an openpyxl round trip; see the [openpyxl documentation](https://openpyxl.readthedocs.io/en/stable/tutorial.html).
+- Use ordinary `.xlsx` or `.csv` templates with a single, unambiguous header row containing all mapped fields. Excel formatting and workbook objects are not included in CSV outputs.
 - Uploaded files and prepared outputs are held in memory. Clicking **Save files to folder** writes output copies to a new folder. Originals are never overwritten. Files are not emailed or sent to external services.
 
 ## Verification
@@ -154,6 +164,6 @@ Your supplied template has 16 columns. The five columns without mapping rules (`
 python -m unittest discover -s tests -v
 ```
 
-The tests use generated sample data, including reordered headers, leading-zero identifiers, multiple sheets, stale template rows, Excel formulas/errors, all qualified/blank group boundaries, channel routing, retained contact headers, header-only channels, contact exclusions, folder saves, and the Streamlit upload-to-download flow.
+The tests use generated sample data, including CSV output from Excel and CSV templates, reordered headers, leading-zero identifiers, multiple sheets, stale template rows, Excel formulas/errors, all qualified/blank group boundaries, email format validation and removal, channel routing, retained contact headers, header-only channels, contact exclusions, folder saves, ZIP contents, and the Streamlit upload-to-download flow.
 
 The app uses Streamlit's [file uploader](https://docs.streamlit.io/develop/api-reference/widgets/st.file_uploader) and [download button](https://docs.streamlit.io/develop/api-reference/widgets/st.download_button).

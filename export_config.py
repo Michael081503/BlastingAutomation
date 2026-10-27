@@ -1,7 +1,7 @@
 """Edit the filenames here, then save and rerun the Streamlit app.
 
 Change only the quoted names on the RIGHT. Keep the dictionary keys on the LEFT.
-The app adds a channel suffix, then .xlsx or .csv to match your template.
+The app adds a channel suffix, then .csv. All output files are CSV.
 """
 
 # ==================== EDIT YOUR OUTPUT FILENAMES HERE ====================

@@ -11,13 +11,13 @@ import streamlit as st
 from export_config import CHANNEL_SUFFIXES, OUTPUT_FILENAMES, OUTPUT_FOLDER, ZIP_FILENAME
 from exports import GROUP_LABELS, REVIEW_GROUP_KEYS, build_negative_exports, build_sheet_exports
 from folder_output import save_files_to_folder
+from email_validation import EMAIL_VALIDATION_VERSION
 
 from automation import (
     FIELD_MAPPING,
     TARGET_HEADERS,
-    XLSX_MIME,
     AutomationError,
-    create_default_template,
+    create_default_csv_template,
     csv_template_headers,
     default_source_sheet,
     inspect_workbook,
@@ -75,10 +75,10 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
 def main() -> None:
     st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
     st.title("Workbook to template")
-    st.write("Upload your source file, choose a sheet, and fill your template with the mapped values.")
-    if st.session_state.get("blank_template_headers") != TARGET_HEADERS:
-        st.session_state["blank_template"] = create_default_template()
-        st.session_state["blank_template_headers"] = TARGET_HEADERS
+    st.write("Upload your source file, choose a sheet, and export the mapped values as CSV files.")
+    if st.session_state.get("blank_template_headers") != (TARGET_HEADERS, ".csv"):
+        st.session_state["blank_template"] = create_default_csv_template()
+        st.session_state["blank_template_headers"] = (TARGET_HEADERS, ".csv")
     blank_template = st.session_state["blank_template"]
 
     with st.sidebar:
@@ -96,8 +96,8 @@ def main() -> None:
         st.download_button(
             "Download blank template",
             data=blank_template,
-            file_name="blank_template.xlsx",
-            mime=XLSX_MIME,
+            file_name="blank_template.csv",
+            mime="text/csv",
             on_click="ignore",
         )
         st.caption("Save outputs to a folder or download them. Your original files are never overwritten.")
@@ -121,7 +121,7 @@ def main() -> None:
 
     source_bytes = source_file.getvalue()
     template_bytes = template_file.getvalue() if template_file is not None else blank_template
-    template_extension = Path(template_file.name).suffix.lower() if template_file is not None else ".xlsx"
+    template_extension = Path(template_file.name).suffix.lower() if template_file is not None else ".csv"
     source_digest = hashlib.sha256(source_bytes).hexdigest()
     template_digest = hashlib.sha256(template_bytes).hexdigest()
     try:
@@ -162,23 +162,27 @@ def main() -> None:
         else:
             template_sheet = ""
             template_info = None
-            st.caption("The output will use your CSV template's column order and delimiter.")
+            st.caption("CSV output uses the template's column order and delimiter.")
 
     if not any(normalize_header(sheet.name) == "negative" for sheet in source_sheets):
         st.info("No NEGATIVE sheet was found. Choose the sheet you want to process.")
     if template_file is None:
-        st.caption("Using the built-in template with all mapped target headers. Upload your template to use its layout.")
+        st.caption("Using the built-in CSV template with all mapped target headers. Upload your template to use its column layout.")
     else:
         st.caption(
-            "The selected template sheet's data below the header will be replaced. "
-            "Additional template columns will be blank; other sheets are kept."
+            "Outputs are always CSV, using only the selected template headers and column order. "
+            "Additional template columns will be blank."
         )
 
     grouped = False
-    st.caption("Accounts are excluded only when both debtor_email and phone_1 are empty.")
+    st.caption("Accounts are excluded when they have neither a valid email address nor a phone number.")
     st.caption(
-        "Every group produces Email and Viber files using the same headers. "
+        "Every group produces Email and Viber CSV files using the same headers. "
         "Accounts with both contact details appear in both files."
+    )
+    st.caption(
+        "Invalid email formats are removed from Email files. Spaces around valid addresses are trimmed. "
+        "This checks the address format; it does not confirm that a mailbox exists or can receive mail."
     )
     if normalize_header(source_sheet) == "negative":
         grouped = st.radio(
@@ -194,7 +198,7 @@ def main() -> None:
             with st.expander("Filename settings (export_config.py)"):
                 st.caption(
                     "Edit the quoted filename values in export_config.py, save, and rerun the app. "
-                    "The app adds _Email or _Viber, followed by .xlsx or .csv to match your template."
+                    "The app adds _Email or _Viber, followed by .csv."
                 )
                 st.code(Path(__file__).with_name("export_config.py").read_text(encoding="utf-8"), language="python")
 
@@ -225,7 +229,7 @@ def main() -> None:
         source_digest, template_digest, source_sheet, source_header,
         template_sheet, template_header, template_extension,
         TARGET_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
-        tuple(CHANNEL_SUFFIXES.items()),
+        tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv",
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result["signature"] != signature:
@@ -246,8 +250,8 @@ def main() -> None:
                     else:
                         bundle = build_sheet_exports(
                             template_bytes, mapped.records, template_sheet, template_header,
-                            base_name=output_filename(source_file.name, source_sheet, template_extension),
-                            label=source_sheet, extension=template_extension,
+                            base_name=output_filename(source_file.name, source_sheet),
+                            label=source_sheet, template_extension=template_extension,
                         )
                     export_result = {
                         "files": bundle.files,
@@ -261,6 +265,7 @@ def main() -> None:
                     "count": len(mapped.records),
                     "blank_rows": mapped.blank_rows_skipped,
                     "no_contact_rows": mapped.no_contact_rows_skipped,
+                    "invalid_emails": mapped.invalid_email_rows,
                     "missing_emails": sum(not record["email"] for record in mapped.records),
                     **export_result,
                 }
@@ -282,12 +287,17 @@ def main() -> None:
     count_col, blank_col, excluded_col, email_col = st.columns(4)
     count_col.metric("Accounts included", f"{result['count']:,}")
     blank_col.metric("Empty rows skipped", f"{result['blank_rows']:,}")
-    excluded_col.metric("Removed: no email and phone", f"{result['no_contact_rows']:,}")
+    excluded_col.metric("Removed: no valid email or phone", f"{result['no_contact_rows']:,}")
     email_col.metric("Phone-only accounts", f"{result['missing_emails']:,}")
+    st.metric("Invalid emails removed", f"{result['invalid_emails']:,}")
+    if result["invalid_emails"]:
+        st.info(
+            f"Removed {result['invalid_emails']:,} invalid email address(es) from Email exports. "
+            "Accounts with a phone number are still included in Viber exports."
+        )
     if not result["count"]:
         return
     show_folder_save(result, source_file.name, source_sheet)
-    mime = "text/csv" if template_extension == ".csv" else XLSX_MIME
     files = result["files"]
     counts = result["group_counts"]
     labels = GROUP_LABELS if result["grouped"] else {"all": source_sheet}
@@ -321,7 +331,7 @@ def main() -> None:
     for file in files:
         st.download_button(
             f"Download {file.filename}", file.data, file.filename,
-            mime=mime, key=f"download_{file.key}", on_click="ignore",
+            mime="text/csv", key=f"download_{file.key}", on_click="ignore",
         )
     st.subheader("Preview an export")
     selected_file = st.selectbox(

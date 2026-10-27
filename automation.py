@@ -19,6 +19,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import range_boundaries
 from openpyxl.utils.exceptions import InvalidFileException
 
+from email_validation import validated_email
+
 
 FIELD_MAPPING = {
     "debtor_email": "email",
@@ -55,6 +57,7 @@ class MappedData:
     source_rows: list[int]
     blank_rows_skipped: int = 0
     no_contact_rows_skipped: int = 0
+    invalid_email_rows: int = 0
 
 
 def normalize_header(value: Any) -> str:
@@ -178,8 +181,8 @@ def has_contact_value(value: Any) -> bool:
 
 
 def has_contact_details(record: dict[str, Any]) -> bool:
-    """Keep accounts with an email OR phone; exclude only when both are empty."""
-    return has_contact_value(record.get("email")) or has_contact_value(record.get("phone"))
+    """Keep accounts with a valid email address or a nonempty phone field."""
+    return validated_email(record.get("email")) is not None or has_contact_value(record.get("phone"))
 
 
 def _identifier(value: Any, number_format: str) -> str | None:
@@ -213,6 +216,7 @@ def read_source(data: bytes, sheet_name: str, header_row: int) -> MappedData:
             zip(source_iterator, value_iterator), header_row + 1
         ):
             record = {}
+            invalid_email = False
             for target, column in positions.items():
                 original, cell = source_row[column], value_row[column]
                 value = cell.value
@@ -228,12 +232,18 @@ def read_source(data: bytes, sheet_name: str, header_row: int) -> MappedData:
                     )
                 if target in IDENTIFIER_FIELDS:
                     value = _identifier(value, cell.number_format)
+                elif target == "email":
+                    email = validated_email(value)
+                    if not _is_blank(value) and email is None:
+                        invalid_email = True
+                        result.invalid_email_rows += 1
+                    value = email
                 elif _is_blank(value):
                     value = None
                 if target == "ChristmasAmnesty":
                     value = "QUALIFIED" if normalize_header(value) == "qualified" else None
                 record[target] = value
-            if all(_is_blank(value) for value in record.values()):
+            if not invalid_email and all(_is_blank(value) for value in record.values()):
                 result.blank_rows_skipped += 1
                 continue
             if not has_contact_details(record):
@@ -368,6 +378,27 @@ def csv_template_headers(data: bytes) -> list[str]:
     return _csv_contents(data)[0]
 
 
+def _csv_header(headers: list[Any] | tuple[str, ...]) -> bytes:
+    output = StringIO(newline="")
+    csv.writer(output).writerow(headers)
+    return output.getvalue().encode("utf-8-sig")
+
+
+def create_default_csv_template() -> bytes:
+    return _csv_header(TARGET_HEADERS)
+
+
+def excel_template_to_csv(template: bytes, sheet_name: str, header_row: int) -> bytes:
+    """Use only the selected Excel header row as the CSV column layout."""
+    workbook = _load(template)
+    try:
+        headers = _headers(_worksheet(workbook, sheet_name), header_row)
+        _column_lookup(headers, template=True)
+        return _csv_header(headers)
+    finally:
+        workbook.close()
+
+
 def fill_csv_template(template: bytes, records: list[dict[str, Any]]) -> bytes:
     headers, delimiter = _csv_contents(template)
     positions = _column_lookup(headers, template=True)
@@ -385,7 +416,7 @@ def fill_csv_template(template: bytes, records: list[dict[str, Any]]) -> bytes:
     return output.getvalue().encode("utf-8-sig")
 
 
-def output_filename(source_name: str, sheet_name: str, extension: str = ".xlsx") -> str:
+def output_filename(source_name: str, sheet_name: str, extension: str = ".csv") -> str:
     safe_sheet = re.sub(r'[^\w .-]+', "_", sheet_name).strip(" .") or "sheet"
     safe_source = re.sub(r'[^\w .-]+', "_", Path(source_name).stem).strip(" .") or "source"
     return f"{safe_source}_{safe_sheet}_filled{extension}"
