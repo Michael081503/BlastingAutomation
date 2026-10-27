@@ -28,11 +28,11 @@ from automation import (
     inspect_workbook,
     read_source,
 )
-from export_config import CHANNEL_SUFFIXES, OUTPUT_FILENAMES
+from export_config import CHANNEL_SUFFIXES, GEO_AREA_SUFFIXES, GEO_OUTPUT_FILENAMES, OUTPUT_FILENAMES
 from email_validation import validated_email
 from exports import (
-    build_negative_exports, build_sheet_exports, channel_filename,
-    export_filename, separate_channels, separate_negative,
+    GEO_REVIEW_GROUP_KEYS, build_geo_exports, build_negative_exports, build_sheet_exports,
+    channel_filename, export_filename, separate_channels, separate_geo, separate_negative,
 )
 from folder_output import save_files_to_folder
 
@@ -83,6 +83,20 @@ def source_file(rows=None, *, headers=None, title_rows=0, other_sheet=True):
 
 def loaded(data):
     return load_workbook(BytesIO(data))
+
+
+def geo_source_file(rows):
+    aliases = {
+        "name": "Name", "old_ic": "OLD I.C", "account": "Account no.",
+        "card_no": "financing/Card no.", "assign_date": "endo date", "placement": "level",
+        "Product": "product", "OB (MASTERLIST}": "OB (Masterlist)",
+        "Phone 1": "phone_1", "email": "debtor_email", "Area": "Area",
+        "Christmas Amnesty": "Christmas Amnesty",
+    }
+    return source_file(
+        [{header: row.get(source) for header, source in aliases.items()} for row in rows],
+        headers=list(aliases),
+    )
 
 
 class EmailValidationTests(unittest.TestCase):
@@ -653,6 +667,94 @@ class ChannelTests(unittest.TestCase):
                 build_sheet_exports(create_default_template(), self.records(), "Template", 1, base_name="Test", label="Test")
 
 
+class GeoTests(unittest.TestCase):
+    def test_geo_headers_map_aliases_and_copy_area(self):
+        data = geo_source_file([sample_row(Area="Region 3", level="Level 6")])
+        info = next(sheet for sheet in inspect_workbook(data) if sheet.name == "NEGATIVE")
+        self.assertEqual(info.matched_fields, len(FIELD_MAPPING))
+        self.assertTrue(info.has_area)
+        mapped = read_source(data, "NEGATIVE", 1)
+        self.assertEqual(mapped.records[0], {
+            **read_source(source_file([sample_row(level="Level 6")]), "NEGATIVE", 1).records[0],
+            "AREA": "Region 3",
+        })
+        self.assertFalse(next(sheet for sheet in inspect_workbook(source_file()) if sheet.name == "NEGATIVE").has_area)
+
+    def test_geo_aliases_and_area_cannot_be_ambiguous(self):
+        for extra_header in ("debtor_email", "AREA"):
+            with self.subTest(extra_header=extra_header):
+                workbook = loaded(geo_source_file([sample_row(Area="Mindanao")]))
+                sheet = workbook["NEGATIVE"]
+                sheet.cell(1, sheet.max_column + 1, extra_header)
+                with self.assertRaisesRegex(AutomationError, "Duplicate or ambiguous"):
+                    read_source(save(workbook), "NEGATIVE", 1)
+
+    def test_area_groups_keep_product_levels_and_review_accounts(self):
+        cases = [
+            ("QUALIFIED", "CARDS", 1), ("QUALIFIED", "CARDS", 6),
+            ("QUALIFIED", "BEL", 3), ("QUALIFIED", "PL", 5),
+            (None, "CARDS", 1), (None, "CARDS", 6), (None, "BEL", 5),
+            (None, "PL", 3), (None, "CARDS", 2),
+        ]
+        rows = [
+            sample_row(Area=area, product=product, level=level, **{"Christmas Amnesty": status})
+            for area in (" Mindanao ", "REGION 3") for status, product, level in cases
+        ]
+        rows.extend([
+            sample_row(Area="R3", product="BEL", **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Other", product="CARDS", level=1),
+            sample_row(Area=None, product="BEL"),
+            sample_row(Area="Mindanao", debtor_email=None, phone_1=None),
+        ])
+        mapped = read_source(geo_source_file(rows), "NEGATIVE", 1)
+        groups = separate_geo(mapped.records)
+        self.assertEqual(mapped.no_contact_rows_skipped, 1)
+        self.assertEqual(sum(map(len, groups.values())), 21)
+        self.assertEqual(len(groups["mindanao_qualified_cards_level_1"]), 1)
+        self.assertEqual(len(groups["r3_qualified_bel"]), 2)
+        self.assertEqual(len(groups["area_review_blank_cards_level_1"]), 1)
+        self.assertEqual(len(groups["area_review_blank_bel"]), 1)
+        bundle = build_geo_exports(create_default_csv_template(), mapped.records, "", 1, ".csv")
+        self.assertEqual(sum(bundle.counts.values()), 21)
+        self.assertEqual(sum(file.count for file in bundle.files), 42)
+        with ZipFile(BytesIO(bundle.zip_data)) as archive:
+            self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
+            for file in bundle.files:
+                records = list(csv.DictReader(StringIO(archive.read(file.filename).decode("cp1252"))))
+                self.assertEqual(len(records), file.count)
+                for record in records:
+                    if file.group_key.startswith("mindanao_"):
+                        self.assertEqual(record["AREA"].strip(), "Mindanao")
+                    elif file.group_key.startswith("r3_"):
+                        self.assertIn(record["AREA"], ("REGION 3", "R3"))
+                    else:
+                        self.assertIn(file.group_key, GEO_REVIEW_GROUP_KEYS)
+                        self.assertIn(record["AREA"], ("Other", ""))
+                    self.assertEqual(record["ChristmasAmnesty"], "QUALIFIED" if "_qualified_" in file.group_key else "")
+                    self.assertEqual(record["phone" if file.channel == "email" else "email"], "")
+
+    def test_geo_channel_exclusions_header_only_files_and_configured_names(self):
+        data = geo_source_file([
+            sample_row(Area="Mindanao", product="BEL", debtor_email="bad..email@example.com", **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Region 3", product="CARDS", level=1, phone_1=None),
+            sample_row(Area="Region 3", debtor_email="bad email@example.com", phone_1=None),
+        ])
+        mapped = read_source(data, "NEGATIVE", 1)
+        self.assertEqual(mapped.no_contact_rows_skipped, 1)
+        self.assertEqual(mapped.invalid_email_rows, 2)
+        with patch.dict(GEO_OUTPUT_FILENAMES, {"qualified_bel": "Custom.xlsx"}):
+            bundle = build_geo_exports(create_default_template(), mapped.records, "Template", 1)
+        self.assertEqual([file.count for file in bundle.files], [0, 1, 1, 0])
+        self.assertEqual(bundle.files[0].filename, "Custom_MINDANAO_Email.csv")
+        for file in (bundle.files[0], bundle.files[-1]):
+            self.assertEqual(list(csv.reader(StringIO(file.data.decode("cp1252")))), [list(DEFAULT_TEMPLATE_HEADERS)])
+        with patch.dict(GEO_AREA_SUFFIXES, {"r3": "_MINDANAO"}):
+            with self.assertRaisesRegex(AutomationError, "unique"):
+                build_geo_exports(create_default_template(), mapped.records, "Template", 1)
+        with self.assertRaisesRegex(AutomationError, "AREA header"):
+            build_geo_exports((",".join(TARGET_HEADERS) + "\n").encode(), mapped.records, "", 1, ".csv")
+
+
 class FolderOutputTests(unittest.TestCase):
     def test_extracted_csv_can_be_edited_and_saved_in_place(self):
         records = read_source(source_file(), "NEGATIVE", 1).records
@@ -719,6 +821,40 @@ class FolderOutputTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_geo_area_grouping_preview_review_and_single_group_mode(self):
+        upload = FakeUpload("GEO ACTIVE ACCOUNTS.xlsx", geo_source_file([
+            sample_row(Area="Mindanao", product="CARDS", level=6, **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Region 3", product="BEL", debtor_email=None),
+            sample_row(Area="Mindanao", product="PL", phone_1=None),
+            sample_row(Area="Other", product="CARDS", level=2, **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Mindanao", debtor_email=None, phone_1=None),
+        ]))
+
+        def uploader(label, **kwargs):
+            return upload if kwargs.get("key") == "source_upload" else None
+
+        with patch("streamlit.file_uploader", side_effect=uploader):
+            app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            self.assertEqual(app.radio[0].value, "Separate Area and Christmas Amnesty groups")
+            app.button[0].click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state["result"]
+            self.assertEqual(result["count"], 4)
+            self.assertEqual(result["no_contact_rows"], 1)
+            self.assertEqual(len(result["files"]), 8)
+            self.assertTrue(any("need review" in warning.value for warning in app.warning))
+            file = next(file for file in result["files"] if file.group_key == "r3_blank_bel" and file.channel == "viber")
+            app.main.selectbox[-1].select(file.filename).run(timeout=20)
+            self.assertEqual(app.main.dataframe[-1].value.loc[0, "AREA"], "Region 3")
+            app.radio[0].set_value("All accounts in one group").run(timeout=20)
+            self.assertEqual(len(app.get("download_button")), 1)
+            app.button[0].click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(len(app.session_state["result"]["files"]), 2)
+            self.assertEqual(app.session_state["result"]["count"], 4)
+
     def test_file_type_defaults_to_standard_csv_and_change_refreshes_exports(self):
         upload = FakeUpload("source.xlsx", source_file([sample_row(Name="Pe\u00f1a, Ana")]))
 

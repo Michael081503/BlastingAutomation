@@ -1,6 +1,6 @@
 # Blasting Automation
 
-A local Streamlit app that copies data from an Excel worksheet into your template's column layout. It starts with **NEGATIVE**, separates rows by Christmas Amnesty, product, and level, then creates **Email** and **Viber CSV files** for every group. Other sheets also get Email/Viber CSV files while their grouping rules are pending. Outputs are always `.csv`, whether the template is Excel, CSV, or the built-in blank template.
+A local Streamlit app that copies data from an Excel worksheet into your template's column layout. It starts with **NEGATIVE**, separates rows by Christmas Amnesty, product, and level, then creates **Email** and **Viber CSV files** for every group. GEO worksheets with an **Area** column first separate **Mindanao** and **R3**. Other sheets without Area also get Email/Viber CSV files while their grouping rules are pending. Outputs are always `.csv`, whether the template is Excel, CSV, or the built-in blank template.
 
 ## Run
 
@@ -38,7 +38,7 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 3. Choose the source sheet. **NEGATIVE** is selected automatically.
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
-6. For NEGATIVE, keep **Separate Christmas Amnesty groups** selected to create the groups below. **All accounts in one group** skips these group filters. Every group is still split into Email and Viber files.
+6. For NEGATIVE, keep **Separate Christmas Amnesty groups** selected to create the groups below. Worksheets with Area default to **Separate Area and Christmas Amnesty groups** instead. **All accounts in one group** skips these group filters. Every group is still split into Email and Viber files.
 7. Click **Preview and prepare files** and review the group counts and previews.
 8. Under **Save to a folder**, enter an output location and click **Save files to folder**. The app displays the full path of the created folder. Individual downloads and **Download all files (ZIP)** are also available.
 
@@ -105,6 +105,16 @@ Empty groups produce no file. Qualified rows outside the product/level rules and
 
 Before email validation, the sample dated October 26, 2026 had qualified group counts of **8**, **4,277**, and **131**, and blank group counts of **3,066**, **2,155**, **121**, and **4,059**. It included **13,817** source accounts after removing **541** without either contact field, with **12,414 Email rows** and **13,489 Viber rows**. Validation can reduce Email counts and remove accounts with an invalid email and no phone; prepare the sample again to see its current counts.
 
+## GEO Area separation
+
+For GEO workbooks, the app detects the **Area** source column and defaults to **Separate Area and Christmas Amnesty groups**. `Mindanao` and `Region 3` / `R3` form separate groups, ignoring case, spacing, and punctuation. Each Area then uses the same qualified/blank, product, and level rules above, followed by Email/Viber routing. Qualified or blank product/level exceptions still go to review files. Other or missing Area values are kept in separate Area review files.
+
+The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `placement`, `Product`, `OB (MASTERLIST}`, and `Phone 1` are accepted. `assign_date` supplies `EndoDate`; `placement` supplies `Level`. The source Area is copied into `AREA`, preserving `Region 3` as the source value even though its group is named R3. Area is optional for existing workbooks. GEO grouped exports require an AREA template header; the built-in 16-column template already includes it.
+
+GEO grouping works on each worksheet with an Area column. **NEGATIVE** remains the default; select one source sheet at a time. **OVERALL** and the other sheets may overlap, so processing them separately does not create a deduplicated combined export.
+
+Edit `GEO_OUTPUT_FILENAMES`, `GEO_AREA_SUFFIXES`, and `GEO_ZIP_FILENAME` in [export_config.py](export_config.py) to change GEO filenames. For example, qualified CARDS Level 6 produces `CS AMNESTY GEO CARDS - L6_MINDANAO_Email.csv`, `CS AMNESTY GEO CARDS - L6_MINDANAO_Viber.csv`, and the matching `_R3` files when those groups have accounts. Individual downloads, ZIP downloads, previews, and folder saves use the same separation.
+
 ## Edit filenames
 
 Open **[export_config.py](export_config.py)** and edit the quoted values on the right:
@@ -143,10 +153,11 @@ Keep the keys on the left unchanged. Edit the base names in `OUTPUT_FILENAMES`; 
 | OB (Masterlist) | OB |
 | phone_1 | phone |
 | Christmas Amnesty | ChristmasAmnesty |
+| Area (optional) | AREA |
 
-Header matching ignores capitalization, whitespace, and punctuation. `Product Type` is also accepted for `product`, matching your sample workbook. `OB` is also accepted as a source header for `OB (Masterlist)`. All eleven source and destination headers must be present; missing or ambiguous headers are reported before export. Header detection scans the first 50 rows; enter a row manually when headers appear later.
+Header matching ignores capitalization, whitespace, and punctuation. `Product Type` is also accepted for `product`, matching your sample workbook. `OB` is also accepted as a source header for `OB (Masterlist)`. GEO aliases are listed above. All eleven required source and destination headers must be present; Area is optional outside grouped GEO exports. Missing or ambiguous headers are reported before export, including duplicate optional Area headers. Header detection scans the first 50 rows; enter a row manually when headers appear later.
 
-The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. The five columns without mapping rules (`Monthly`, `Terms`, `doclass`, `AREA`, and `NewEndo`) are retained and left blank. Uploaded templates keep their own header labels and order. Export previews show all file headers, including columns with blank values and channels with no rows.
+The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. The four columns without mapping rules (`Monthly`, `Terms`, `doclass`, and `NewEndo`) are retained and left blank. AREA is filled when present in the source and otherwise stays blank. Uploaded templates keep their own header labels and order. Export previews show all file headers, including columns with blank values and channels with no rows.
 
 ## Output behavior
 

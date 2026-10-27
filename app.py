@@ -8,8 +8,14 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from export_config import CHANNEL_SUFFIXES, OUTPUT_FILENAMES, OUTPUT_FOLDER, ZIP_FILENAME
-from exports import GROUP_LABELS, REVIEW_GROUP_KEYS, build_negative_exports, build_sheet_exports
+from export_config import (
+    CHANNEL_SUFFIXES, GEO_AREA_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
+    OUTPUT_FILENAMES, OUTPUT_FOLDER, ZIP_FILENAME,
+)
+from exports import (
+    GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
+    build_geo_exports, build_negative_exports, build_sheet_exports,
+)
 from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
 
@@ -17,6 +23,8 @@ from automation import (
     CSV_OUTPUT_ENCODINGS,
     DEFAULT_TEMPLATE_HEADERS,
     FIELD_MAPPING,
+    MAPPING_VERSION,
+    OPTIONAL_FIELD_MAPPING,
     TARGET_HEADERS,
     AutomationError,
     create_default_csv_template,
@@ -34,14 +42,17 @@ def workbook_info(data: bytes, *, template: bool = False):
     slot = "template_info" if template else "source_info"
     digest = hashlib.sha256(data).hexdigest()
     previous = st.session_state.get(slot)
-    if previous is None or len(previous) != 3 or previous[:2] != (digest, TARGET_HEADERS):
-        previous = (digest, TARGET_HEADERS, inspect_workbook(data, template=template))
+    if previous is None or len(previous) != 3 or previous[:2] != (digest, MAPPING_VERSION):
+        previous = (digest, MAPPING_VERSION, inspect_workbook(data, template=template))
         st.session_state[slot] = previous
     return previous[2]
 
 
 def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
-    targets = {normalize_header(target): target for target in TARGET_HEADERS}
+    targets = {
+        normalize_header(target): target
+        for target in (*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values())
+    }
     columns = [targets.get(normalize_header(header)) for header in headers]
     preview = pd.DataFrame(
         [[record.get(target) for target in columns] for record in records],
@@ -98,13 +109,14 @@ def main() -> None:
     with st.sidebar:
         st.subheader("Your field mapping")
         st.dataframe(
-            pd.DataFrame(FIELD_MAPPING.items(), columns=["Source header", "Template header"]),
+            pd.DataFrame({**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items(), columns=["Source header", "Template header"]),
             hide_index=True,
             width="stretch",
         )
         st.caption(
             "Headers ignore case, spacing, and punctuation. "
-            "Product Type is accepted for product; OB is accepted for OB (Masterlist)."
+            "GEO aliases are accepted, including email, account, card_no, assign_date, and placement. "
+            "Area is copied when present; it is optional for other workbooks."
         )
         st.divider()
         st.download_button(
@@ -189,6 +201,7 @@ def main() -> None:
         )
 
     grouped = False
+    geo = source_info.has_area
     st.caption("Accounts are excluded when they have neither a valid email address nor a phone number.")
     st.caption(
         "Every group produces Email and Viber CSV files using the same headers. "
@@ -198,13 +211,19 @@ def main() -> None:
         "Invalid email formats are removed from Email files. Spaces around valid addresses are trimmed. "
         "This checks the address format; it does not confirm that a mailbox exists or can receive mail."
     )
-    if normalize_header(source_sheet) == "negative":
+    if geo or normalize_header(source_sheet) == "negative":
+        grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
         grouped = st.radio(
             "Output files",
-            ["Separate Christmas Amnesty groups", "All accounts in one group"],
+            [grouped_label, "All accounts in one group"],
             key=f"output_mode_{source_digest}",
-        ) == "Separate Christmas Amnesty groups"
+        ) == grouped_label
         if grouped:
+            if geo:
+                st.caption(
+                    "Mindanao and R3 (Region 3) are separated first, then each Area uses the groups below. "
+                    "Other or missing Area values go to separate review files. AREA retains its source value."
+                )
             st.caption(
                 "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
                 "BLANK: the same three groups, plus other products. Empty groups produce no file."
@@ -243,7 +262,8 @@ def main() -> None:
         source_digest, template_digest, source_sheet, source_header,
         template_sheet, template_header, template_extension,
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
-        tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding,
+        tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
+        tuple(GEO_OUTPUT_FILENAMES.items()), tuple(GEO_AREA_SUFFIXES.items()), GEO_ZIP_FILENAME,
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result["signature"] != signature:
@@ -257,7 +277,8 @@ def main() -> None:
                 export_result = {}
                 if mapped.records:
                     if grouped:
-                        bundle = build_negative_exports(
+                        builder = build_geo_exports if geo else build_negative_exports
+                        bundle = builder(
                             template_bytes, mapped.records, template_sheet,
                             template_header, template_extension, encoding=encoding,
                         )
@@ -276,6 +297,7 @@ def main() -> None:
                 st.session_state["result"] = {
                     "signature": signature,
                     "grouped": grouped,
+                    "geo": geo,
                     "count": len(mapped.records),
                     "blank_rows": mapped.blank_rows_skipped,
                     "no_contact_rows": mapped.no_contact_rows_skipped,
@@ -314,7 +336,8 @@ def main() -> None:
     show_folder_save(result, source_file.name, source_sheet)
     files = result["files"]
     counts = result["group_counts"]
-    labels = GROUP_LABELS if result["grouped"] else {"all": source_sheet}
+    labels = (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet}
+    review_keys = GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS
     by_channel = {(file.group_key, file.channel): file for file in files}
     st.subheader("Separated files")
     st.dataframe(pd.DataFrame([
@@ -325,17 +348,17 @@ def main() -> None:
             "Viber rows": by_channel[(key, "viber")].count if (key, "viber") in by_channel else 0,
         }
         for key, label in labels.items()
-        if key not in REVIEW_GROUP_KEYS or counts[key]
+        if key not in review_keys or counts[key]
     ]), hide_index=True, width="stretch")
     st.caption(
         "Accounts with both contact details are counted once under Accounts and appear in both files. "
         "Email files leave phone blank; Viber files leave email blank. All headers are retained."
     )
     if result["grouped"]:
-        for key in GROUP_LABELS:
-            if key in REVIEW_GROUP_KEYS and counts[key]:
+        for key in labels:
+            if key in review_keys and counts[key]:
                 st.warning(
-                    f"{counts[key]:,} rows need review ({GROUP_LABELS[key]}). "
+                    f"{counts[key]:,} rows need review ({labels[key]}). "
                     "They are included in a separate review file."
                 )
     st.caption(

@@ -17,7 +17,10 @@ from automation import (
     has_contact_value,
     normalize_header,
 )
-from export_config import CHANNEL_SUFFIXES, OUTPUT_FILENAMES, ZIP_FILENAME
+from export_config import (
+    CHANNEL_SUFFIXES, GEO_AREA_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
+    OUTPUT_FILENAMES, ZIP_FILENAME,
+)
 from email_validation import validated_email
 
 
@@ -34,6 +37,15 @@ GROUP_LABELS = {
 }
 REVIEW_GROUP_KEYS = frozenset({"qualified_review", "blank_review"})
 CHANNEL_LABELS = {"email": "Email", "viber": "Viber"}
+AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
+GEO_GROUP_LABELS = {
+    f"{area}_{key}": f"{label} / {group_label}"
+    for area, label in AREA_LABELS.items() for key, group_label in GROUP_LABELS.items()
+}
+GEO_REVIEW_GROUP_KEYS = frozenset(
+    f"{area}_{key}" for area in AREA_LABELS for key in GROUP_LABELS
+    if area == "area_review" or key in REVIEW_GROUP_KEYS
+)
 
 
 @dataclass
@@ -92,6 +104,17 @@ def separate_negative(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
             key = f"{prefix}_review"
         # Also enforce the template value for callers that supply records directly.
         groups[key].append({**record, "ChristmasAmnesty": "QUALIFIED" if qualified else None})
+    return groups
+
+
+def separate_geo(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Apply the existing groups within Mindanao and R3 without losing other areas."""
+    groups = {key: [] for key in GEO_GROUP_LABELS}
+    for key, rows in separate_negative(records).items():
+        for record in rows:
+            area = normalize_header(record.get("AREA"))
+            area_key = "mindanao" if area == "mindanao" else "r3" if area in {"r3", "region3"} else "area_review"
+            groups[f"{area_key}_{key}"].append(record)
     return groups
 
 
@@ -224,24 +247,66 @@ def build_negative_exports(
     encoding: str = "cp1252",
 ) -> ExportBundle:
     """Export every nonempty NEGATIVE group as Email and Viber CSV files."""
+    return _build_grouped_exports(
+        template, records, sheet_name, header_row, template_extension,
+        groups=separate_negative(records), labels=GROUP_LABELS, names=OUTPUT_FILENAMES,
+        zip_name=ZIP_FILENAME, encoding=encoding,
+    )
+
+
+def build_geo_exports(
+    template: bytes,
+    records: list[dict[str, Any]],
+    sheet_name: str,
+    header_row: int,
+    template_extension: str = ".xlsx",
+    *,
+    encoding: str = "cp1252",
+) -> ExportBundle:
+    """Create CSV files by Area, Christmas Amnesty, product/level, and channel."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
-    groups = separate_negative(records)
+    if not any(normalize_header(header) == "area" for header in csv_template_headers(template)):
+        raise AutomationError("GEO exports need an AREA header in the template. Use the built-in 16-column template.")
+    names = {}
+    for area in AREA_LABELS:
+        if area not in GEO_AREA_SUFFIXES:
+            raise AutomationError(f'Missing Area suffix for "{area}" in export_config.py.')
+        suffix = GEO_AREA_SUFFIXES[area]
+        if not isinstance(suffix, str) or not suffix.strip():
+            raise AutomationError(f'The "{area}" Area suffix is empty. Check export_config.py.')
+        for key in GROUP_LABELS:
+            if key not in GEO_OUTPUT_FILENAMES:
+                raise AutomationError(f'Missing GEO filename for "{key}" in export_config.py.')
+            base = export_filename(GEO_OUTPUT_FILENAMES[key], ".csv")[:-4]
+            names[f"{area}_{key}"] = base + suffix
+    return _build_grouped_exports(
+        template, records, "", 1, ".csv", groups=separate_geo(records),
+        labels=GEO_GROUP_LABELS, names=names, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
+    )
+
+
+def _build_grouped_exports(
+    template: bytes, records: list[dict[str, Any]], sheet_name: str, header_row: int,
+    template_extension: str, *, groups: dict[str, list[dict[str, Any]]],
+    labels: dict[str, str], names: dict[str, str], zip_name: str, encoding: str,
+) -> ExportBundle:
+    template = _csv_export_template(template, sheet_name, header_row, template_extension)
     counts = {key: len(rows) for key, rows in groups.items()}
     filenames = {}
     for key in groups:
-        if key not in OUTPUT_FILENAMES:
+        if key not in names:
             raise AutomationError(f'Missing filename for "{key}" in export_config.py.')
-        filenames[key] = export_filename(OUTPUT_FILENAMES[key], ".csv")
+        filenames[key] = export_filename(names[key], ".csv")
     if len({name.casefold() for name in filenames.values()}) != len(filenames):
         raise AutomationError("Export filenames must be unique. Check export_config.py.")
-    zip_name = export_filename(ZIP_FILENAME, ".zip")
+    zip_name = export_filename(zip_name, ".zip")
     files = []
     for key, rows in groups.items():
         if not rows:
             continue
         files.extend(_build_channel_files(
             template, rows, base_name=filenames[key],
-            group_key=key, group_label=GROUP_LABELS[key], encoding=encoding,
+            group_key=key, group_label=labels[key], encoding=encoding,
         ))
     return _bundle(
         files, counts, zip_name,

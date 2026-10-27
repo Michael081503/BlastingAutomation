@@ -35,6 +35,17 @@ FIELD_MAPPING = {
     "phone_1": "phone",
     "Christmas Amnesty": "ChristmasAmnesty",
 }
+OPTIONAL_FIELD_MAPPING = {"Area": "AREA"}
+SOURCE_ALIASES = {
+    "debtor_email": ("email",),
+    "Account no.": ("account",),
+    "financing/Card no.": ("card_no",),
+    "endo date": ("assign_date",),
+    "level": ("placement",),
+    "product": ("Product Type",),
+    "OB (Masterlist)": ("OB",),
+}
+MAPPING_VERSION = 2
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 # Keep the full campaign layout separate from the fields required for mapping.
 DEFAULT_TEMPLATE_HEADERS = (
@@ -59,6 +70,7 @@ class SheetInfo:
     name: str
     header_row: int
     matched_fields: int
+    has_area: bool = False
 
 
 @dataclass
@@ -77,12 +89,7 @@ def normalize_header(value: Any) -> str:
 
 
 def _source_aliases(source: str) -> set[str]:
-    labels = {normalize_header(source)}
-    if source == "OB (Masterlist)":
-        labels.add("ob")
-    elif source == "product":
-        labels.add("producttype")
-    return labels
+    return {normalize_header(label) for label in (source, *SOURCE_ALIASES.get(source, ()))}
 
 
 def _load(data: bytes, *, read_only: bool = True, data_only: bool = False):
@@ -127,10 +134,12 @@ def inspect_workbook(data: bytes, *, template: bool = False) -> list[SheetInfo]:
     """Find likely header rows without loading all the worksheet data into memory."""
     workbook = _load(data)
     try:
-        return [
-            SheetInfo(sheet.title, *_detect_header(sheet, template=template))
-            for sheet in workbook.worksheets
-        ]
+        sheets = []
+        for sheet in workbook.worksheets:
+            header_row, matched_fields = _detect_header(sheet, template=template)
+            has_area = any(normalize_header(header) == "area" for header in _headers(sheet, header_row))
+            sheets.append(SheetInfo(sheet.title, header_row, matched_fields, has_area))
+        return sheets
     finally:
         workbook.close()
 
@@ -160,18 +169,18 @@ def _column_lookup(headers: list[Any], *, template: bool = False) -> dict[str, i
     normalized = [normalize_header(value) for value in headers]
     positions = {}
     missing = []
-    for source, target in FIELD_MAPPING.items():
+    for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items():
         aliases = {normalize_header(target)} if template else _source_aliases(source)
         matches = [index for index, value in enumerate(normalized) if value in aliases]
         label = target if template else source
-        if not matches:
+        if not matches and source in FIELD_MAPPING:
             missing.append(label)
         elif len(matches) > 1:
             raise AutomationError(
                 f'Duplicate or ambiguous header "{label}". '
                 "Give that column a unique header before processing."
             )
-        else:
+        elif matches:
             positions[target] = matches[0]
     if missing:
         kind = "Template" if template else "Source"
