@@ -26,7 +26,7 @@ def refresh_application_modules() -> set[str]:
         ("email_validation", ("EMAIL_VALIDATION_VERSION", "validated_email"), ()),
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",
-            "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME",
+            "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME", "AUTOSTAT_BEL_FILENAMES",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (
@@ -41,7 +41,8 @@ def refresh_application_modules() -> set[str]:
         ("folder_output", ("save_files_to_folder",), ("automation", "exports")),
         ("autostat", (
             "AUTOSTAT_VERSION", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
-        ), ("automation", "email_validation")),
+            "build_bel_exports", "has_bel_primary_keys",
+        ), ("automation", "email_validation", "export_config", "exports")),
         ("autostat_page", ("render_autostat",), ("autostat", "automation", "folder_output", "export_config")),
     )
     refreshed = set()

@@ -16,8 +16,10 @@ from streamlit.testing.v1 import AppTest
 from automation import AutomationError
 from autostat import (
     EMAIL_HEADERS, REMARK_PREFIX, VIBER_HEADERS, SourceSelection,
-    build_autostat_exports, extract_contacts, inspect_contact_source, validated_phone,
+    build_autostat_exports, build_bel_exports, extract_contacts, has_bel_primary_keys,
+    inspect_contact_source, split_bel_contacts, validated_phone,
 )
+from export_config import AUTOSTAT_BEL_FILENAMES
 from folder_output import MANILA_TIMEZONE
 
 
@@ -77,6 +79,94 @@ class PhoneTests(unittest.TestCase):
 
 
 class AutostatTests(unittest.TestCase):
+    def test_two_named_group_logs_keep_both_channel_templates_and_contacts(self):
+        data = (
+            'primary_key,cardnumber,email,phone\n'
+            '@BELLTLSUL01R00001,00001,first@example.com,09171234567\n'
+            '1234567890123456,00002,other@example.com,09181234567\n'
+            '@bellhusur01r00002,00003,bad..email@example.com,09191234567\n'
+            '1234567890123457,00004,bad..email@example.com,08171234567\n'
+        ).encode()
+        source = SourceSelection('mixed.csv', data, inspect_contact_source(data, '.csv')[0])
+        bundle = build_bel_exports([source], timestamp=NOW)
+        self.assertEqual([file.filename for file in bundle.files], ['NEGATIVE B4 - BEL.csv', 'NEGATIVE B4 - CARDS.csv'])
+        bel, cards = [exported_rows(file) for file in bundle.files]
+        self.assertEqual([row['Account No.'] for row in bel], ['00001', '00001', '00003'])
+        self.assertEqual([row['EMAIL/ NUMBER'] for row in bel], ['first@example.com', '9171234567', '9191234567'])
+        self.assertEqual([row['EMAIL/ NUMBER'] for row in cards], ['other@example.com', '9181234567'])
+        for file in bundle.files:
+            self.assertEqual(file.headers, EMAIL_HEADERS)
+            self.assertEqual(file.count, len(exported_rows(file)))
+            for row in exported_rows(file):
+                email = '@' in row['EMAIL/ NUMBER']
+                ending = 'FOLLOW UP EMAIL SENT' if email else 'VIBER SENT - BLASTING'
+                self.assertEqual(row['Remark'], f"{REMARK_PREFIX} - {row['EMAIL/ NUMBER']} - {ending}")
+                self.assertEqual(row['Status'], ('EMAIL' if email else 'SMS') + ' BLAST SENT - WAITING FOR REPLY')
+                self.assertEqual(row['Time'], '2026-10-28 03:04:05 PM')
+                self.assertEqual(row['Remark By'], 'MBURGOS')
+                self.assertTrue(all(row[header] == '' for header in EMAIL_HEADERS[6:]))
+        self.assertEqual(sum(row['Rows checked'] for row in bundle.summary), 4)
+        with ZipFile(BytesIO(bundle.zip_data)) as archive:
+            self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
+            for file in bundle.files:
+                self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_group_outputs_combine_sources_keep_empty_headers_and_validate_filenames(self):
+        data = b'primary_key,email\n@BEL-1,first@example.com\n'
+        source = SourceSelection('mixed.csv', data, inspect_contact_source(data, '.csv')[0])
+        bundle = build_bel_exports([source, source], timestamp=NOW)
+        self.assertEqual([file.count for file in bundle.files], [2, 0])
+        self.assertEqual(exported_rows(bundle.files[1]), [])
+        self.assertEqual(bundle.files[1].data.decode('cp1252').splitlines()[0], ','.join(EMAIL_HEADERS))
+        with patch.dict(AUTOSTAT_BEL_FILENAMES, {'Other': AUTOSTAT_BEL_FILENAMES['BEL']}):
+            with self.assertRaisesRegex(AutomationError, 'unique'):
+                build_bel_exports([source], timestamp=NOW)
+        with patch.dict(AUTOSTAT_BEL_FILENAMES, {'BEL': '../outside.csv'}):
+            with self.assertRaisesRegex(AutomationError, 'Invalid filename'):
+                build_bel_exports([source], timestamp=NOW)
+
+    def test_bel_detection_scans_beyond_first_fifty_rows_in_csv_and_workbook(self):
+        headers = ['primary_key', 'email']
+        rows = [[str(index), 'first@example.com'] for index in range(60)]
+        rows.append(['@BELLTLSUL01R00001', 'last@example.com'])
+        workbook = Workbook()
+        workbook.active.append(headers)
+        for row in rows:
+            workbook.active.append(row)
+        stream = BytesIO()
+        workbook.save(stream)
+        workbook.close()
+        csv_data = (','.join(headers) + '\n' + '\n'.join(','.join(row) for row in rows)).encode()
+        for name, data in (('late.xlsx', stream.getvalue()), ('late.csv', csv_data)):
+            with self.subTest(name=name):
+                source = SourceSelection(name, data, inspect_contact_source(data, Path(name).suffix)[0])
+                self.assertTrue(has_bel_primary_keys(source))
+
+    def test_bel_grouping_uses_primary_key_while_accounts_use_cardnumber(self):
+        data = (
+            'primary_key,cardnumber,email,phone\n'
+            '@BELLTLSUL01R00001,00001,first@example.com,09171234567\n'
+            '1234567890123456,00002,other@example.com,09181234567\n'
+            '  @bellhusur02r00002  ,00003,second@example.com,09191234567\n'
+            '1234567890123457,00004,bad..email@example.com,08171234567\n'
+        ).encode()
+        source = SourceSelection('mixed.csv', data, inspect_contact_source(data, '.csv')[0])
+        groups = split_bel_contacts(source)
+        self.assertEqual(groups['BEL'].emails, [('00001', 'first@example.com'), ('00003', 'second@example.com')])
+        self.assertEqual(groups['Other'].phones, [('00002', '9181234567')])
+        self.assertEqual(groups['Other'].no_contacts, 1)
+        self.assertEqual(sum(group.checked_rows for group in groups.values()), 4)
+        self.assertEqual(groups['Other'].invalid_emails, 1)
+        self.assertEqual(groups['Other'].invalid_phones, 1)
+
+    def test_bel_grouping_requires_one_unambiguous_primary_key_header(self):
+        for headers in ('cardnumber,email', 'primary_key,primary_key,email'):
+            with self.subTest(headers=headers):
+                data = (headers + '\n0001,first@example.com\n').encode()
+                source = SourceSelection('source.csv', data, inspect_contact_source(data, '.csv')[0])
+                with self.assertRaisesRegex(AutomationError, 'one primary_key column'):
+                    split_bel_contacts(source)
+
     def test_cardnumber_is_used_for_both_logs_ahead_of_other_account_headers(self):
         for header in ("cardnumber", "Card Number", " CARDNUMBER "):
             with self.subTest(header=header):
@@ -197,6 +287,37 @@ class AutostatTests(unittest.TestCase):
 
 
 class AutostatAppTests(unittest.TestCase):
+    def test_bel_split_defaults_to_two_named_downloads_and_folder_saves(self):
+        data = b'primary_key,email,PHONE\n@BEL-1,bel@example.com,09171234567\n00001234,cards@example.com,09181234567\n'
+        upload = Upload('BEL CARDS BLASTING.xlsx.csv', data)
+        with patch('streamlit.file_uploader', return_value=[upload]), TemporaryDirectory(prefix='autostat-bel-test-') as directory:
+            app = AppTest.from_file(str(ROOT / 'pages' / 'AUTOSTAT.py')).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            split = next(widget for widget in app.checkbox if widget.label == 'Separate BEL and CARDS using primary_key')
+            self.assertTrue(split.value)
+            app.button(key='autostat_prepare').click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state['autostat_result']
+            self.assertEqual([file.filename for file in result['bundle'].files], ['NEGATIVE B4 - BEL.csv', 'NEGATIVE B4 - CARDS.csv'])
+            self.assertEqual(len(app.get('download_button')), 3)
+            self.assertEqual(app.dataframe[-1].value.loc[0, 'Account No.'], '@BEL-1')
+            app.text_input(key='autostat_output_folder').set_value(directory).run(timeout=20)
+            app.button(key='autostat_save').click().run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            saved = Path(app.session_state['autostat_result']['saved_folder'])
+            for file in result['bundle'].files:
+                self.assertEqual((saved / file.filename).read_bytes(), file.data)
+            with patch.dict(AUTOSTAT_BEL_FILENAMES, {'BEL': 'Changed BEL name'}):
+                app.run(timeout=20)
+                self.assertNotIn('autostat_result', app.session_state)
+            split = next(widget for widget in app.checkbox if widget.label == 'Separate BEL and CARDS using primary_key')
+            split.uncheck().run(timeout=20)
+            app.button(key='autostat_prepare').click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertTrue(all(file.filename.startswith('AUTOSTAT_') for file in app.session_state['autostat_result']['bundle'].files))
+
     def test_cardnumber_is_selected_automatically_for_export(self):
         upload = Upload("contacts.csv", b"primary_key,email,cardnumber,phone\nINTERNAL-1,first@example.com,00001234,09171234567\n")
         with patch("streamlit.file_uploader", return_value=[upload]):

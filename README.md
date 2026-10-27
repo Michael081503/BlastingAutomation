@@ -36,6 +36,17 @@ Each selected sheet creates `AUTOSTAT_<source>_<sheet>_Email.csv` and `AUTOSTAT_
 
 Preparing these logs does not send emails or Viber messages. Source files are never modified. Changing source files, sheets, columns, header rows, remark author, timestamp settings, or CSV encoding clears the prepared result so it can be rebuilt from the new inputs.
 
+### BEL and CARDS separation
+
+When a selected source sheet has `BEL` anywhere in its `primary_key` values, AUTOSTAT automatically selects **Separate BEL and CARDS using primary_key**. It creates exactly two CSV files across all selected sources and sheets:
+
+- **`NEGATIVE B4 - BEL.csv`**: rows whose `primary_key` contains `BEL`, ignoring case.
+- **`NEGATIVE B4 - CARDS.csv`**: all other rows.
+
+Both outputs contain the valid Email and Viber log entries for their account group. They use the Email template's 11-column layout, which includes the Viber template's five columns. Email entries retain the Email status and remark; Viber entries retain the SMS status and Viber remark. The contact appears in `EMAIL/ NUMBER` for either type. The timestamp, author, contact validation, and selected account-number column work as before. Grouping always uses `primary_key`, even when `cardnumber` supplies `Account No.`. Each selected sheet must have one unambiguous `primary_key` column. An empty group still produces a file with template headers only.
+
+Uncheck the separation option to return to separate Email and Viber files. The two group filenames can be changed in `AUTOSTAT_BEL_FILENAMES` in `export_config.py`.
+
 ## Deploy on Streamlit Community Cloud
 
 1. Sign in at [share.streamlit.io](https://share.streamlit.io/) with the GitHub account that can access the repository.

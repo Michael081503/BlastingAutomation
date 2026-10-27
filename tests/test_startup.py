@@ -52,6 +52,25 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_autostat_refreshes_for_bel_split_and_filenames(self):
+        self.run_isolated("""
+            from datetime import datetime
+            import autostat, autostat_page, export_config
+            del export_config.AUTOSTAT_BEL_FILENAMES
+            del autostat.build_bel_exports
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'export_config', 'autostat', 'autostat_page'} <= refreshed
+            data = b'primary_key,email\\n@BEL-1,first@example.com\\n'
+            sheet = autostat.inspect_contact_source(data, '.csv')[0]
+            bundle = autostat.build_bel_exports(
+                [autostat.SourceSelection('contacts.csv', data, sheet)], timestamp=datetime(2026, 10, 28),
+            )
+            assert [file.filename for file in bundle.files] == ['NEGATIVE B4 - BEL.csv', 'NEGATIVE B4 - CARDS.csv']
+            assert autostat_page.build_bel_exports is autostat.build_bel_exports
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_old_configuration_is_refreshed_before_app_import(self):
         self.run_isolated("""
             import automation, export_config, exports, folder_output

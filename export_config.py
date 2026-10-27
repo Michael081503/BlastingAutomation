@@ -68,3 +68,9 @@ ZIP_FILENAME = "NEGATIVE_CHRISTMAS_AMNESTY_FILES.zip"
 # Default destination for "Save files to folder". Relative paths start here in the project.
 # You can also change this folder in the app before saving.
 OUTPUT_FOLDER = "output"
+
+# AUTOSTAT: primary_key containing BEL versus all other accounts.
+AUTOSTAT_BEL_FILENAMES = {
+    "BEL": "NEGATIVE B4 - BEL",
+    "Other": "NEGATIVE B4 - CARDS",
+}

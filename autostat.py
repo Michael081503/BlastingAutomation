@@ -19,9 +19,11 @@ from openpyxl.utils.exceptions import InvalidFileException
 
 from automation import AutomationError, _encode_csv, _identifier, normalize_header
 from email_validation import validated_email
+from export_config import AUTOSTAT_BEL_FILENAMES
+from exports import export_filename
 
 
-AUTOSTAT_VERSION = 2
+AUTOSTAT_VERSION = 3
 PREFERRED_ACCOUNT_HEADER = "cardnumber"
 REMARK_PREFIX = "SPMA | 08 With SMS / email / DL without response"
 # Column labels, statuses and remark text come from the supplied templates.
@@ -203,10 +205,10 @@ def _candidates(value: Any, validator) -> list[Any]:
     return [part.strip() for part in re.split(r"[;,|\r\n]+", value) if part.strip()]
 
 
-def _read_rows(source: SourceSelection):
+def _read_rows(source: SourceSelection, *, extra_columns: tuple[int, ...] = ()):
     """Yield selected values; do not evaluate source formulas or follow links."""
     sheet = source.sheet
-    columns = tuple(dict.fromkeys((sheet.account_column, *sheet.email_columns, *sheet.phone_columns)))
+    columns = tuple(dict.fromkeys((sheet.account_column, *sheet.email_columns, *sheet.phone_columns, *extra_columns)))
     if sheet.account_column is None or not (sheet.email_columns or sheet.phone_columns):
         raise AutomationError(f"{source.name} / {sheet.name}: select an account column and at least one contact column.")
     if any(index is None or index < 0 or index >= len(sheet.headers) for index in columns):
@@ -245,41 +247,81 @@ def _read_rows(source: SourceSelection):
             cached.close()
 
 
+def _add_contact_row(result: ContactRows, sheet: ContactSheet, row: dict[int, Any]) -> None:
+    if all(_blank(value) for value in row.values()):
+        result.blank_rows += 1
+        return
+    result.checked_rows += 1
+    emails, phones = [], []
+    for columns, validator, contacts, invalid_field in (
+        (sheet.email_columns, validated_email, emails, "invalid_emails"),
+        (sheet.phone_columns, validated_phone, phones, "invalid_phones"),
+    ):
+        for column in columns:
+            # A shared EMAIL/NUMBER column may legitimately contain either kind.
+            other_validator = validated_phone if validator is validated_email else validated_email
+            mixed = column in sheet.email_columns and column in sheet.phone_columns
+            for value in _candidates(row[column], validator):
+                contact = validator(value)
+                if contact is not None:
+                    if contact not in contacts:
+                        contacts.append(contact)
+                elif not (mixed and other_validator(value) is not None):
+                    setattr(result, invalid_field, getattr(result, invalid_field) + 1)
+    account = row[sheet.account_column]
+    if _blank(account):
+        result.missing_accounts += 1
+        return
+    account = str(account).strip()
+    if not emails and not phones:
+        result.no_contacts += 1
+    result.emails.extend((account, email) for email in emails)
+    result.phones.extend((account, phone) for phone in phones)
+
+
 def extract_contacts(source: SourceSelection) -> ContactRows:
     """Keep source order and one log row per distinct valid contact in each row."""
     result = ContactRows()
-    sheet = source.sheet
     for row in _read_rows(source):
-        if all(_blank(value) for value in row.values()):
-            result.blank_rows += 1
-            continue
-        result.checked_rows += 1
-        emails, phones = [], []
-        for columns, validator, contacts, invalid_field in (
-            (sheet.email_columns, validated_email, emails, "invalid_emails"),
-            (sheet.phone_columns, validated_phone, phones, "invalid_phones"),
-        ):
-            for column in columns:
-                # A shared EMAIL/NUMBER column may legitimately contain either kind.
-                other_validator = validated_phone if validator is validated_email else validated_email
-                mixed = column in sheet.email_columns and column in sheet.phone_columns
-                for value in _candidates(row[column], validator):
-                    contact = validator(value)
-                    if contact is not None:
-                        if contact not in contacts:
-                            contacts.append(contact)
-                    elif not (mixed and other_validator(value) is not None):
-                        setattr(result, invalid_field, getattr(result, invalid_field) + 1)
-        account = row[sheet.account_column]
-        if _blank(account):
-            result.missing_accounts += 1
-            continue
-        account = str(account).strip()
-        if not emails and not phones:
-            result.no_contacts += 1
-        result.emails.extend((account, email) for email in emails)
-        result.phones.extend((account, phone) for phone in phones)
+        _add_contact_row(result, source.sheet, row)
     return result
+
+
+def split_bel_contacts(source: SourceSelection) -> dict[str, ContactRows]:
+    """Separate rows whose primary_key contains BEL, independently of the account column."""
+    positions = [index for index, header in enumerate(source.sheet.headers)
+                 if normalize_header(header) == "primarykey"]
+    if len(positions) != 1:
+        raise AutomationError(
+            f"{source.name} / {source.sheet.name}: BEL separation requires one primary_key column."
+        )
+    primary_key = positions[0]
+    groups = {"BEL": ContactRows(), "Other": ContactRows()}
+    for row in _read_rows(source, extra_columns=(primary_key,)):
+        key = "BEL" if "BEL" in str(row[primary_key] or "").upper() else "Other"
+        _add_contact_row(groups[key], source.sheet, row)
+    return groups
+
+
+def has_bel_primary_keys(source: SourceSelection) -> bool:
+    """Detect BEL anywhere in the selected sheet, without treating account IDs as contacts."""
+    positions = [index for index, header in enumerate(source.sheet.headers)
+                 if normalize_header(header) == "primarykey"]
+    if len(positions) != 1:
+        return False
+    column = positions[0]
+    if Path(source.name).suffix.lower() == ".csv":
+        return any(number > source.sheet.header_row and len(row) > column
+                   and "BEL" in str(row[column] or "").upper()
+                   for number, row in enumerate(_csv_rows(source.data), 1))
+    workbook = _workbook(source.data, data_only=True)
+    try:
+        return any("BEL" in str(row[0] or "").upper() for row in workbook[source.sheet.name].iter_rows(
+            min_row=source.sheet.header_row + 1, min_col=column + 1, max_col=column + 1,
+            values_only=True,
+        ))
+    finally:
+        workbook.close()
 
 
 @dataclass
@@ -298,6 +340,78 @@ class AutostatBundle:
     zip_data: bytes
 
 
+def _contact_summary(source: SourceSelection, contacts: ContactRows) -> dict[str, Any]:
+    return {
+        "File": source.name, "Sheet": source.sheet.name, "Rows checked": contacts.checked_rows,
+        "Email rows": len(contacts.emails), "Viber rows": len(contacts.phones),
+        "Invalid emails": contacts.invalid_emails, "Invalid phones": contacts.invalid_phones,
+        "Missing account": contacts.missing_accounts, "No valid contact": contacts.no_contacts,
+        "Empty rows": contacts.blank_rows,
+    }
+
+
+def _activity_rows(pairs, *, channel: str, headers: tuple[str, ...], time_text: str, remark_by: str):
+    status = "EMAIL BLAST SENT - WAITING FOR REPLY" if channel == "Email" else "SMS BLAST SENT - WAITING FOR REPLY"
+    ending = "FOLLOW UP EMAIL SENT" if channel == "Email" else "VIBER SENT - BLASTING"
+    for account, contact in pairs:
+        row = dict.fromkeys(headers, "")
+        row.update({
+            "Time": time_text, "Account No.": account, "Status": status,
+            "Remark": f"{REMARK_PREFIX} - {contact} - {ending}", "Remark By": remark_by.strip(),
+        })
+        if "EMAIL/ NUMBER" in row:
+            row["EMAIL/ NUMBER"] = contact
+        yield row
+
+
+def _log_file(filename: str, headers: tuple[str, ...], rows, encoding: str) -> AutostatFile:
+    output = StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=headers, lineterminator="\r\n")
+    writer.writeheader()
+    count, preview = 0, []
+    for row in rows:
+        writer.writerow(row)
+        count += 1
+        if len(preview) < 100:
+            preview.append(row)
+    return AutostatFile(filename, _encode_csv(output.getvalue(), encoding), count, headers, preview)
+
+
+def _bundle(files: list[AutostatFile], summaries: list[dict[str, Any]]) -> AutostatBundle:
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        for file in files:
+            archive.writestr(file.filename, file.data)
+    return AutostatBundle(files, summaries, output.getvalue())
+
+
+def build_bel_exports(
+    sources: list[SourceSelection], *, timestamp: datetime, remark_by: str = "MBURGOS",
+    encoding: str = "cp1252",
+) -> AutostatBundle:
+    """Create exactly two group logs, retaining Email and Viber status/remark text."""
+    if not sources:
+        raise AutomationError("Select at least one source sheet.")
+    if not remark_by.strip():
+        raise AutomationError("Enter Remark By before preparing the files.")
+    if set(AUTOSTAT_BEL_FILENAMES) != {"BEL", "Other"}:
+        raise AutomationError("Set both BEL and Other filenames in export_config.py.")
+    names = {group: export_filename(name, ".csv") for group, name in AUTOSTAT_BEL_FILENAMES.items()}
+    if len({name.casefold() for name in names.values()}) != 2:
+        raise AutomationError("BEL and CARDS output filenames must be unique. Check export_config.py.")
+    time_text = timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
+    rows, summaries = {"BEL": [], "Other": []}, []
+    for source in sources:
+        for group, contacts in split_bel_contacts(source).items():
+            summaries.append({"Group": "BEL" if group == "BEL" else "CARDS", **_contact_summary(source, contacts)})
+            for channel, pairs in (("Email", contacts.emails), ("Viber", contacts.phones)):
+                rows[group].extend(_activity_rows(
+                    pairs, channel=channel, headers=EMAIL_HEADERS, time_text=time_text, remark_by=remark_by,
+                ))
+    files = [_log_file(names[group], EMAIL_HEADERS, rows[group], encoding) for group in rows]
+    return _bundle(files, summaries)
+
+
 def build_autostat_exports(
     sources: list[SourceSelection], *, timestamp: datetime, remark_by: str = "MBURGOS",
     encoding: str = "cp1252",
@@ -310,13 +424,7 @@ def build_autostat_exports(
     files, summaries, used_names = [], [], set()
     for source in sources:
         contacts = extract_contacts(source)
-        summaries.append({
-            "File": source.name, "Sheet": source.sheet.name, "Rows checked": contacts.checked_rows,
-            "Email rows": len(contacts.emails), "Viber rows": len(contacts.phones),
-            "Invalid emails": contacts.invalid_emails, "Invalid phones": contacts.invalid_phones,
-            "Missing account": contacts.missing_accounts, "No valid contact": contacts.no_contacts,
-            "Empty rows": contacts.blank_rows,
-        })
+        summaries.append(_contact_summary(source, contacts))
         label = f"{Path(source.name).stem}_{source.sheet.name}"
         label = re.sub(r'[^\w .-]+', "_", label).strip(" .")[:110].rstrip(" .") or "source"
         base, suffix = label, 2
@@ -324,31 +432,13 @@ def build_autostat_exports(
             base = f"{label}_{suffix}"
             suffix += 1
         used_names.add(base.casefold())
-        for channel, pairs, headers, status, ending in (
-            ("Email", contacts.emails, EMAIL_HEADERS, "EMAIL BLAST SENT - WAITING FOR REPLY", "FOLLOW UP EMAIL SENT"),
-            ("Viber", contacts.phones, VIBER_HEADERS, "SMS BLAST SENT - WAITING FOR REPLY", "VIBER SENT - BLASTING"),
+        for channel, pairs, headers in (
+            ("Email", contacts.emails, EMAIL_HEADERS),
+            ("Viber", contacts.phones, VIBER_HEADERS),
         ):
-            output = StringIO(newline="")
-            writer = csv.DictWriter(output, fieldnames=headers, lineterminator="\r\n")
-            writer.writeheader()
-            preview = []
-            for account, contact in pairs:
-                row = dict.fromkeys(headers, "")
-                row.update({
-                    "Time": time_text, "Account No.": account, "Status": status,
-                    "Remark": f"{REMARK_PREFIX} - {contact} - {ending}", "Remark By": remark_by.strip(),
-                })
-                if channel == "Email":
-                    row["EMAIL/ NUMBER"] = contact
-                writer.writerow(row)
-                if len(preview) < 100:
-                    preview.append(row)
-            files.append(AutostatFile(
-                f"AUTOSTAT_{base}_{channel}.csv", _encode_csv(output.getvalue(), encoding),
-                len(pairs), headers, preview,
+            files.append(_log_file(
+                f"AUTOSTAT_{base}_{channel}.csv", headers,
+                _activity_rows(pairs, channel=channel, headers=headers, time_text=time_text, remark_by=remark_by),
+                encoding,
             ))
-    output = BytesIO()
-    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
-        for file in files:
-            archive.writestr(file.filename, file.data)
-    return AutostatBundle(files, summaries, output.getvalue())
+    return _bundle(files, summaries)
