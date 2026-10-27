@@ -2,37 +2,42 @@
 
 Change only the quoted names on the RIGHT. Keep the dictionary keys on the LEFT.
 GEO filename settings are first. All output files are CSV.
-GEO names follow: base name + Area suffix + Email/Viber suffix + .csv.
+GEO names below already include the Area. The app adds _Email or _Viber and .csv.
 """
 
 # ==================== EDIT YOUR GEO FILENAMES HERE ====================
-# These five base names apply to both Mindanao and R3, combining ALL levels.
+# Each entry is the full base filename for one group. All levels are combined.
 GEO_OUTPUT_FILENAMES = {
-    # QUALIFIED Christmas Amnesty accounts:
-    "qualified_cards": "CS AMNESTY GEO CARDS",
-    "qualified_bel": "CS AMNESTY GEO BEL",
+    # MINDANAO: edit the five filenames on the right.
+    "mindanao_qualified_cards": "CS AMNESTY GEO CARDS_MINDANAO",
+    "mindanao_qualified_bel": "CS AMNESTY GEO BEL_MINDANAO",
+    "mindanao_blank_cards": "GEO_BLANK_CARDS_MINDANAO",
+    "mindanao_blank_bel": "GEO_BLANK_BEL_MINDANAO",
+    "mindanao_blank_other_products": "GEO_BLANK_OTHER_PRODUCTS_MINDANAO",
 
-    # BLANK Christmas Amnesty accounts:
-    "blank_cards": "GEO_BLANK_CARDS",
-    "blank_bel": "GEO_BLANK_BEL",
-    "blank_other_products": "GEO_BLANK_OTHER_PRODUCTS",
+    # REGION 3: edit the five filenames on the right.
+    "r3_qualified_cards": "CS AMNESTY GEO CARDS_R3",
+    "r3_qualified_bel": "CS AMNESTY GEO BEL_R3",
+    "r3_blank_cards": "GEO_BLANK_CARDS_R3",
+    "r3_blank_bel": "GEO_BLANK_BEL_R3",
+    "r3_blank_other_products": "GEO_BLANK_OTHER_PRODUCTS_R3",
 
-    # Used only if qualified accounts have products other than CARDS and BEL.
-    "qualified_review": "GEO_QUALIFIED_OTHER_PRODUCTS_REVIEW",
-}
-
-# Edit these to rename the Area part of each GEO filename.
-GEO_AREA_SUFFIXES = {
-    "mindanao": "_MINDANAO",
-    "r3": "_R3",
-    "area_review": "_AREA_REVIEW",
+    # Review files, used only when unmatched products or Areas are present.
+    "mindanao_qualified_review": "GEO_QUALIFIED_OTHER_PRODUCTS_REVIEW_MINDANAO",
+    "r3_qualified_review": "GEO_QUALIFIED_OTHER_PRODUCTS_REVIEW_R3",
+    "area_review_qualified_cards": "CS AMNESTY GEO CARDS_AREA_REVIEW",
+    "area_review_qualified_bel": "CS AMNESTY GEO BEL_AREA_REVIEW",
+    "area_review_blank_cards": "GEO_BLANK_CARDS_AREA_REVIEW",
+    "area_review_blank_bel": "GEO_BLANK_BEL_AREA_REVIEW",
+    "area_review_blank_other_products": "GEO_BLANK_OTHER_PRODUCTS_AREA_REVIEW",
+    "area_review_qualified_review": "GEO_QUALIFIED_OTHER_PRODUCTS_REVIEW_AREA_REVIEW",
 }
 
 # Name of the GEO ZIP download.
 GEO_ZIP_FILENAME = "GEO_AREA_CHRISTMAS_AMNESTY_FILES.zip"
 
-# Example: "CS AMNESTY GEO CARDS" becomes
-# CS AMNESTY GEO CARDS_MINDANAO_Email.csv and CS AMNESTY GEO CARDS_R3_Email.csv.
+# Example: "CS AMNESTY GEO CARDS_MINDANAO" becomes
+# CS AMNESTY GEO CARDS_MINDANAO_Email.csv and CS AMNESTY GEO CARDS_MINDANAO_Viber.csv.
 # CHANNEL_SUFFIXES below controls the Email/Viber part for both workflows.
 
 

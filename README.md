@@ -41,10 +41,10 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
 6. For NEGATIVE, keep **Separate Christmas Amnesty groups** selected to create the groups below. Worksheets with Area default to **Separate Area and Christmas Amnesty groups** instead. **All accounts in one group** skips these group filters. Every group is still split into Email and Viber files.
-7. Click **Preview and prepare files**, review the email-validation counts, and edit names in **Edit output filenames**. Double-click a **Filename** cell to rename any CSV, including Mindanao and R3 files separately. The ZIP download name is editable too.
+7. Click **Preview and prepare files**, then review the email-validation counts and export previews.
 8. Under **Save to a folder**, enter an output location and click **Save files to folder**. The app displays the full path of the created folder. Individual downloads and **Download all files (ZIP)** are also available.
 
-Changing a file, sheet, header row, export mode, or default filename configuration clears the previous result. Prepare a new download after changing inputs. Filename edits in the app immediately update individual downloads, ZIP contents, previews, and future folder saves using the prepared data. Duplicate or invalid filenames must be corrected before downloading or saving.
+Changing a file, sheet, header row, export mode, or filename configuration clears the previous result. Prepare a new download after changing inputs. Filenames from `export_config.py` apply to individual downloads, ZIP contents, previews, and folder saves. Duplicate or invalid filenames must be corrected in that file before preparing exports.
 
 After downloading the ZIP, right-click it and choose **Extract All**, then open the CSV files from the extracted folder to edit them. Opening a CSV directly inside the ZIP can make Excel show a read-only temporary copy and ask you to save another file. Individual CSV downloads and local folder saves can also be opened from their saved location. The app does not set read-only permissions or protect the exported files. See Microsoft's [ZIP extraction instructions](https://support.microsoft.com/en-us/windows/experience/storage-filemanagement/zip-and-unzip-files).
 
@@ -127,13 +127,18 @@ The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `
 
 GEO grouping works on each worksheet with an Area column. **NEGATIVE** remains the default; select one source sheet at a time. **OVERALL** and the other sheets may overlap, so processing them separately does not create a deduplicated combined export.
 
-Rename prepared GEO files directly in the app's **Edit output filenames** table. Group and Channel identify each CSV; only the Filename column is editable. You can use independent names for Mindanao, R3, Email, and Viber files. The app adds `.csv` if omitted. Names are retained for the current prepared batch across ordinary reruns. Renaming preserves all account data and validation results. Saving after a rename creates a new export folder.
-
-To change the defaults, edit `GEO_OUTPUT_FILENAMES`, `GEO_AREA_SUFFIXES`, and `GEO_ZIP_FILENAME` in [export_config.py](export_config.py). For example, qualified CARDS at all levels default to `CS AMNESTY GEO CARDS_MINDANAO_Email.csv`, `CS AMNESTY GEO CARDS_MINDANAO_Viber.csv`, and the matching `_R3` files when those groups have accounts. Individual downloads, ZIP downloads, previews, and folder saves use the same separation.
+Edit the GEO filenames directly in `GEO_OUTPUT_FILENAMES` at the top of [export_config.py](export_config.py). Mindanao and R3 each have five entries, followed by the review filenames. Each quoted value is the full base name for that Area and group. The app appends `_Email` or `_Viber` and `.csv`. For example, `CS AMNESTY GEO CARDS_MINDANAO` produces `CS AMNESTY GEO CARDS_MINDANAO_Email.csv` and `CS AMNESTY GEO CARDS_MINDANAO_Viber.csv`. Change the ZIP name in `GEO_ZIP_FILENAME`.
 
 ## Edit filenames
 
-Use **Edit output filenames** in the app to rename the prepared CSVs and ZIP. To change the defaults used for new batches, open **[export_config.py](export_config.py)** and edit the quoted values on the right:
+Open **[export_config.py](export_config.py)** and edit the quoted filenames on the right. For GEO, the entries are listed separately for Mindanao and R3, for example:
+
+```python
+"mindanao_qualified_cards": "CS AMNESTY GEO CARDS_MINDANAO",
+"r3_qualified_cards": "CS AMNESTY GEO CARDS_R3",
+```
+
+The standard NEGATIVE filenames are in the same file:
 
 ```python
 OUTPUT_FILENAMES = {
@@ -152,7 +157,7 @@ ZIP_FILENAME = "NEGATIVE_CHRISTMAS_AMNESTY_FILES.zip"
 OUTPUT_FOLDER = "output"
 ```
 
-Keep the keys on the left unchanged. Edit the base names in `OUTPUT_FILENAMES`; the app adds `_Email` or `_Viber` before `.csv`. You can edit these suffixes separately in `CHANNEL_SUFFIXES`. Final filenames must be unique and must not contain folder paths. Save the code, rerun the app, and prepare the files again to use updated defaults.
+Keep the keys on the left unchanged. Edit the base names in `GEO_OUTPUT_FILENAMES` or `OUTPUT_FILENAMES`; the app adds `_Email` or `_Viber` before `.csv`. You can edit these suffixes separately in `CHANNEL_SUFFIXES`. Final filenames must be unique and must not contain folder paths. Save the code, rerun the app, and prepare the files again to use the updated names.
 
 ## Mapping
 

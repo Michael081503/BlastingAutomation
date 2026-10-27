@@ -38,16 +38,16 @@ class StartupTests(unittest.TestCase):
         self.run_isolated("""
             import automation, export_config, exports, folder_output
             error_class = automation.AutomationError
-            for name in ('GEO_AREA_SUFFIXES', 'GEO_OUTPUT_FILENAMES', 'GEO_ZIP_FILENAME'):
+            for name in ('GEO_OUTPUT_FILENAMES', 'GEO_ZIP_FILENAME'):
                 delattr(export_config, name)
             try:
-                from export_config import GEO_AREA_SUFFIXES
+                from export_config import GEO_OUTPUT_FILENAMES
             except ImportError:
                 pass
             else:
                 raise AssertionError('Expected the old configuration import to fail')
             import app
-            assert app.GEO_AREA_SUFFIXES is export_config.GEO_AREA_SUFFIXES
+            assert app.GEO_OUTPUT_FILENAMES is export_config.GEO_OUTPUT_FILENAMES
             assert exports.GEO_OUTPUT_FILENAMES is export_config.GEO_OUTPUT_FILENAMES
             assert app.AutomationError is error_class
             assert folder_output.AutomationError is error_class
@@ -60,7 +60,7 @@ class StartupTests(unittest.TestCase):
             import csv
             from io import StringIO
             import automation, export_config, exports, folder_output
-            for name in ('GEO_AREA_SUFFIXES', 'GEO_OUTPUT_FILENAMES', 'GEO_ZIP_FILENAME'):
+            for name in ('GEO_OUTPUT_FILENAMES', 'GEO_ZIP_FILENAME'):
                 delattr(export_config, name)
             for name in ('MAPPING_VERSION', 'OPTIONAL_FIELD_MAPPING'):
                 delattr(automation, name)
@@ -97,8 +97,8 @@ class StartupTests(unittest.TestCase):
             del exports.GEO_PRODUCT_GROUP_LABELS
             app_startup.refresh_application_modules = lambda: set()
             import app
-            assert 'qualified_cards' in app.GEO_OUTPUT_FILENAMES
-            assert 'blank_cards' in app.GEO_OUTPUT_FILENAMES
+            assert 'mindanao_qualified_cards' in app.GEO_OUTPUT_FILENAMES
+            assert 'r3_qualified_cards' in app.GEO_OUTPUT_FILENAMES
             assert 'qualified_cards_level_1' not in app.GEO_OUTPUT_FILENAMES
             assert app.AutomationError is error_class
             records = [
@@ -111,18 +111,16 @@ class StartupTests(unittest.TestCase):
             assert all(file.group_key == 'mindanao_qualified_cards' and file.count == 6 for file in bundle.files)
         """)
 
-    def test_cached_modules_refresh_for_filename_editor_and_email_counts(self):
+    def test_cached_modules_refresh_for_filename_config_and_email_counts(self):
         self.run_isolated("""
             import automation, exports, folder_output
             del automation.MappedData.valid_email_rows
             del automation.MappedData.missing_email_rows
-            del exports.rename_export_files
-            del exports.zip_export_files
+            del exports.GEO_FILENAME_CONFIG_VERSION
             import app
             assert hasattr(automation.MappedData, 'valid_email_rows')
             assert hasattr(automation.MappedData, 'missing_email_rows')
-            assert callable(app.rename_export_files)
-            assert callable(app.zip_export_files)
+            assert app.GEO_FILENAME_CONFIG_VERSION == 2
             assert exports.AutomationError is automation.AutomationError
             assert folder_output.AutomationError is automation.AutomationError
         """)

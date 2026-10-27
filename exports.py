@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -18,7 +18,7 @@ from automation import (
     normalize_header,
 )
 from export_config import (
-    CHANNEL_SUFFIXES, GEO_AREA_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
+    CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
     OUTPUT_FILENAMES, ZIP_FILENAME,
 )
 from email_validation import validated_email
@@ -37,6 +37,7 @@ GROUP_LABELS = {
 }
 REVIEW_GROUP_KEYS = frozenset({"qualified_review", "blank_review"})
 CHANNEL_LABELS = {"email": "Email", "viber": "Viber"}
+GEO_FILENAME_CONFIG_VERSION = 2
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
     "qualified_cards": "QUALIFIED / CARDS",
@@ -207,35 +208,17 @@ def _build_channel_files(
     return files
 
 
-def _check_unique_filenames(files: list[ExportFile]) -> None:
+def _bundle(
+    files: list[ExportFile], counts: dict[str, int], zip_name: str, excluded: int,
+) -> ExportBundle:
     names = [file.filename.casefold() for file in files]
     if len(set(names)) != len(names):
         raise AutomationError("Output filenames must be unique. Give each file a different name.")
-
-
-def rename_export_files(files: list[ExportFile], filenames: dict[str, str]) -> list[ExportFile]:
-    """Rename prepared CSVs without changing their data, groups, or routing."""
-    if set(filenames) - {file.key for file in files}:
-        raise AutomationError("The filename list does not match these exports. Prepare the files again.")
-    renamed = [replace(file, filename=export_filename(filenames.get(file.key, file.filename), ".csv")) for file in files]
-    _check_unique_filenames(renamed)
-    return renamed
-
-
-def zip_export_files(files: list[ExportFile]) -> bytes:
-    """Package the currently named CSVs for download."""
-    _check_unique_filenames(files)
     output = BytesIO()
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
         for file in files:
             archive.writestr(file.filename, file.data)
-    return output.getvalue()
-
-
-def _bundle(
-    files: list[ExportFile], counts: dict[str, int], zip_name: str, excluded: int,
-) -> ExportBundle:
-    return ExportBundle(files, counts, zip_export_files(files), zip_name, excluded)
+    return ExportBundle(files, counts, output.getvalue(), zip_name, excluded)
 
 
 def _csv_export_template(
@@ -302,21 +285,9 @@ def build_geo_exports(
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     if not any(normalize_header(header) == "area" for header in csv_template_headers(template)):
         raise AutomationError("GEO exports need an AREA header in the template. Use the built-in 16-column template.")
-    names = {}
-    for area in AREA_LABELS:
-        if area not in GEO_AREA_SUFFIXES:
-            raise AutomationError(f'Missing Area suffix for "{area}" in export_config.py.')
-        suffix = GEO_AREA_SUFFIXES[area]
-        if not isinstance(suffix, str) or not suffix.strip():
-            raise AutomationError(f'The "{area}" Area suffix is empty. Check export_config.py.')
-        for key in GEO_PRODUCT_GROUP_LABELS:
-            if key not in GEO_OUTPUT_FILENAMES:
-                raise AutomationError(f'Missing GEO filename for "{key}" in export_config.py.')
-            base = export_filename(GEO_OUTPUT_FILENAMES[key], ".csv")[:-4]
-            names[f"{area}_{key}"] = base + suffix
     return _build_grouped_exports(
         template, records, "", 1, ".csv", groups=separate_geo(records),
-        labels=GEO_GROUP_LABELS, names=names, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
+        labels=GEO_GROUP_LABELS, names=GEO_OUTPUT_FILENAMES, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
     )
 
 

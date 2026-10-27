@@ -26,8 +26,8 @@ def refresh_application_modules() -> set[str]:
         ("email_validation", ("EMAIL_VALIDATION_VERSION", "validated_email"), ()),
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",
-            "GEO_AREA_SUFFIXES", "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME",
-            "GEO_OUTPUT_FILENAMES.qualified_cards", "GEO_OUTPUT_FILENAMES.blank_cards",
+            "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME",
+            "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
@@ -36,7 +36,7 @@ def refresh_application_modules() -> set[str]:
         ), ("email_validation",)),
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
-            "rename_export_files", "zip_export_files",
+            "GEO_FILENAME_CONFIG_VERSION",
         ), ("email_validation", "export_config", "automation")),
         ("folder_output", ("save_files_to_folder",), ("automation", "exports")),
     )
