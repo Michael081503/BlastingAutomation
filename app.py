@@ -8,6 +8,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from app_startup import refresh_application_modules
+
+refresh_application_modules()
+
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AREA_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
     OUTPUT_FILENAMES, OUTPUT_FOLDER, ZIP_FILENAME,

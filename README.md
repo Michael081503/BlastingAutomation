@@ -28,6 +28,8 @@ See Streamlit's [official deployment instructions](https://docs.streamlit.io/dep
 
 Upload the source workbook and template in the deployed app. Input workbooks, generated files, environment files, and Streamlit secrets are excluded from Git; the repository contains the application code and tests.
 
+Startup refreshes older modules held in memory when a deployment adds required settings, including GEO configuration. Routine reruns retain the same module classes and settings. If startup still reports missing names after an update, check that the app uses `main` and `app.py` from this repository, then choose **Manage app → ⋮ → Reboot app** to clear the cloud process and load the deployed files. See Streamlit's [reboot instructions](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/reboot-your-app).
+
 On Community Cloud, **Save files to folder** writes to the cloud server, so it cannot create a folder directly on your PC. Use individual file downloads or the ZIP download, then extract the ZIP into a folder on your PC. Cloud-generated files are temporary; see Streamlit's [storage guidance](https://docs.streamlit.io/develop/concepts/connections/connecting-to-data). Running the app locally enables direct saves to your own folders.
 
 ## Use
