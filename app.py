@@ -12,10 +12,10 @@ import streamlit as st
 from openpyxl.utils import get_column_letter
 
 import app_startup
-from branding import BANK_ICON, render_bank_branding
 
 importlib.reload(app_startup).refresh_application_modules()
 
+from branding import BANK_ICON, render_bank_branding
 from export_config import (
     CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
     OUTPUT_FILENAMES, OUTPUT_FOLDER, ZIP_FILENAME,
@@ -487,9 +487,9 @@ def render_workbook_page() -> None:
 def main() -> None:
     st.set_page_config(page_title="Security Bank | Blasting Automation", page_icon=str(BANK_ICON), layout="wide")
     page = st.navigation([
-        st.Page(render_workbook_page, title="GEO & RECO", default=True),
-        st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2", url_path="NEGATIVE_B2"),
-        st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", url_path="AUTOSTAT"),
+        st.Page(render_workbook_page, title="GEO & RECO", icon=":material/folder_copy:", default=True),
+        st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2", icon=":material/compare_arrows:", url_path="NEGATIVE_B2"),
+        st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", icon=":material/mark_email_read:", url_path="AUTOSTAT"),
     ])
     page.run()
 

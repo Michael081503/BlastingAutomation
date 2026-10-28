@@ -1,16 +1,25 @@
 :root {
-    --sbc-blue: #0168b3;
-    --sbc-green: #97c93d;
-    --sbc-navy: #123c5c;
-    --sbc-border: #dce7ef;
+    color-scheme: dark;
+    --sbc-orange: #f6923f;
+    --sbc-gold: #ffd091;
+    --sbc-purple: #b7a0e6;
+    --sbc-text: #f6f1fc;
+    --sbc-muted: #b8afc6;
+    --sbc-border: #373043;
+    --sbc-surface: #191420;
 }
 
 [data-testid="stAppViewContainer"] {
-    background: #f6f9fc;
+    background:
+        radial-gradient(ellipse at 95% 0%, rgb(97 54 131 / 17%), transparent 46%),
+        radial-gradient(ellipse at 0% 85%, rgb(172 72 32 / 7%), transparent 46%),
+        #0f0c16;
+    color: var(--sbc-text);
 }
 
 [data-testid="stHeader"] {
-    background: #f6f9fc;
+    background: #0f0c16;
+    border-bottom: 1px solid rgb(183 160 230 / 7%);
 }
 
 [data-testid="stMainBlockContainer"] {
@@ -20,28 +29,55 @@
 }
 
 .sbc-brand-header {
+    position: relative;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1.5rem;
-    padding: 1.5rem 1.75rem;
+    padding: 1.4rem 1.6rem;
     margin-bottom: 0.75rem;
-    background: #ffffff;
-    border: 1px solid var(--sbc-border);
-    border-bottom: 4px solid var(--sbc-green);
-    border-radius: 14px;
-    box-shadow: 0 4px 20px rgb(18 60 92 / 4%);
+    background: linear-gradient(115deg, #201827, #18131f 65%, #2c1c2a);
+    border: 1px solid #493047;
+    border-radius: 18px;
+    box-shadow: 0 10px 35px rgb(0 0 0 / 20%);
+}
+
+.sbc-brand-header::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--sbc-orange), #a575cf 65%, #493047);
+}
+
+.sbc-bank-mark {
+    position: relative;
+    flex: 0 1 280px;
+    min-width: 0;
+    padding: 0.7rem 0.9rem;
+    background: #f8fafc;
+    border: 1px solid rgb(255 255 255 / 30%);
+    border-radius: 12px;
 }
 
 .sbc-brand-logo {
     display: block;
-    width: 264px;
-    max-width: 62%;
+    width: 100%;
+    max-width: 264px;
     height: auto;
 }
 
+.sbc-workspace-meta {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.6rem;
+}
+
 .sbc-workspace-name {
-    color: var(--sbc-navy);
+    color: var(--sbc-text);
     font-size: 0.75rem;
     font-weight: 650;
     letter-spacing: 0.1em;
@@ -49,8 +85,32 @@
     text-transform: uppercase;
 }
 
+.sbc-season-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.65rem;
+    color: #ffc48a;
+    background: #35232a;
+    border: 1px solid #64402e;
+    border-radius: 30px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.sbc-cobweb {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 150px;
+    height: 140px;
+    color: #bda7cd;
+    opacity: 0.15;
+    pointer-events: none;
+}
+
 h1, h2, h3 {
-    color: var(--sbc-navy);
+    color: var(--sbc-text);
 }
 
 h1 {
@@ -59,75 +119,159 @@ h1 {
 }
 
 [data-testid="stSidebar"] {
-    background: #ffffff;
-    border-right: 1px solid var(--sbc-border);
+    background:
+        url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR__") center bottom 18px / 280px 215px no-repeat,
+        radial-gradient(ellipse at 0% 0%, #292034, transparent 60%),
+        #120e1a;
+    border-right: 1px solid #3a2b43;
+}
+
+[data-testid="stSidebarContent"] {
+    background: transparent;
+}
+
+[data-testid="stSidebarHeader"] {
+    padding: 1.3rem 1.1rem 0.85rem;
+}
+
+[data-testid="stSidebarLogo"] {
+    box-sizing: border-box;
+    width: 238px;
+    max-width: 100%;
+    height: auto;
+    padding: 0.8rem;
+    background: #f8fafc;
+    border: 1px solid rgb(255 255 255 / 15%);
+    border-radius: 12px;
+}
+
+[data-testid="stSidebarNav"] {
+    padding-top: 0.5rem;
+}
+
+[data-testid="stSidebarNav"] a {
+    min-height: 44px;
+    margin: 0.2rem 0;
+    padding: 0.65rem 0.8rem;
+    color: #c8bdd6;
+    border: 1px solid transparent;
+    border-radius: 11px;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+[data-testid="stSidebarNav"] a:hover {
+    background: #251c31;
+    border-color: #473251;
 }
 
 [data-testid="stSidebarNav"] a[aria-current="page"] {
-    color: var(--sbc-blue);
-    background: #eaf4fb;
-    border-left: 3px solid var(--sbc-green);
-    border-radius: 6px;
+    color: #ffcc9c;
+    background: linear-gradient(100deg, #392522, #29202f);
+    border: 1px solid #70412c;
+    border-left: 3px solid var(--sbc-orange);
+    box-shadow: 0 3px 18px rgb(246 146 63 / 7%);
+}
+
+[data-testid="stSidebarNav"] a[aria-current="page"] span {
+    color: #ffcc9c;
+}
+
+[data-testid="stSidebarNavSeparator"] {
+    border-color: #3a2b43;
 }
 
 [data-testid="stFileUploaderDropzone"] {
-    background: #ffffff;
-    border: 1.5px dashed #a9c4d9;
-    border-radius: 12px;
+    background: linear-gradient(120deg, #1c1624, #211925);
+    border: 1.5px dashed #6e4c44;
+    border-radius: 14px;
     padding: 1.5rem;
 }
 
+[data-testid="stFileUploaderDropzone"]:hover {
+    border-color: var(--sbc-orange);
+}
+
 [data-testid="stExpander"] {
-    background: #ffffff;
+    background: var(--sbc-surface);
     border: 1px solid var(--sbc-border);
-    border-radius: 10px;
+    border-radius: 12px;
+}
+
+[data-testid="stExpander"] summary:hover {
+    color: var(--sbc-gold);
 }
 
 [data-testid="stMetric"] {
-    background: #ffffff;
-    border: 1px solid var(--sbc-border);
-    border-top: 4px solid var(--sbc-blue);
-    border-radius: 12px;
-    padding: 1.25rem 1.5rem;
-    box-shadow: 0 4px 16px rgb(18 60 92 / 4%);
+    background: linear-gradient(125deg, #241c2e, #191420);
+    border: 1px solid #46334f;
+    border-top: 3px solid #b7a0e6;
+    border-radius: 16px;
+    padding: 1.3rem 1.5rem;
+    box-shadow: 0 6px 24px rgb(0 0 0 / 15%);
 }
 
 [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] {
-    border-top-color: var(--sbc-green);
+    background: linear-gradient(125deg, #2c201f, #191420);
+    border-color: #594034;
+    border-top-color: var(--sbc-orange);
 }
 
 [data-testid="stMetricValue"] {
-    color: var(--sbc-blue);
+    color: #e3d4ff;
     font-weight: 700;
+    letter-spacing: -0.035em;
 }
 
-[data-testid="stMetricLabel"] {
-    color: #4e6578;
+[data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: #ffc892;
+}
+
+[data-testid="stMetricLabel"], [data-testid="stCaptionContainer"] {
+    color: var(--sbc-muted);
 }
 
 [data-testid="stBaseButton-primary"] {
-    background: var(--sbc-blue);
-    border-color: var(--sbc-blue);
-    border-radius: 9px;
-    min-height: 2.75rem;
-    font-weight: 600;
+    min-height: 2.8rem;
+    color: #21130c;
+    background: var(--sbc-orange);
+    border-color: var(--sbc-orange);
+    border-radius: 10px;
+    font-weight: 650;
+    box-shadow: 0 4px 18px rgb(246 146 63 / 14%);
 }
 
 [data-testid="stBaseButton-primary"]:hover {
-    background: #005594;
-    border-color: #005594;
+    color: #21130c;
+    background: #ffae67;
+    border-color: #ffae67;
 }
 
-[data-testid="stDownloadButton"] button {
-    background: #ffffff;
-    border-color: #c6d9e7;
-    color: var(--sbc-blue);
-    border-radius: 9px;
+[data-testid="stBaseButton-primary"]:disabled {
+    color: #aa9db3;
+    background: #3c2d3e;
+    border-color: #4a374c;
+    box-shadow: none;
 }
 
-[data-testid="stDownloadButton"] button:hover {
-    border-color: var(--sbc-blue);
-    background: #edf6fc;
+[data-testid="stDownloadButton"] button,
+[data-testid="stFileUploaderDropzone"] button {
+    color: #f1dfcf;
+    background: #28202f;
+    border-color: #5a4148;
+    border-radius: 10px;
+}
+
+[data-testid="stDownloadButton"] button:hover,
+[data-testid="stFileUploaderDropzone"] button:hover {
+    color: var(--sbc-gold);
+    border-color: #cb8150;
+    background: #34242e;
+}
+
+@media (max-height: 720px) {
+    [data-testid="stSidebar"] {
+        background-size: 200px 153px, auto, auto;
+    }
 }
 
 @media (max-width: 640px) {
@@ -136,17 +280,39 @@ h1 {
     }
 
     .sbc-brand-header {
-        gap: 0.75rem;
-        padding: 1.1rem;
+        gap: 0.7rem;
+        padding: 1rem;
+        border-radius: 14px;
+    }
+
+    .sbc-bank-mark {
+        flex-basis: 195px;
+        padding: 0.6rem;
+        border-radius: 9px;
+    }
+
+    .sbc-workspace-meta {
+        max-width: 115px;
+        gap: 0.4rem;
     }
 
     .sbc-workspace-name {
-        max-width: 100px;
-        font-size: 0.65rem;
-        letter-spacing: 0.06em;
+        font-size: 0.62rem;
+        letter-spacing: 0.05em;
+    }
+
+    .sbc-season-tag {
+        padding: 0.25rem 0.4rem;
+        font-size: 0.6rem;
     }
 
     [data-testid="stMetric"] {
         padding: 1rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-testid="stSidebarNav"] a {
+        transition: none;
     }
 }
