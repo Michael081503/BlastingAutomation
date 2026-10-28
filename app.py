@@ -12,6 +12,7 @@ import streamlit as st
 from openpyxl.utils import get_column_letter
 
 import app_startup
+from branding import BANK_ICON, render_bank_branding
 
 importlib.reload(app_startup).refresh_application_modules()
 
@@ -106,8 +107,8 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
 
 
 def render_workbook_page() -> None:
-    st.title("BLASTING AUTOMATION")
-    st.subheader("GEO & RECO")
+    render_bank_branding()
+    st.title("GEO & RECO")
     st.write("Upload your GEO or RECO workbook, choose a sheet, and export the mapped values as CSV files.")
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 matching has its own NEGATIVE B2 page.")
     with st.sidebar:
@@ -484,7 +485,7 @@ def render_workbook_page() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
+    st.set_page_config(page_title="Security Bank | Blasting Automation", page_icon=str(BANK_ICON), layout="wide")
     page = st.navigation([
         st.Page(render_workbook_page, title="GEO & RECO", default=True),
         st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2", url_path="NEGATIVE_B2"),

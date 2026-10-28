@@ -84,7 +84,7 @@ class WorkflowPageTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertTrue(any(heading.value == "GEO & RECO" for heading in app.subheader))
+            self.assertEqual(app.title[0].value, "GEO & RECO")
             source = next(widget for widget in app.selectbox if widget.label == "Source sheet")
             self.assertEqual(set(source.options), {"DataGrid", "NEGATIVE", "GEO"})
             self.assertEqual(source.value, "NEGATIVE")

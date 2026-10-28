@@ -1,0 +1,152 @@
+:root {
+    --sbc-blue: #0168b3;
+    --sbc-green: #97c93d;
+    --sbc-navy: #123c5c;
+    --sbc-border: #dce7ef;
+}
+
+[data-testid="stAppViewContainer"] {
+    background: #f6f9fc;
+}
+
+[data-testid="stHeader"] {
+    background: #f6f9fc;
+}
+
+[data-testid="stMainBlockContainer"] {
+    max-width: 1280px;
+    padding-top: 5.25rem;
+    padding-bottom: 3rem;
+}
+
+.sbc-brand-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1.5rem 1.75rem;
+    margin-bottom: 0.75rem;
+    background: #ffffff;
+    border: 1px solid var(--sbc-border);
+    border-bottom: 4px solid var(--sbc-green);
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgb(18 60 92 / 4%);
+}
+
+.sbc-brand-logo {
+    display: block;
+    width: 264px;
+    max-width: 62%;
+    height: auto;
+}
+
+.sbc-workspace-name {
+    color: var(--sbc-navy);
+    font-size: 0.75rem;
+    font-weight: 650;
+    letter-spacing: 0.1em;
+    text-align: right;
+    text-transform: uppercase;
+}
+
+h1, h2, h3 {
+    color: var(--sbc-navy);
+}
+
+h1 {
+    font-weight: 700;
+    letter-spacing: -0.035em;
+}
+
+[data-testid="stSidebar"] {
+    background: #ffffff;
+    border-right: 1px solid var(--sbc-border);
+}
+
+[data-testid="stSidebarNav"] a[aria-current="page"] {
+    color: var(--sbc-blue);
+    background: #eaf4fb;
+    border-left: 3px solid var(--sbc-green);
+    border-radius: 6px;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+    background: #ffffff;
+    border: 1.5px dashed #a9c4d9;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+[data-testid="stExpander"] {
+    background: #ffffff;
+    border: 1px solid var(--sbc-border);
+    border-radius: 10px;
+}
+
+[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid var(--sbc-border);
+    border-top: 4px solid var(--sbc-blue);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 4px 16px rgb(18 60 92 / 4%);
+}
+
+[data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] {
+    border-top-color: var(--sbc-green);
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--sbc-blue);
+    font-weight: 700;
+}
+
+[data-testid="stMetricLabel"] {
+    color: #4e6578;
+}
+
+[data-testid="stBaseButton-primary"] {
+    background: var(--sbc-blue);
+    border-color: var(--sbc-blue);
+    border-radius: 9px;
+    min-height: 2.75rem;
+    font-weight: 600;
+}
+
+[data-testid="stBaseButton-primary"]:hover {
+    background: #005594;
+    border-color: #005594;
+}
+
+[data-testid="stDownloadButton"] button {
+    background: #ffffff;
+    border-color: #c6d9e7;
+    color: var(--sbc-blue);
+    border-radius: 9px;
+}
+
+[data-testid="stDownloadButton"] button:hover {
+    border-color: var(--sbc-blue);
+    background: #edf6fc;
+}
+
+@media (max-width: 640px) {
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 4.75rem;
+    }
+
+    .sbc-brand-header {
+        gap: 0.75rem;
+        padding: 1.1rem;
+    }
+
+    .sbc-workspace-name {
+        max-width: 100px;
+        font-size: 0.65rem;
+        letter-spacing: 0.06em;
+    }
+
+    [data-testid="stMetric"] {
+        padding: 1rem;
+    }
+}
