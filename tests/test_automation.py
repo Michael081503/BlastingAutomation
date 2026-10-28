@@ -670,6 +670,54 @@ class ChannelTests(unittest.TestCase):
 
 
 class GeoTests(unittest.TestCase):
+    def test_doclass_matches_area_in_both_channels_template_formats_and_export_modes(self):
+        cases = [
+            ("Mindanao", "SBC GEO Mindanao"), ("  mInDaNaO  ", "SBC GEO Mindanao"),
+            ("Region 3", "SBC GEO R3"), ("REGION-3", "SBC GEO R3"), (" r.3 ", "SBC GEO R3"),
+            ("Other", ""), (None, ""),
+        ]
+        records = read_source(geo_source_file([
+            sample_row(Area=area, product="CARDS", **{"Account no.": f"000{index}"})
+            for index, (area, _) in enumerate(cases)
+        ]), "NEGATIVE", 1).records
+        original = [dict(record) for record in records]
+        expected = {f"000{index}": value for index, (_, value) in enumerate(cases)}
+        headers = ["Extra", "Do Class", *[header for header in DEFAULT_TEMPLATE_HEADERS if header != "doclass"]]
+        workbook = Workbook()
+        workbook.active.append(headers)
+        templates = [(".csv", (",".join(headers) + "\n").encode(), ""), (".xlsx", save(workbook), "Sheet")]
+        for extension, template, sheet_name in templates:
+            for grouped in (True, False):
+                with self.subTest(template=extension, grouped=grouped):
+                    if grouped:
+                        bundle = build_geo_exports(template, records, sheet_name, 1, extension)
+                    else:
+                        bundle = build_sheet_exports(template, records, sheet_name, 1,
+                                                     template_extension=extension, base_name="GEO", label="GEO")
+                    with ZipFile(BytesIO(bundle.zip_data)) as archive:
+                        for file in bundle.files:
+                            self.assertEqual(file.headers, headers)
+                            rows = list(csv.DictReader(StringIO(archive.read(file.filename).decode("cp1252"))))
+                            for row in rows:
+                                self.assertEqual(row["Do Class"], expected[row["primary_key"]])
+                                self.assertEqual(row["Extra"], "")
+                            for row in file.preview:
+                                self.assertEqual(row["doclass"] or "", expected[row["primary_key"]])
+        self.assertEqual(records, original)
+
+    def test_direct_template_writers_derive_doclass_and_reject_duplicate_class_headers(self):
+        record = {**read_source(source_file(), "NEGATIVE", 1).records[0],
+                  "AREA": "Region 3", "doclass": "Old template value"}
+        csv_data = fill_csv_template(create_default_csv_template(), [record])
+        self.assertEqual(list(csv.DictReader(StringIO(csv_data.decode("cp1252"))))[0]["doclass"], "SBC GEO R3")
+        workbook = loaded(fill_excel_template(create_default_template(), [record], "Template", 1))
+        self.addCleanup(workbook.close)
+        self.assertEqual(workbook.active.cell(2, DEFAULT_TEMPLATE_HEADERS.index("doclass") + 1).value, "SBC GEO R3")
+        self.assertEqual(record["doclass"], "Old template value")
+        duplicate = (",".join([*DEFAULT_TEMPLATE_HEADERS, "DO CLASS"]) + "\n").encode()
+        with self.assertRaisesRegex(AutomationError, 'Duplicate or ambiguous header "doclass"'):
+            fill_csv_template(duplicate, [record])
+
     def test_geo_headers_map_aliases_and_copy_area(self):
         data = geo_source_file([sample_row(Area="Region 3", level="Level 6")])
         info = next(sheet for sheet in inspect_workbook(data) if sheet.name == "NEGATIVE")
@@ -731,11 +779,14 @@ class GeoTests(unittest.TestCase):
                 for record in records:
                     if file.group_key.startswith("mindanao_"):
                         self.assertEqual(record["AREA"].strip(), "Mindanao")
+                        self.assertEqual(record["doclass"], "SBC GEO Mindanao")
                     elif file.group_key.startswith("r3_"):
                         self.assertIn(record["AREA"], ("REGION 3", "R3"))
+                        self.assertEqual(record["doclass"], "SBC GEO R3")
                     else:
                         self.assertIn(file.group_key, GEO_REVIEW_GROUP_KEYS)
                         self.assertIn(record["AREA"], ("Other", ""))
+                        self.assertEqual(record["doclass"], "")
                     self.assertEqual(record["ChristmasAmnesty"], "QUALIFIED" if "_qualified_" in file.group_key else "")
                     self.assertEqual(record["phone" if file.channel == "email" else "email"], "")
 
@@ -959,6 +1010,7 @@ class AppTests(unittest.TestCase):
             file = next(file for file in result["files"] if file.group_key == "r3_blank_bel" and file.channel == "viber")
             app.main.selectbox[-1].select(file.filename).run(timeout=20)
             self.assertEqual(app.main.dataframe[-1].value.loc[0, "AREA"], "Region 3")
+            self.assertEqual(app.main.dataframe[-1].value.loc[0, "doclass"], "SBC GEO R3")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             self.assertEqual(len(app.get("download_button")), 1)
             app.button[0].click().run(timeout=20)
@@ -966,6 +1018,10 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.session_state["result"]["files"]), 2)
             self.assertEqual(app.session_state["result"]["count"], 5)
+            for file in app.session_state["result"]["files"]:
+                for row in file.preview:
+                    expected = "SBC GEO Mindanao" if row["AREA"] == "Mindanao" else "SBC GEO R3" if row["AREA"] == "Region 3" else None
+                    self.assertEqual(row["doclass"], expected)
 
     def test_file_type_defaults_to_standard_csv_and_change_refreshes_exports(self):
         upload = FakeUpload("source.xlsx", source_file([sample_row(Name="Pe\u00f1a, Ana")]))

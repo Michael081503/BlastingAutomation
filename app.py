@@ -27,6 +27,7 @@ from email_validation import EMAIL_VALIDATION_VERSION
 from automation import (
     CSV_OUTPUT_ENCODINGS,
     DEFAULT_TEMPLATE_HEADERS,
+    DERIVED_TEMPLATE_HEADERS,
     FIELD_MAPPING,
     MAPPING_VERSION,
     OPTIONAL_FIELD_MAPPING,
@@ -56,7 +57,7 @@ def workbook_info(data: bytes, *, template: bool = False):
 def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
     targets = {
         normalize_header(target): target
-        for target in (*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values())
+        for target in (*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values(), *DERIVED_TEMPLATE_HEADERS)
     }
     columns = [targets.get(normalize_header(header)) for header in headers]
     preview = pd.DataFrame(
@@ -206,6 +207,8 @@ def render_workbook_page() -> None:
 
     grouped = False
     geo = source_info.has_area
+    if geo:
+        st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
     st.caption("Accounts are excluded when they have neither a valid email address nor a phone number.")
     st.caption(
         "Every group produces Email and Viber CSV files using the same headers. "

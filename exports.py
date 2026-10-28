@@ -13,6 +13,7 @@ from automation import (
     csv_template_headers,
     excel_template_to_csv,
     fill_csv_template,
+    geo_doclass,
     has_contact_details,
     has_contact_value,
     normalize_header,
@@ -159,6 +160,7 @@ def separate_channels(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
     """
     channels = {key: [] for key in CHANNEL_LABELS}
     for record in records:
+        record = {**record, "doclass": geo_doclass(record.get("AREA"))}
         email = validated_email(record.get("email"))
         if email is not None:
             channels["email"].append({**record, "email": email, "phone": None})

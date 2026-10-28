@@ -32,6 +32,7 @@ def refresh_application_modules() -> set[str]:
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
             "create_default_csv_template",
+            "DERIVED_TEMPLATE_HEADERS", "geo_doclass",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
         ), ("email_validation",)),
         ("exports", (

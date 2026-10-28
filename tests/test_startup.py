@@ -162,6 +162,30 @@ class StartupTests(unittest.TestCase):
             assert folder_output.AutomationError is automation.AutomationError
         """)
 
+    def test_cached_modules_refresh_for_geo_doclass_and_export_preview(self):
+        self.run_isolated("""
+            import csv
+            from io import StringIO
+            import automation, exports, folder_output
+            del automation.geo_doclass
+            del automation.DERIVED_TEMPLATE_HEADERS
+            import app
+            assert app.MAPPING_VERSION == 3
+            assert 'doclass' in app.DERIVED_TEMPLATE_HEADERS
+            assert exports.geo_doclass is automation.geo_doclass
+            assert folder_output.AutomationError is automation.AutomationError
+            bundle = exports.build_sheet_exports(
+                automation.create_default_csv_template(),
+                [{'email': 'first@example.com', 'AREA': 'Mindanao'}],
+                '', 1, template_extension='.csv', base_name='GEO', label='GEO',
+            )
+            rows = list(csv.DictReader(StringIO(bundle.files[0].data.decode('cp1252'))))
+            assert rows[0]['doclass'] == 'SBC GEO Mindanao'
+            assert bundle.files[0].preview[0]['doclass'] == 'SBC GEO Mindanao'
+            from app_startup import refresh_application_modules
+            assert refresh_application_modules() == set()
+        """)
+
 
 if __name__ == "__main__":
     unittest.main()

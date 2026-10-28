@@ -156,7 +156,7 @@ For GEO workbooks, the app detects the **Area** source column and defaults to **
 
 Every nonempty group then produces Email and Viber CSV files, so five populated groups in each Area produce **20 files**. Level values are retained in the output column and do not affect GEO grouping. Qualified products other than CARDS and BEL, and other or missing Area values, are kept in clearly named review files when present. The standard NEGATIVE workflow without an Area column retains its original level rules.
 
-The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `placement`, `Product`, `OB (MASTERLIST}`, and `Phone 1` are accepted. `assign_date` supplies `EndoDate`; `placement` supplies `Level`. The source Area is copied into `AREA`, preserving `Region 3` as the source value even though its group is named R3. Area is optional for existing workbooks. GEO grouped exports require an AREA template header; the built-in 16-column template already includes it.
+The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `placement`, `Product`, `OB (MASTERLIST}`, and `Phone 1` are accepted. `assign_date` supplies `EndoDate`; `placement` supplies `Level`. The source Area is copied into `AREA`, preserving `Region 3` as the source value even though its group is named R3. The `doclass` template column is filled automatically with **`SBC GEO Mindanao`** for Mindanao accounts and **`SBC GEO R3`** for Region 3 / R3 accounts, ignoring capitalization, spacing, and punctuation in Area. This applies to both Email and Viber files, previews, ZIPs, folder saves, and the all-accounts mode. Other or missing Areas leave `doclass` blank. Area is optional for existing workbooks. GEO grouped exports require an AREA template header; the built-in 16-column template already includes AREA and doclass.
 
 GEO grouping works on each worksheet with an Area column. **NEGATIVE** remains the default; select one source sheet at a time. **OVERALL** and the other sheets may overlap, so processing them separately does not create a deduplicated combined export.
 
@@ -208,10 +208,11 @@ Keep the keys on the left unchanged. Edit the base names in `GEO_OUTPUT_FILENAME
 | phone_1 | phone |
 | Christmas Amnesty | ChristmasAmnesty |
 | Area (optional) | AREA |
+| Area (calculated) | doclass |
 
 Header matching ignores capitalization, whitespace, and punctuation. `Product Type` is also accepted for `product`, matching your sample workbook. `OB` is also accepted as a source header for `OB (Masterlist)`. GEO aliases are listed above. All eleven required source and destination headers must be present; Area is optional outside grouped GEO exports. Missing or ambiguous headers are reported before export, including duplicate optional Area headers. Header detection scans the first 50 rows; enter a row manually when headers appear later.
 
-The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. The four columns without mapping rules (`Monthly`, `Terms`, `doclass`, and `NewEndo`) are retained and left blank. AREA is filled when present in the source and otherwise stays blank. Uploaded templates keep their own header labels and order. Export previews show all file headers, including columns with blank values and channels with no rows.
+The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. The three columns without mapping rules (`Monthly`, `Terms`, and `NewEndo`) are retained and left blank. AREA is filled when present in the source and otherwise stays blank. `doclass` is calculated from Area for Mindanao and R3; other or missing Areas leave it blank. No source doclass column is required. Uploaded templates keep their own header labels and order; when they include a doclass header, it is filled by the same rule. Export previews show all file headers, including columns with blank values and channels with no rows.
 
 ## Output behavior
 

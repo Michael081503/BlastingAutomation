@@ -45,8 +45,14 @@ SOURCE_ALIASES = {
     "product": ("Product Type",),
     "OB (Masterlist)": ("OB",),
 }
-MAPPING_VERSION = 2
+MAPPING_VERSION = 3
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
+DERIVED_TEMPLATE_HEADERS = ("doclass",)
+GEO_DOCLASS_BY_AREA = {
+    "mindanao": "SBC GEO Mindanao",
+    "r3": "SBC GEO R3",
+    "region3": "SBC GEO R3",
+}
 # Keep the full campaign layout separate from the fields required for mapping.
 DEFAULT_TEMPLATE_HEADERS = (
     "email", "primary_key", "indexoneuid", "cardnumber", "FullName", "phone", "OB",
@@ -88,6 +94,11 @@ def normalize_header(value: Any) -> str:
     """Match headers despite capitalization, extra whitespace, and punctuation."""
     text = unicodedata.normalize("NFKC", str(value or "")).casefold()
     return "".join(character for character in text if character.isalnum())
+
+
+def geo_doclass(area: Any) -> str | None:
+    """Derive the GEO campaign class from the account's source Area."""
+    return GEO_DOCLASS_BY_AREA.get(normalize_header(area))
 
 
 def _source_aliases(source: str) -> set[str]:
@@ -171,7 +182,10 @@ def _column_lookup(headers: list[Any], *, template: bool = False) -> dict[str, i
     normalized = [normalize_header(value) for value in headers]
     positions = {}
     missing = []
-    for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items():
+    fields = {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}
+    if template:
+        fields.update((header, header) for header in DERIVED_TEMPLATE_HEADERS)
+    for source, target in fields.items():
         aliases = {normalize_header(target)} if template else _source_aliases(source)
         matches = [index for index, value in enumerate(normalized) if value in aliases]
         label = target if template else source
@@ -352,7 +366,8 @@ def fill_excel_template(
             for column, style in enumerate(styles, 1):
                 sheet.cell(row_number, column)._style = copy(style)
             for target, column in positions.items():
-                _write_excel_value(sheet.cell(row_number, column + 1), record.get(target), target)
+                value = geo_doclass(record.get("AREA")) if target == "doclass" else record.get(target)
+                _write_excel_value(sheet.cell(row_number, column + 1), value, target)
         last_row = max(header_row + len(records), first_data_row)
         if sheet.auto_filter.ref:
             sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{last_row}"
@@ -448,7 +463,7 @@ def fill_csv_template(
     for record in records:
         row = [""] * len(headers)
         for target, position in positions.items():
-            value = record.get(target)
+            value = geo_doclass(record.get("AREA")) if target == "doclass" else record.get(target)
             if isinstance(value, (date, datetime)):
                 value = value.isoformat(sep=" ") if isinstance(value, datetime) else value.isoformat()
             row[position] = "" if value is None else value
