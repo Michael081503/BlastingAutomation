@@ -13,26 +13,20 @@ from openpyxl.utils import get_column_letter
 
 from automation import AutomationError, CSV_OUTPUT_ENCODINGS
 from autostat import (
-    AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, PREFERRED_ACCOUNT_HEADER, VIBER_HEADERS, SourceSelection,
-    build_autostat_exports, inspect_contact_source,
+    AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, VIBER_HEADERS, SourceSelection,
+    autostat_source_excluded, build_autostat_exports, inspect_contact_source,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
 from export_config import OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 
-AUTOSTAT_PAGE_VERSION = 2
+AUTOSTAT_PAGE_VERSION = 4
+COMPACT_SUMMARY_VERSION = 1
 
 
 def render_autostat() -> None:
     st.title("AUTOSTAT")
-    st.write("Compile all uploaded files into one Email activity file and one Viber activity file.")
-    st.caption("All selected files and sheets are combined into AUTOSTAT_Email.csv and AUTOSTAT_Viber.csv, with each account appearing once per channel.")
-    st.caption(
-        "Phone rule: remove formatting, take the rightmost 10 digits, and accept only numbers starting with 9. "
-        "Email validation checks the address format."
-    )
-    st.caption("These files use the supplied template statuses and remarks. Preparing logs does not send messages.")
     with st.sidebar:
         output_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="autostat_csv_file_type",
@@ -40,32 +34,25 @@ def render_autostat() -> None:
     encoding = CSV_OUTPUT_ENCODINGS[output_format]
     uploads = st.file_uploader(
         "Source files", type=["xlsx", "csv"], accept_multiple_files=True, key="autostat_uploads",
-        help="Upload one or more account lists. All selected sheets compile into one Email file and one Viber file.",
     )
-    with st.expander("Email and Viber templates"):
-        st.write("Email template")
-        st.dataframe(pd.DataFrame(columns=EMAIL_HEADERS), hide_index=True, width="stretch")
-        st.write("Viber template")
-        st.dataframe(pd.DataFrame(columns=VIBER_HEADERS), hide_index=True, width="stretch")
-        st.caption(
-            "Each account appears once per channel. The first valid email and first valid phone are kept. "
-            "Repeated accounts across selected rows, sheets and files are removed."
-        )
-    remark_by = st.text_input("Remark By", value="MBURGOS", key="autostat_remark_by")
-    current_time = st.checkbox("Use current Manila date and time", value=True, key="autostat_current_time")
     fixed_timestamp = None
-    if not current_time:
-        default = st.session_state.setdefault("autostat_default_time", datetime.now(MANILA_TIMEZONE))
-        left, right = st.columns(2)
-        log_date = left.date_input("Log date (Asia/Manila)", default.date(), key="autostat_date")
-        log_time = right.time_input("Log time (Asia/Manila)", default.time().replace(microsecond=0), key="autostat_time")
-        fixed_timestamp = datetime.combine(log_date, log_time, tzinfo=MANILA_TIMEZONE)
+    with st.expander("Log settings"):
+        remark_by = st.text_input("Remark By", value="MBURGOS", key="autostat_remark_by")
+        blank_timestamp = st.checkbox("Leave date and time blank", key="autostat_blank_time")
+        current_time = st.checkbox(
+            "Use current Manila date and time", value=True, key="autostat_current_time", disabled=blank_timestamp,
+        )
+        if not blank_timestamp and not current_time:
+            default = st.session_state.setdefault("autostat_default_time", datetime.now(MANILA_TIMEZONE))
+            left, right = st.columns(2)
+            log_date = left.date_input("Log date (Asia/Manila)", default.date(), key="autostat_date")
+            log_time = right.time_input("Log time (Asia/Manila)", default.time().replace(microsecond=0), key="autostat_time")
+            fixed_timestamp = datetime.combine(log_date, log_time, tzinfo=MANILA_TIMEZONE)
     if not uploads:
         st.session_state.pop("autostat_result", None)
-        st.info("Upload your source files to begin. The Email and Viber templates are already included.")
         return
 
-    sources, configurations, problems = [], [], []
+    sources, configurations, problems, excluded_names = [], [], [], []
     cache = st.session_state.setdefault("autostat_source_info", {})
     active_cache = {}
 
@@ -76,13 +63,11 @@ def render_autostat() -> None:
         active_cache[cache_key] = cache[cache_key]
         return cache[cache_key]
 
-    st.subheader("Check source columns")
-    st.caption(f"`{PREFERRED_ACCOUNT_HEADER}` is selected automatically when present. Its values fill `Account No.` in both logs.")
-    st.caption(
-        "All sheets with recognized account and contact columns are selected automatically. "
-        "Select additional sheets or change the columns below when needed. Account numbers are never scanned as phones."
-    )
     for file_index, upload in enumerate(uploads):
+        if autostat_source_excluded(upload.name):
+            excluded_names.append(upload.name)
+            configurations.append((upload.name, "excluded"))
+            continue
         data = upload.getvalue()
         extension = Path(upload.name).suffix.lower()
         digest = hashlib.sha256(data).hexdigest()
@@ -90,7 +75,7 @@ def render_autostat() -> None:
         configurations.append((upload.name, digest))
         try:
             sheets = inspect(data, extension)
-            with st.expander(f"{file_index + 1}. {upload.name}", expanded=True):
+            with st.expander(f"{file_index + 1}. {upload.name} — source columns", expanded=False):
                 selected = st.multiselect(
                     "Sheets to process", [sheet.name for sheet in sheets],
                     default=[sheet.name for sheet in sheets if sheet.ready], key=f"{prefix}_sheets",
@@ -144,13 +129,17 @@ def render_autostat() -> None:
         except (AutomationError, UnicodeError, ValueError) as exc:
             problems.append(f"{upload.name}: {exc}")
     st.session_state["autostat_source_info"] = active_cache
+    if excluded_names:
+        with st.expander(f"Excluded files ({len(excluded_names)})"):
+            for name in excluded_names:
+                st.write(name)
     for problem in problems:
         st.error(problem)
     if not sources:
         st.info("Select at least one sheet with an account number column and an email or phone column.")
     signature = (
         AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, AUTOSTAT_PAGE_VERSION, EMAIL_VALIDATION_VERSION, tuple(configurations), remark_by,
-        fixed_timestamp, encoding, EMAIL_HEADERS, VIBER_HEADERS,
+        blank_timestamp, current_time, fixed_timestamp, encoding, EMAIL_HEADERS, VIBER_HEADERS,
     )
     previous = st.session_state.get("autostat_result")
     if previous is not None and (previous["signature"] != signature or problems):
@@ -160,7 +149,7 @@ def render_autostat() -> None:
         st.session_state.pop("autostat_result", None)
         try:
             with st.spinner("Checking contacts and preparing AUTOSTAT logs..."):
-                timestamp = fixed_timestamp or datetime.now(MANILA_TIMEZONE)
+                timestamp = None if blank_timestamp else fixed_timestamp or datetime.now(MANILA_TIMEZONE)
                 bundle = build_autostat_exports(sources, timestamp=timestamp, remark_by=remark_by, encoding=encoding)
                 st.session_state["autostat_result"] = {"signature": signature, "bundle": bundle, "timestamp": timestamp}
         except AutomationError as exc:
@@ -171,35 +160,13 @@ def render_autostat() -> None:
     if result is None:
         return
     bundle = result["bundle"]
-    email_count = sum(row["Email rows"] for row in bundle.summary)
-    phone_count = sum(row["Viber rows"] for row in bundle.summary)
-    if email_count or phone_count:
-        st.success(f"Ready: {email_count:,} Email rows and {phone_count:,} Viber rows.")
-    else:
+    email_count = bundle.files[0].count
+    phone_count = bundle.files[1].count
+    email_column, phone_column = st.columns(2)
+    email_column.metric("Valid email accounts", f"{email_count:,}")
+    phone_column.metric("Valid phone accounts", f"{phone_count:,}")
+    if not (email_count or phone_count):
         st.warning("No valid contacts with account numbers were found. The output files contain template headers only.")
-    st.caption(f"Log time (Asia/Manila): {result['timestamp'].strftime('%Y-%m-%d %I:%M:%S %p')}")
-    st.dataframe(pd.DataFrame(bundle.summary), hide_index=True, width="stretch")
-    st.caption(
-        "Rows with missing account numbers are excluded. Invalid contacts are removed. "
-        "An account with valid email and phone details appears in both logs. "
-        "Duplicate account entries are removed separately in each channel, keeping the first valid contact. "
-        "Multiple contacts in one cell may be separated by commas, semicolons, pipes or line breaks."
-    )
-    st.subheader("Save to a folder")
-    output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key="autostat_output_folder")
-    st.caption("Saves on the computer running this app. When hosted online, use the downloads to save files on your PC.")
-    if st.button("Save AUTOSTAT files to folder", key="autostat_save"):
-        try:
-            folder = save_files_to_folder(
-                [(file.filename, file.data) for file in bundle.files], output_folder, batch_name="AUTOSTAT",
-            )
-            result["saved_folder"] = str(folder)
-            st.session_state["autostat_result"] = result
-        except AutomationError as exc:
-            st.error(str(exc))
-    if result.get("saved_folder"):
-        st.success(f"Saved {len(bundle.files)} files:")
-        st.code(result["saved_folder"], language=None)
     st.download_button(
         "Download all AUTOSTAT files (ZIP)", bundle.zip_data, "AUTOSTAT_FILES.zip",
         mime="application/zip", on_click="ignore", key="autostat_zip",
@@ -209,11 +176,25 @@ def render_autostat() -> None:
             f"Download {file.filename}", file.data, file.filename, mime="text/csv",
             key=f"autostat_download_{index}", on_click="ignore",
         )
-    st.subheader("Preview an AUTOSTAT file")
-    filename = st.selectbox(
-        "File to preview", [file.filename for file in bundle.files],
-        key=f"autostat_preview_{hash(signature)}",
-    )
-    file = next(file for file in bundle.files if file.filename == filename)
-    st.dataframe(pd.DataFrame(file.preview, columns=file.headers), hide_index=True, width="stretch")
-    st.caption(f"Showing the first {min(file.count, 100):,} of {file.count:,} rows.")
+    with st.expander("Save to a folder"):
+        output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key="autostat_output_folder")
+        if st.button("Save AUTOSTAT files to folder", key="autostat_save"):
+            try:
+                folder = save_files_to_folder(
+                    [(file.filename, file.data) for file in bundle.files], output_folder, batch_name="AUTOSTAT",
+                )
+                result["saved_folder"] = str(folder)
+                st.session_state["autostat_result"] = result
+            except AutomationError as exc:
+                st.error(str(exc))
+        if result.get("saved_folder"):
+            st.success(f"Saved {len(bundle.files)} files:")
+            st.code(result["saved_folder"], language=None)
+    with st.expander("Preview"):
+        filename = st.selectbox(
+            "File to preview", [file.filename for file in bundle.files],
+            key=f"autostat_preview_{hash(signature)}",
+        )
+        file = next(file for file in bundle.files if file.filename == filename)
+        st.dataframe(pd.DataFrame(file.preview, columns=file.headers), hide_index=True, width="stretch")
+        st.caption(f"Showing the first {min(file.count, 100):,} of {file.count:,} rows.")

@@ -23,9 +23,12 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 6
-ACCOUNT_DEDUP_VERSION = 1
+AUTOSTAT_VERSION = 8
+ACCOUNT_DEDUP_VERSION = 2
+ACCOUNT_IDENTITY_VERSION = 1
+BLANK_TIMESTAMP_VERSION = 1
 COMPILED_OUTPUT_VERSION = 1
+AUTOSTAT_EXCLUSIONS_VERSION = 1
 PREFERRED_ACCOUNT_HEADER = "cardnumber"
 REMARK_PREFIX = "SPMA | 08 With SMS / email / DL without response"
 # Column labels, statuses and remark text come from the supplied templates.
@@ -40,6 +43,14 @@ ACCOUNT_ALIASES = (
     "acct no", "acct number", "accountno", "account id",
 )
 MIXED_ALIASES = {"emailnumber", "emailphone", "contact", "contacts", "contactdetails"}
+
+
+def autostat_source_excluded(name: str) -> bool:
+    """Exclude the insurance and bucket files from this AUTOSTAT workflow."""
+    stem = Path(name).stem
+    return "sbcinsurance" in normalize_header(stem) or bool(re.search(
+        r"(?:^|[\W_])b[24](?:$|[\W_])", stem, re.IGNORECASE,
+    ))
 
 
 def validated_phone(value: Any) -> str | None:
@@ -194,6 +205,8 @@ class SourceSelection:
 class ContactRows:
     emails: list[tuple[str, str]] = field(default_factory=list)
     phones: list[tuple[str, str]] = field(default_factory=list)
+    email_account_keys: list[tuple[str, str]] = field(default_factory=list)
+    phone_account_keys: list[tuple[str, str]] = field(default_factory=list)
     checked_rows: int = 0
     blank_rows: int = 0
     missing_accounts: int = 0
@@ -255,7 +268,9 @@ def _read_rows(source: SourceSelection, *, extra_columns: tuple[int, ...] = ()):
             cached.close()
 
 
-def _add_contact_row(result: ContactRows, sheet: ContactSheet, row: dict[int, Any]) -> None:
+def _add_contact_row(
+    result: ContactRows, sheet: ContactSheet, row: dict[int, Any], *, identity: Any = None,
+) -> None:
     if all(_blank(value) for value in row.values()):
         result.blank_rows += 1
         return
@@ -285,36 +300,53 @@ def _add_contact_row(result: ContactRows, sheet: ContactSheet, row: dict[int, An
         result.no_contacts += 1
     result.emails.extend((account, email) for email in emails)
     result.phones.extend((account, phone) for phone in phones)
+    account_key = (account.casefold(), "" if _blank(identity) else str(identity).strip().casefold())
+    result.email_account_keys.extend(account_key for _ in emails)
+    result.phone_account_keys.extend(account_key for _ in phones)
 
 
 def extract_contacts(source: SourceSelection) -> ContactRows:
     """Keep source order and one log row per distinct valid contact in each row."""
+    labels = [normalize_header(header) for header in source.sheet.headers]
+    identity_column = next((labels.index(alias) for alias in ("indexoneuid", "oldic")
+                            if labels.count(alias) == 1), None)
     result = ContactRows()
-    for row in _read_rows(source):
-        _add_contact_row(result, source.sheet, row)
+    for row in _read_rows(source, extra_columns=() if identity_column is None else (identity_column,)):
+        _add_contact_row(result, source.sheet, row, identity=row.get(identity_column))
     return result
 
 
 def unique_account_contacts(
-    contacts: ContactRows, *, seen: dict[str, set[str]] | None = None,
+    contacts: ContactRows, *, seen: dict[str, set[tuple[str, str]]] | None = None,
 ) -> ContactRows:
-    """Keep the first valid contact per account independently in each channel."""
+    """Keep one contact per account and source identity in each channel.
+
+    Distinct indexoneuid values must survive repeated or rounded card numbers.
+    Sources without an identity retain account-number-only deduplication.
+    """
     if seen is None:
         seen = {"email": set(), "viber": set()}
     unique = {}
+    unique_keys = {}
     removed = {}
-    for channel, pairs in (("email", contacts.emails), ("viber", contacts.phones)):
+    for channel, pairs, account_keys in (
+        ("email", contacts.emails, contacts.email_account_keys),
+        ("viber", contacts.phones, contacts.phone_account_keys),
+    ):
         unique[channel] = []
+        unique_keys[channel] = []
         removed[channel] = 0
-        for account, contact in pairs:
-            key = account.strip().casefold()
+        for index, (account, contact) in enumerate(pairs):
+            key = account_keys[index] if account_keys else (account.strip().casefold(), "")
             if key in seen[channel]:
                 removed[channel] += 1
             else:
                 seen[channel].add(key)
                 unique[channel].append((account, contact))
+                unique_keys[channel].append(key)
     return replace(
         contacts, emails=unique["email"], phones=unique["viber"],
+        email_account_keys=unique_keys["email"], phone_account_keys=unique_keys["viber"],
         duplicate_email_rows=contacts.duplicate_email_rows + removed["email"],
         duplicate_phone_rows=contacts.duplicate_phone_rows + removed["viber"],
     )
@@ -450,15 +482,18 @@ def build_bel_exports(
 
 
 def build_autostat_exports(
-    sources: list[SourceSelection], *, timestamp: datetime, remark_by: str = "MBURGOS",
+    sources: list[SourceSelection], *, timestamp: datetime | None, remark_by: str = "MBURGOS",
     encoding: str = "cp1252",
 ) -> AutostatBundle:
-    """Compile every selected source into one deduplicated file per channel."""
+    """Compile included sources into one deduplicated file per channel."""
     if not sources:
         raise AutomationError("Select at least one source sheet.")
+    sources = [source for source in sources if not autostat_source_excluded(source.name)]
+    if not sources:
+        raise AutomationError("All selected files are excluded from AUTOSTAT: SBC INSURANCE, B2 and B4.")
     if not remark_by.strip():
         raise AutomationError("Enter Remark By before preparing the files.")
-    time_text = timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
+    time_text = "" if timestamp is None else timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
     summaries = []
     channels = {"Email": [], "Viber": []}
     seen = {"email": set(), "viber": set()}

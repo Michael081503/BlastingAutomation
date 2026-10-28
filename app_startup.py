@@ -48,15 +48,16 @@ def refresh_application_modules() -> set[str]:
         ("autostat", (
             "AUTOSTAT_VERSION", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "build_bel_exports", "has_bel_primary_keys",
-            "ACCOUNT_DEDUP_VERSION", "unique_account_contacts",
-            "COMPILED_OUTPUT_VERSION",
+            "ACCOUNT_DEDUP_VERSION", "ACCOUNT_IDENTITY_VERSION", "unique_account_contacts",
+            "COMPILED_OUTPUT_VERSION", "BLANK_TIMESTAMP_VERSION",
+            "AUTOSTAT_EXCLUSIONS_VERSION", "autostat_source_excluded",
         ), ("automation", "email_validation", "export_config", "exports")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
             "B2_TEMPLATE_VERSION", "B2_TEMPLATE_HEADERS",
         ), ("autostat", "automation", "export_config")),
         ("b2_page", ("render_b2_page",), ("b2_matching", "autostat", "automation", "folder_output", "export_config")),
-        ("autostat_page", ("render_autostat", "AUTOSTAT_PAGE_VERSION"), ("autostat", "automation", "folder_output", "export_config")),
+        ("autostat_page", ("render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION"), ("autostat", "automation", "folder_output", "export_config")),
     )
     refreshed = set()
     for name, required, dependencies in modules:

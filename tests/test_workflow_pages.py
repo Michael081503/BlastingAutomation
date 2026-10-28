@@ -143,7 +143,7 @@ class WorkflowPageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.title[0].value, "AUTOSTAT")
             self.assertTrue(any(widget.key == "autostat_remark_by" for widget in app.text_input))
-            self.assertTrue(any("Upload your source files" in message.value for message in app.info))
+            self.assertNotIn("autostat_result", app.session_state)
             self.assertFalse(any(widget.key == "autostat_workflow" for widget in app.radio))
             self.assert_no_embedded_b2(app)
 
