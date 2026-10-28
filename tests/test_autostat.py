@@ -551,6 +551,10 @@ class AutostatAppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader), TemporaryDirectory(prefix="autostat-test-") as directory:
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
+            self.assertEqual([panel.label for panel in app.expander], ["Log settings", "Edit source columns"])
+            source_panel = app.expander[1]
+            self.assertFalse(source_panel.proto.expanded)
+            self.assertEqual(len(source_panel.multiselect), 8)
             app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)

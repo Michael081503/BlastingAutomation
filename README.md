@@ -28,7 +28,7 @@ AUTOSTAT checks account lists for valid email addresses and mobile numbers, then
 
 1. Open **AUTOSTAT** in the sidebar and upload one or more `.xlsx` or `.csv` source files.
    `SBC INSURANCE` files and filenames containing a separate `B2` or `B4` label are excluded automatically from both channel totals and exports. Case, spaces, underscores and punctuation are supported. The collapsed **Excluded files** panel lists skipped uploads. This applies only to AUTOSTAT.
-2. Source columns are detected automatically. Open a file's collapsed **source columns** panel only to change its selected sheets, header row, account column, or contact columns. Several email or phone columns can be selected. Account numbers must use a separate column from contacts.
+2. Source columns are detected automatically. All file and sheet controls are hidden inside one collapsed **Edit source columns** panel. Open it only to change selected sheets, header rows, account columns, or contact columns. Several email or phone columns can be selected. Account numbers must use a separate column from contacts.
 3. Open **Log settings** to change **Remark By** (default `MBURGOS`) or the timestamp (default current Asia/Manila time). Select **Leave date and time blank** to leave the `Time` column empty in both Email and Viber files.
 4. Click **Preview and prepare AUTOSTAT files**. The results show just **Valid email accounts** and **Valid phone accounts**, counting each exported account once per channel.
 5. Download the two compiled CSVs or their ZIP. Optional **Save to a folder** and **Preview** panels stay collapsed until opened.

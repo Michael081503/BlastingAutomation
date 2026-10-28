@@ -21,8 +21,9 @@ from export_config import OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 
-AUTOSTAT_PAGE_VERSION = 4
+AUTOSTAT_PAGE_VERSION = 5
 COMPACT_SUMMARY_VERSION = 1
+GROUPED_SOURCE_SETTINGS_VERSION = 1
 
 
 def render_autostat() -> None:
@@ -55,6 +56,7 @@ def render_autostat() -> None:
     sources, configurations, problems, excluded_names = [], [], [], []
     cache = st.session_state.setdefault("autostat_source_info", {})
     active_cache = {}
+    source_columns_panel = None
 
     def inspect(data, extension, **kwargs):
         cache_key = (hashlib.sha256(data).hexdigest(), extension, tuple(kwargs.items()), AUTOSTAT_VERSION)
@@ -75,7 +77,10 @@ def render_autostat() -> None:
         configurations.append((upload.name, digest))
         try:
             sheets = inspect(data, extension)
-            with st.expander(f"{file_index + 1}. {upload.name} — source columns", expanded=False):
+            if source_columns_panel is None:
+                source_columns_panel = st.expander("Edit source columns", expanded=False)
+            with source_columns_panel:
+                st.write(f"**{file_index + 1}. {upload.name}**")
                 selected = st.multiselect(
                     "Sheets to process", [sheet.name for sheet in sheets],
                     default=[sheet.name for sheet in sheets if sheet.ready], key=f"{prefix}_sheets",
