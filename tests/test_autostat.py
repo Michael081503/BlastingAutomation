@@ -17,7 +17,7 @@ from automation import AutomationError
 from autostat import (
     EMAIL_HEADERS, REMARK_PREFIX, VIBER_HEADERS, SourceSelection,
     build_autostat_exports, build_bel_exports, extract_contacts, has_bel_primary_keys,
-    inspect_contact_source, split_bel_contacts, validated_phone,
+    inspect_contact_source, split_bel_contacts, unique_account_contacts, validated_phone,
 )
 from export_config import AUTOSTAT_BEL_FILENAMES
 from folder_output import MANILA_TIMEZONE
@@ -79,6 +79,47 @@ class PhoneTests(unittest.TestCase):
 
 
 class AutostatTests(unittest.TestCase):
+    def test_accounts_are_unique_per_channel_across_rows_cells_and_files(self):
+        data = (
+            'cardnumber,email,phone\n'
+            '0001,bad..email@example.com,09171234567\n'
+            '0001,first@example.com,09181234567\n'
+            ' 0001 ,later@example.com,09191234567\n'
+            '0002,second@example.com,09201234567\n'
+            '0003,third@example.com;alternate@example.com,09211234567;09221234567\n'
+        ).encode()
+        next_data = b'cardnumber,email,phone\n0002,repeated@example.com,09231234567\n0004,new@example.com,09241234567\n'
+        sources = [SourceSelection(name, content, inspect_contact_source(content, '.csv')[0])
+                   for name, content in [('first.csv', data), ('second.csv', next_data)]]
+        bundle = build_autostat_exports(sources, timestamp=NOW)
+        self.assertEqual([file.count for file in bundle.files], [3, 3, 1, 1])
+        email_rows = exported_rows(bundle.files[0])
+        self.assertEqual([row['Account No.'] for row in email_rows], ['0001', '0002', '0003'])
+        self.assertEqual([row['EMAIL/ NUMBER'] for row in email_rows], ['first@example.com', 'second@example.com', 'third@example.com'])
+        self.assertIn('9171234567', exported_rows(bundle.files[1])[0]['Remark'])
+        self.assertEqual(bundle.summary[0]['Duplicate Email rows removed'], 2)
+        self.assertEqual(bundle.summary[0]['Duplicate Viber rows removed'], 3)
+        self.assertEqual(bundle.summary[1]['Duplicate Email rows removed'], 1)
+        self.assertEqual(bundle.summary[1]['Duplicate Viber rows removed'], 1)
+        for indexes in ((0, 2), (1, 3)):
+            accounts = [row['Account No.'] for index in indexes for row in exported_rows(bundle.files[index])]
+            self.assertEqual(len(accounts), len(set(accounts)))
+        with ZipFile(BytesIO(bundle.zip_data)) as archive:
+            for file in bundle.files:
+                self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_account_matching_preserves_leading_zeros_and_does_not_mutate_contacts(self):
+        data = b'cardnumber,email,phone\nAbC-1,first@example.com,09171234567\nabc-1,later@example.com,09181234567\n0001,zero@example.com,09191234567\n1,short@example.com,09201234567\n'
+        source = SourceSelection('source.csv', data, inspect_contact_source(data, '.csv')[0])
+        contacts = extract_contacts(source)
+        original_emails, original_phones = list(contacts.emails), list(contacts.phones)
+        result = unique_account_contacts(contacts)
+        self.assertEqual([account for account, _ in result.emails], ['AbC-1', '0001', '1'])
+        self.assertEqual(result.duplicate_email_rows, 1)
+        self.assertEqual(result.duplicate_phone_rows, 1)
+        self.assertEqual(contacts.emails, original_emails)
+        self.assertEqual(contacts.phones, original_phones)
+
     def test_two_named_group_logs_keep_both_channel_templates_and_contacts(self):
         data = (
             'primary_key,cardnumber,email,phone\n'
@@ -115,7 +156,8 @@ class AutostatTests(unittest.TestCase):
         data = b'primary_key,email\n@BEL-1,first@example.com\n'
         source = SourceSelection('mixed.csv', data, inspect_contact_source(data, '.csv')[0])
         bundle = build_bel_exports([source, source], timestamp=NOW)
-        self.assertEqual([file.count for file in bundle.files], [2, 0])
+        self.assertEqual([file.count for file in bundle.files], [1, 0])
+        self.assertEqual(sum(row['Duplicate Email rows removed'] for row in bundle.summary), 1)
         self.assertEqual(exported_rows(bundle.files[1]), [])
         self.assertEqual(bundle.files[1].data.decode('cp1252').splitlines()[0], ','.join(EMAIL_HEADERS))
         with patch.dict(AUTOSTAT_BEL_FILENAMES, {'Other': AUTOSTAT_BEL_FILENAMES['BEL']}):

@@ -43,6 +43,7 @@ def refresh_application_modules() -> set[str]:
         ("autostat", (
             "AUTOSTAT_VERSION", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "build_bel_exports", "has_bel_primary_keys",
+            "ACCOUNT_DEDUP_VERSION", "unique_account_contacts",
         ), ("automation", "email_validation", "export_config", "exports")),
         ("autostat_page", ("render_autostat",), ("autostat", "automation", "folder_output", "export_config")),
     )

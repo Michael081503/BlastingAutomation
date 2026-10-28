@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
@@ -23,7 +23,8 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 3
+AUTOSTAT_VERSION = 4
+ACCOUNT_DEDUP_VERSION = 1
 PREFERRED_ACCOUNT_HEADER = "cardnumber"
 REMARK_PREFIX = "SPMA | 08 With SMS / email / DL without response"
 # Column labels, statuses and remark text come from the supplied templates.
@@ -195,6 +196,8 @@ class ContactRows:
     no_contacts: int = 0
     invalid_emails: int = 0
     invalid_phones: int = 0
+    duplicate_email_rows: int = 0
+    duplicate_phone_rows: int = 0
 
 
 def _candidates(value: Any, validator) -> list[Any]:
@@ -287,6 +290,31 @@ def extract_contacts(source: SourceSelection) -> ContactRows:
     return result
 
 
+def unique_account_contacts(
+    contacts: ContactRows, *, seen: dict[str, set[str]] | None = None,
+) -> ContactRows:
+    """Keep the first valid contact per account independently in each channel."""
+    if seen is None:
+        seen = {"email": set(), "viber": set()}
+    unique = {}
+    removed = {}
+    for channel, pairs in (("email", contacts.emails), ("viber", contacts.phones)):
+        unique[channel] = []
+        removed[channel] = 0
+        for account, contact in pairs:
+            key = account.strip().casefold()
+            if key in seen[channel]:
+                removed[channel] += 1
+            else:
+                seen[channel].add(key)
+                unique[channel].append((account, contact))
+    return replace(
+        contacts, emails=unique["email"], phones=unique["viber"],
+        duplicate_email_rows=contacts.duplicate_email_rows + removed["email"],
+        duplicate_phone_rows=contacts.duplicate_phone_rows + removed["viber"],
+    )
+
+
 def split_bel_contacts(source: SourceSelection) -> dict[str, ContactRows]:
     """Separate rows whose primary_key contains BEL, independently of the account column."""
     positions = [index for index, header in enumerate(source.sheet.headers)
@@ -347,6 +375,8 @@ def _contact_summary(source: SourceSelection, contacts: ContactRows) -> dict[str
         "Invalid emails": contacts.invalid_emails, "Invalid phones": contacts.invalid_phones,
         "Missing account": contacts.missing_accounts, "No valid contact": contacts.no_contacts,
         "Empty rows": contacts.blank_rows,
+        "Duplicate Email rows removed": contacts.duplicate_email_rows,
+        "Duplicate Viber rows removed": contacts.duplicate_phone_rows,
     }
 
 
@@ -401,8 +431,10 @@ def build_bel_exports(
         raise AutomationError("BEL and CARDS output filenames must be unique. Check export_config.py.")
     time_text = timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
     rows, summaries = {"BEL": [], "Other": []}, []
+    seen = {"email": set(), "viber": set()}
     for source in sources:
         for group, contacts in split_bel_contacts(source).items():
+            contacts = unique_account_contacts(contacts, seen=seen)
             summaries.append({"Group": "BEL" if group == "BEL" else "CARDS", **_contact_summary(source, contacts)})
             for channel, pairs in (("Email", contacts.emails), ("Viber", contacts.phones)):
                 rows[group].extend(_activity_rows(
@@ -422,8 +454,9 @@ def build_autostat_exports(
         raise AutomationError("Enter Remark By before preparing the files.")
     time_text = timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
     files, summaries, used_names = [], [], set()
+    seen = {"email": set(), "viber": set()}
     for source in sources:
-        contacts = extract_contacts(source)
+        contacts = unique_account_contacts(extract_contacts(source), seen=seen)
         summaries.append(_contact_summary(source, contacts))
         label = f"{Path(source.name).stem}_{source.sheet.name}"
         label = re.sub(r'[^\w .-]+', "_", label).strip(" .")[:110].rstrip(" .") or "source"

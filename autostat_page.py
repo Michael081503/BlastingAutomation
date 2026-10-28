@@ -44,8 +44,8 @@ def render_autostat() -> None:
         st.write("Viber template")
         st.dataframe(pd.DataFrame(columns=VIBER_HEADERS), hide_index=True, width="stretch")
         st.caption(
-            "Each valid contact creates a log row with its source account number. "
-            "Repeated contacts within one source row are included once. Separate rows, sheets and files are retained."
+            "Each account appears once per channel. The first valid email and first valid phone are kept. "
+            "Repeated accounts across selected rows, sheets and files are removed."
         )
     remark_by = st.text_input("Remark By", value="MBURGOS", key="autostat_remark_by")
     current_time = st.checkbox("Use current Manila date and time", value=True, key="autostat_current_time")
@@ -162,6 +162,7 @@ def render_autostat() -> None:
         st.caption(
             "Each file contains both Email and Viber log rows using the Email template's columns. "
             "Each row keeps its channel's status and remark, with the contact in EMAIL/ NUMBER. "
+            "Each account has at most one Email entry and one Viber entry. "
             "Selected files and sheets are combined into these two outputs."
         )
         for source in sources:
@@ -206,6 +207,7 @@ def render_autostat() -> None:
     st.caption(
         "Rows with missing account numbers are excluded. Invalid contacts are removed. "
         "An account with valid email and phone details appears in both logs. "
+        "Duplicate account entries are removed separately in each channel, keeping the first valid contact. "
         "Multiple contacts in one cell may be separated by commas, semicolons, pipes or line breaks."
     )
     st.subheader("Save to a folder")

@@ -71,6 +71,25 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_autostat_refreshes_for_account_deduplication(self):
+        self.run_isolated("""
+            from datetime import datetime
+            import autostat, autostat_page
+            del autostat.ACCOUNT_DEDUP_VERSION
+            del autostat.unique_account_contacts
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat', 'autostat_page'} <= refreshed
+            data = b'cardnumber,email,phone\\n0001,first@example.com,09171234567\\n0001,next@example.com,09181234567\\n'
+            sheet = autostat.inspect_contact_source(data, '.csv')[0]
+            bundle = autostat.build_autostat_exports(
+                [autostat.SourceSelection('contacts.csv', data, sheet)], timestamp=datetime(2026, 10, 28),
+            )
+            assert [file.count for file in bundle.files] == [1, 1]
+            assert autostat_page.AUTOSTAT_VERSION == autostat.AUTOSTAT_VERSION
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_old_configuration_is_refreshed_before_app_import(self):
         self.run_isolated("""
             import automation, export_config, exports, folder_output
