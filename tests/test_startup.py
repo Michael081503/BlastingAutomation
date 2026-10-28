@@ -189,7 +189,7 @@ class StartupTests(unittest.TestCase):
             del automation.geo_doclass
             del automation.DERIVED_TEMPLATE_HEADERS
             import app
-            assert app.MAPPING_VERSION == 4
+            assert app.MAPPING_VERSION == 6
             assert 'doclass' in app.DERIVED_TEMPLATE_HEADERS
             assert exports.geo_doclass is automation.geo_doclass
             assert folder_output.AutomationError is automation.AutomationError
@@ -234,7 +234,7 @@ class StartupTests(unittest.TestCase):
             del automation.SheetInfo.available_fields
             del automation.inspect_source_sheet
             import app
-            assert app.MAPPING_VERSION == 4
+            assert app.MAPPING_VERSION == 6
             assert exports.AutomationError is automation.AutomationError
             workbook = Workbook()
             workbook.active.append(['primary_key', 'email', 'PHONE'])
@@ -249,6 +249,23 @@ class StartupTests(unittest.TestCase):
             assert mapped.records[0]['primary_key'] == '0001'
             assert mapped.records[0]['phone'] == '09171234567'
             assert mapped.records[0]['product'] is None
+        """)
+
+
+    def test_cached_modules_refresh_for_b2_matching_and_workbook_dimensions(self):
+        self.run_isolated("""
+            import automation, autostat, b2_matching, b2_page, export_config
+            del automation.WORKBOOK_READER_VERSION
+            del export_config.AUTOSTAT_B2_FILENAMES
+            del b2_matching.build_b2_exports
+            import app
+            assert app.MAPPING_VERSION == 6
+            assert automation.WORKBOOK_READER_VERSION == 1
+            assert b2_page.build_b2_exports is b2_matching.build_b2_exports
+            assert export_config.AUTOSTAT_B2_FILENAMES['CARDS'] == 'NEGATIVE B2 - CARDS'
+            assert autostat.AutomationError is automation.AutomationError
+            from app_startup import refresh_application_modules
+            assert refresh_application_modules() == set()
         """)
 
 

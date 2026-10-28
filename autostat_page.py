@@ -17,12 +17,17 @@ from autostat import (
     build_autostat_exports, build_bel_exports, has_bel_primary_keys, inspect_contact_source,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
+from b2_page import render_b2_page
 from export_config import AUTOSTAT_BEL_FILENAMES, OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 
 def render_autostat() -> None:
     st.title("AUTOSTAT")
+    workflow = st.radio("Workflow", ["Prepare activity logs", "B2: Match DataGrid with SBC database"], key="autostat_workflow")
+    if workflow == "B2: Match DataGrid with SBC database":
+        render_b2_page()
+        return
     st.write("Find valid emails and mobile numbers in your files and prepare Email and Viber activity logs.")
     st.caption(
         "Phone rule: remove formatting, take the rightmost 10 digits, and accept only numbers starting with 9. "

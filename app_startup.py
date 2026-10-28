@@ -27,6 +27,7 @@ def refresh_application_modules() -> set[str]:
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",
             "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME", "AUTOSTAT_BEL_FILENAMES",
+            "AUTOSTAT_B2_FILENAMES",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (
@@ -34,6 +35,8 @@ def refresh_application_modules() -> set[str]:
             "create_default_csv_template",
             "DERIVED_TEMPLATE_HEADERS", "geo_doclass",
             "SheetInfo.available_fields", "inspect_source_sheet",
+            "SheetInfo.headers", "source_column_positions", "preview_source_rows",
+            "WORKBOOK_READER_VERSION",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
         ), ("email_validation",)),
         ("exports", (
@@ -47,7 +50,9 @@ def refresh_application_modules() -> set[str]:
             "build_bel_exports", "has_bel_primary_keys",
             "ACCOUNT_DEDUP_VERSION", "unique_account_contacts",
         ), ("automation", "email_validation", "export_config", "exports")),
-        ("autostat_page", ("render_autostat",), ("autostat", "automation", "folder_output", "export_config")),
+        ("b2_matching", ("B2_MATCHING_VERSION", "build_b2_exports"), ("autostat", "automation", "export_config")),
+        ("b2_page", ("render_b2_page",), ("b2_matching", "autostat", "automation", "folder_output", "export_config")),
+        ("autostat_page", ("render_autostat",), ("autostat", "automation", "folder_output", "export_config", "b2_page")),
     )
     refreshed = set()
     for name, required, dependencies in modules:

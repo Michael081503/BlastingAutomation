@@ -37,16 +37,17 @@ FIELD_MAPPING = {
 }
 OPTIONAL_FIELD_MAPPING = {"Area": "AREA"}
 SOURCE_ALIASES = {
-    "debtor_email": ("email",),
-    "Account no.": ("account",),
+    "debtor_email": ("email", "email address", "e-mail address", "email 1", "debtor email address", "email id"),
+    "Account no.": ("account", "account number", "acct no", "acct number"),
     "financing/Card no.": ("card_no",),
     "endo date": ("assign_date",),
     "level": ("placement",),
     "product": ("Product Type",),
     "OB (Masterlist)": ("OB",),
-    "phone_1": ("phone number", "mobile", "mobile number", "contact number"),
+    "phone_1": ("phone number", "phone no", "mobile", "mobile number", "mobile no", "contact number", "contact no", "cellphone", "cellphone number"),
 }
-MAPPING_VERSION = 4
+MAPPING_VERSION = 6
+WORKBOOK_READER_VERSION = 1
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 DERIVED_TEMPLATE_HEADERS = ("doclass",)
 GEO_DOCLASS_BY_AREA = {
@@ -79,6 +80,7 @@ class SheetInfo:
     matched_fields: int
     has_area: bool = False
     available_fields: tuple[str, ...] = ()
+    headers: tuple[str, ...] = ()
 
 
 @dataclass
@@ -108,11 +110,26 @@ def _source_aliases(source: str) -> set[str]:
     return {normalize_header(label) for label in (source, target, *SOURCE_ALIASES.get(source, ()))}
 
 
+def source_column_positions(headers: list[Any] | tuple[str, ...]) -> dict[str, int]:
+    """Find unambiguous defaults for the source-column mapping controls."""
+    labels = [normalize_header(value) for value in headers]
+    positions = {}
+    for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items():
+        matches = [index for index, label in enumerate(labels) if label in _source_aliases(source)]
+        if len(matches) == 1:
+            positions[target] = matches[0]
+    return positions
+
+
 def _load(data: bytes, *, read_only: bool = True, data_only: bool = False):
     if not data:
         raise AutomationError("The workbook is empty. Upload an .xlsx file.")
     try:
-        return load_workbook(BytesIO(data), read_only=read_only, data_only=data_only)
+        workbook = load_workbook(BytesIO(data), read_only=read_only, data_only=data_only)
+        if read_only:
+            for sheet in workbook.worksheets:
+                sheet.reset_dimensions()
+        return workbook
     except (BadZipFile, InvalidFileException, KeyError, OSError, ValueError) as exc:
         raise AutomationError(
             "This file could not be read as an Excel workbook. "
@@ -152,10 +169,9 @@ def _sheet_info(sheet, *, template: bool = False, header_row: int | None = None)
     else:
         labels = {normalize_header(value) for value in _headers(sheet, header_row)}
         matched_fields = sum(bool(labels & group) for group in _header_groups(template))
-    labels = {normalize_header(value) for value in _headers(sheet, header_row)}
-    available = tuple(target for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items()
-                      if labels & _source_aliases(source))
-    return SheetInfo(sheet.title, header_row, matched_fields, "area" in labels, available)
+    headers = tuple("" if value is None else str(value) for value in _headers(sheet, header_row))
+    available = tuple(source_column_positions(headers))
+    return SheetInfo(sheet.title, header_row, matched_fields, "AREA" in available, available, headers)
 
 
 def inspect_source_sheet(data: bytes, sheet_name: str, header_row: int) -> SheetInfo:
@@ -163,6 +179,18 @@ def inspect_source_sheet(data: bytes, sheet_name: str, header_row: int) -> Sheet
     workbook = _load(data)
     try:
         return _sheet_info(_worksheet(workbook, sheet_name), header_row=header_row)
+    finally:
+        workbook.close()
+
+
+def preview_source_rows(data: bytes, sheet_name: str, header_row: int) -> list[tuple[Any, ...]]:
+    """Show a few saved source values before mapping or validating contacts."""
+    _check_header_row(header_row)
+    workbook = _load(data, data_only=True)
+    try:
+        return list(_worksheet(workbook, sheet_name).iter_rows(
+            min_row=header_row + 1, max_row=min(header_row + 5, 1_048_576), values_only=True,
+        ))
     finally:
         workbook.close()
 
@@ -179,9 +207,13 @@ def inspect_workbook(data: bytes, *, template: bool = False) -> list[SheetInfo]:
 def default_source_sheet(sheets: list[SheetInfo]) -> str:
     if not sheets:
         raise AutomationError("The source workbook has no worksheets.")
+    usable = [sheet for sheet in sheets
+              if {"email", "phone"}.intersection(sheet.available_fields)
+              and {"primary_key", "cardnumber"}.intersection(sheet.available_fields)]
+    candidates = usable or sheets
     return next(
-        (sheet.name for sheet in sheets if normalize_header(sheet.name) == "negative"),
-        max(sheets, key=lambda sheet: sheet.matched_fields).name,
+        (sheet.name for sheet in candidates if normalize_header(sheet.name) == "negative"),
+        max(candidates, key=lambda sheet: sheet.matched_fields).name,
     )
 
 
@@ -198,6 +230,7 @@ def _headers(sheet, row: int) -> list[Any]:
 
 def _column_lookup(
     headers: list[Any], *, template: bool = False, allow_missing: bool = False,
+    source_columns: dict[str, int | None] | None = None,
 ) -> dict[str, int]:
     """Resolve required fields by column position; reject ambiguous headers."""
     normalized = [normalize_header(value) for value in headers]
@@ -206,7 +239,19 @@ def _column_lookup(
     fields = {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}
     if template:
         fields.update((header, header) for header in DERIVED_TEMPLATE_HEADERS)
+    elif source_columns is not None and set(source_columns) - set(fields.values()):
+        raise AutomationError("The source-column mapping contains an unknown template field.")
     for source, target in fields.items():
+        if not template and source_columns is not None and target in source_columns:
+            column = source_columns[target]
+            if column is None:
+                if source in FIELD_MAPPING:
+                    missing.append(source)
+                continue
+            if type(column) is not int or not 0 <= column < len(headers):
+                raise AutomationError(f'Choose an existing source column for "{target}".')
+            positions[target] = column
+            continue
         aliases = {normalize_header(target)} if template else _source_aliases(source)
         matches = [index for index, value in enumerate(normalized) if value in aliases]
         label = target if template else source
@@ -256,6 +301,7 @@ def _identifier(value: Any, number_format: str) -> str | None:
 
 def read_source(
     data: bytes, sheet_name: str, header_row: int, *, allow_missing: bool = False,
+    source_columns: dict[str, int | None] | None = None,
 ) -> MappedData:
     """Read all mapped values, including hidden/filtered rows, in source order."""
     _check_header_row(header_row)
@@ -263,7 +309,11 @@ def read_source(
     cached = None
     try:
         source = _worksheet(formulas, sheet_name)
-        positions = _column_lookup(_headers(source, header_row), allow_missing=allow_missing)
+        positions = _column_lookup(_headers(source, header_row), allow_missing=allow_missing, source_columns=source_columns)
+        contact_columns = {positions[target] for target in ("email", "phone") if target in positions}
+        account_columns = {positions[target] for target in ("primary_key", "cardnumber", "indexoneuid") if target in positions}
+        if contact_columns & account_columns:
+            raise AutomationError("Choose separate source columns for account identifiers and contact details.")
         if allow_missing:
             if not {"email", "phone"}.intersection(positions):
                 raise AutomationError("No email or phone column was found. Check the source sheet and header row.")

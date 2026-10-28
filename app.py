@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from openpyxl.utils import get_column_letter
 
 import app_startup
 
@@ -39,6 +41,8 @@ from automation import (
     default_source_sheet,
     inspect_workbook,
     inspect_source_sheet,
+    preview_source_rows,
+    source_column_positions,
     normalize_header,
     output_filename,
     read_source,
@@ -236,6 +240,49 @@ def render_workbook_page() -> None:
             st.error(str(exc))
             return
 
+    defaults = source_column_positions(source_info.headers)
+    missing_contact = not {"email", "phone"}.intersection(defaults)
+    missing_account = not {"primary_key", "cardnumber"}.intersection(defaults)
+    source_columns = None
+    with st.expander("Source columns", expanded=missing_contact or missing_account):
+        st.caption("Check the actual column names and sample values. Change Header rows above if the labels are on a different row.")
+        preview_key = (source_digest, source_sheet, source_header, MAPPING_VERSION)
+        previews = st.session_state.setdefault("source_previews", {})
+        if preview_key not in previews:
+            previews[preview_key] = preview_source_rows(source_bytes, source_sheet, source_header)
+        labels = [f"{get_column_letter(index + 1)}: {header or '(blank header)'}"
+                  for index, header in enumerate(source_info.headers)]
+        sample_rows = [list(row[:len(labels)]) + [None] * max(0, len(labels) - len(row)) for row in previews[preview_key]]
+        sample = pd.DataFrame(sample_rows, columns=labels, dtype=object)
+        st.dataframe(sample.map(lambda value: "" if value is None else str(value)), hide_index=True, width="stretch")
+        manual = st.checkbox(
+            "Map source columns manually", value=missing_contact or missing_account,
+            key=f"manual_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
+        )
+        if manual:
+            st.caption("Choose which source column supplies each template field. Leave fields without a source as Not available.")
+            source_columns = {}
+            options = [None, *range(len(source_info.headers))]
+            fields = st.columns(3)
+
+            def column_label(index, choices=labels):
+                return "Not available" if index is None else choices[index]
+
+            for number, target in enumerate((*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values())):
+                with fields[number % 3]:
+                    source_columns[target] = st.selectbox(
+                        f"Source column for {target}", options, index=options.index(defaults.get(target)),
+                        format_func=column_label,
+                        key=f"source_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}_{target}",
+                    )
+            available = tuple(target for target, column in source_columns.items() if column is not None)
+            source_info = replace(source_info, available_fields=available, has_area="AREA" in available)
+
+    can_prepare = bool({"email", "phone"}.intersection(source_info.available_fields)
+                       and {"primary_key", "cardnumber"}.intersection(source_info.available_fields))
+    if not can_prepare:
+        st.info("Select an email or phone column and an account-number column under Source columns to prepare the template.")
+        st.session_state.pop("result", None)
     missing_fields = [target for target in TARGET_HEADERS if target not in source_info.available_fields]
     if missing_fields:
         st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
@@ -297,16 +344,19 @@ def render_workbook_page() -> None:
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
         "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION,
+        tuple(source_columns.items()) if source_columns is not None else None,
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result["signature"] != signature:
         st.session_state.pop("result", None)
 
-    if st.button("Preview and prepare files", type="primary"):
+    if st.button("Preview and prepare files", type="primary", disabled=not can_prepare):
         st.session_state.pop("result", None)
         try:
             with st.spinner(f"Reading {source_sheet} and filling the template…"):
-                mapped = read_source(source_bytes, source_sheet, source_header, allow_missing=True)
+                mapped = read_source(
+                    source_bytes, source_sheet, source_header, allow_missing=True, source_columns=source_columns,
+                )
                 export_result = {}
                 if mapped.records:
                     if grouped:

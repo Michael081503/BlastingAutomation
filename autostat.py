@@ -23,7 +23,7 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 4
+AUTOSTAT_VERSION = 5
 ACCOUNT_DEDUP_VERSION = 1
 PREFERRED_ACCOUNT_HEADER = "cardnumber"
 REMARK_PREFIX = "SPMA | 08 With SMS / email / DL without response"
@@ -35,7 +35,7 @@ EMAIL_HEADERS = (
 )
 VIBER_HEADERS = ("Time", "Account No.", "Status", "Remark", "Remark By")
 ACCOUNT_ALIASES = (
-    PREFERRED_ACCOUNT_HEADER, "primary_key", "Account No.", "account", "account number", "account #",
+    PREFERRED_ACCOUNT_HEADER, "financing/Card no.", "Contract Number", "primary_key", "Account No.", "Account Key", "account", "account number", "account #",
     "acct no", "acct number", "accountno", "account id",
 )
 MIXED_ALIASES = {"emailnumber", "emailphone", "contact", "contacts", "contactdetails"}
@@ -80,7 +80,7 @@ def _contact_kind(header: Any) -> tuple[bool, bool]:
     mixed = label in MIXED_ALIASES
     email = mixed or bool(re.fullmatch(r"(?:debtor)?emails?(?:address)?\d*", label))
     phone = mixed or bool(re.fullmatch(
-        r"(?:debtor)?(?:phone|mobile|cellphone|cell|telephone|tel|contact|viber|sms)"
+        r"(?:debtor|home|business|office|work)?(?:phone|mobile|cellphone|cell|telephone|tel|contact|viber|sms)"
         r"(?:number|no)?\d*", label,
     ))
     return email, phone
@@ -145,7 +145,10 @@ def _csv_rows(data: bytes):
 
 def _workbook(data: bytes, *, data_only: bool = False):
     try:
-        return load_workbook(BytesIO(data), read_only=True, data_only=data_only)
+        workbook = load_workbook(BytesIO(data), read_only=True, data_only=data_only)
+        for sheet in workbook.worksheets:
+            sheet.reset_dimensions()
+        return workbook
     except (BadZipFile, InvalidFileException, KeyError, OSError, ValueError) as exc:
         raise AutomationError("Cannot read this workbook. Save an unencrypted .xlsx copy in Excel and try again.") from exc
 
@@ -205,7 +208,8 @@ def _candidates(value: Any, validator) -> list[Any]:
         return []
     if validator(value) is not None or not isinstance(value, str):
         return [value]
-    return [part.strip() for part in re.split(r"[;,|\r\n]+", value) if part.strip()]
+    delimiter = r"[;,|\r\n/]+" if validator is validated_phone else r"[;,|\r\n]+"
+    return [part.strip() for part in re.split(delimiter, value) if part.strip()]
 
 
 def _read_rows(source: SourceSelection, *, extra_columns: tuple[int, ...] = ()):
