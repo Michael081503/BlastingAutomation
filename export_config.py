@@ -75,7 +75,7 @@ AUTOSTAT_BEL_FILENAMES = {
     "Other": "NEGATIVE B4 - CARDS",
 }
 
-# AUTOSTAT B2: match DataGrid accounts to the SBC contact database.
+# B2 blasting template: match DataGrid accounts to the current SBC database.
 AUTOSTAT_B2_FILENAMES = {
     "CARDS": "NEGATIVE B2 - CARDS",
     "BEL": "NEGATIVE B2 - BEL",

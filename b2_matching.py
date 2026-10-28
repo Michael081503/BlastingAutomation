@@ -1,23 +1,26 @@
-"""Match the DataGrid account list to SBC B2 contact records for AUTOSTAT."""
+"""Match DataGrid accounts to SBC contacts and fill the B2 blasting template."""
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Sequence
 
-from automation import AutomationError, _identifier, normalize_header
+from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, _identifier, normalize_header
 from autostat import (
-    EMAIL_HEADERS, AutostatBundle, ContactRows, ContactSheet, SourceSelection,
-    _activity_rows, _add_contact_row, _bundle, _contact_summary, _log_file, _workbook,
+    AutostatBundle, ContactRows, ContactSheet, SourceSelection,
+    _add_contact_row, _bundle, _contact_summary, _log_file, _workbook,
     unique_account_contacts,
 )
 from export_config import AUTOSTAT_B2_FILENAMES
 from exports import export_filename
 
 
-B2_MATCHING_VERSION = 1
+B2_MATCHING_VERSION = 2
+B2_TEMPLATE_VERSION = 1
+# Exact header order from 1EMAIL_Blasting - Template.xlsx; no sample rows are used.
+B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
 DATAGRID_ROUTING_VERSION = 1
 RAW_FIELDS = {
     "account_key": ("Account Key",),
@@ -28,6 +31,25 @@ RAW_FIELDS = {
 GRID_FIELDS = {
     "account_key": ("Account No.", "Account Number", "primary_key"),
     "contract": ("Financing/Card No.", "cardnumber", "Contract Number"),
+}
+RAW_DETAILS = {
+    "FullName": ("Name", "FullName"),
+    "OB": ("Total Outstanding", "OB (Masterlist)", "OB"),
+    "EndoDate": ("Assignment Date", "EndoDate", "endo date"),
+    "AREA": ("Area",),
+    "Level": ("Level",),
+    "ChristmasAmnesty": ("ChristmasAmnesty",),
+    "NewEndo": ("NewEndo",),
+}
+GRID_DETAILS = {
+    "indexoneuid": ("Old I.C.", "indexoneuid"),
+    "FullName": ("Name", "FullName"),
+    "OB": ("Amount Referred", "OB (Masterlist)", "OB"),
+    "EndoDate": ("EndoDate", "endo date"),
+    "AREA": ("Area",),
+    "Level": ("Level",),
+    "ChristmasAmnesty": ("ChristmasAmnesty",),
+    "NewEndo": ("NewEndo",),
 }
 
 
@@ -68,6 +90,46 @@ def _columns(source: SourceSelection, *, database: bool) -> dict[str, int]:
     if database and not (source.sheet.email_columns or source.sheet.phone_columns):
         raise AutomationError("The SBC database sheet has no recognized email or phone columns.")
     return result
+
+
+def _detail_columns(source: SourceSelection, fields: dict[str, tuple[str, ...]]) -> dict[str, int]:
+    labels = [normalize_header(header) for header in source.sheet.headers]
+    result = {}
+    for target, aliases in fields.items():
+        for alias in aliases:
+            matches = [index for index, label in enumerate(labels) if label == normalize_header(alias)]
+            if len(matches) > 1:
+                raise AutomationError(f"{source.name} / {source.sheet.name}: ambiguous {alias} column.")
+            if matches:
+                result[target] = matches[0]
+                break
+    return result
+
+
+def _campaign_record(raw: dict, grid: dict, raw_columns: dict, raw_details: dict, grid_details: dict, group: str) -> dict:
+    record = dict.fromkeys(B2_TEMPLATE_HEADERS, "")
+    for target in set(raw_details) | set(grid_details):
+        value = raw.get(raw_details.get(target))
+        if value is None or isinstance(value, str) and not value.strip():
+            value = grid.get(grid_details.get(target))
+        record[target] = value
+    record.update({
+        "primary_key": raw[raw_columns["account_key"]],
+        "cardnumber": raw[raw_columns["contract"]],
+        "doclass": f"SBC {group} B2",
+        "Product": group,
+        "Monthly": "",
+        "Terms": "",
+    })
+    return record
+
+
+def _template_text(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    return "" if value is None else str(value)
 
 
 def _rows(
@@ -115,12 +177,9 @@ class B2MatchResult:
 
 
 def build_b2_exports(
-    database: SourceSelection, datagrid: SourceSelection, *, timestamp: datetime,
-    remark_by: str = "MBURGOS", encoding: str = "cp1252",
+    database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252",
 ) -> B2MatchResult:
-    """Export only verified DataGrid accounts, using contacts from the full SBC sheet."""
-    if not remark_by.strip():
-        raise AutomationError("Enter Remark By before preparing the files.")
+    """Fill the 16-column blasting layout once per verified DataGrid account."""
     if set(AUTOSTAT_B2_FILENAMES) != {"CARDS", "BEL"}:
         raise AutomationError("Set both CARDS and BEL B2 filenames in export_config.py.")
     names = {group: export_filename(name, ".csv") for group, name in AUTOSTAT_B2_FILENAMES.items()}
@@ -128,8 +187,11 @@ def build_b2_exports(
         raise AutomationError("The B2 output filenames must be unique. Check export_config.py.")
     raw_columns = _columns(database, database=True)
     grid_columns = _columns(datagrid, database=False)
+    raw_details = _detail_columns(database, RAW_DETAILS)
+    grid_details = _detail_columns(datagrid, GRID_DETAILS)
     contacts_sheet = replace(database.sheet, account_column=raw_columns["contract"])
-    selected_raw = set(raw_columns.values()) | set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns)
+    selected_raw = (set(raw_columns.values()) | set(raw_details.values())
+                    | set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns))
     raw_rows = list(_rows(
         database, selected_raw, {raw_columns["account_key"], raw_columns["contract"]},
         contact_columns=set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns),
@@ -148,8 +210,12 @@ def build_b2_exports(
     ), 0)
     stats["Database rows"] = len(raw_rows)
     groups = {"CARDS": ContactRows(), "BEL": ContactRows()}
+    records = {"CARDS": [], "BEL": []}
     audit, seen_accounts = [], set()
-    for number, row in _rows(datagrid, set(grid_columns.values()), set(grid_columns.values())):
+    grid_identifiers = set(grid_columns.values())
+    if "indexoneuid" in grid_details:
+        grid_identifiers.add(grid_details["indexoneuid"])
+    for number, row in _rows(datagrid, set(grid_columns.values()) | set(grid_details.values()), grid_identifiers):
         stats["DataGrid rows"] += 1
         keys = {field: _key(row[column]) for field, column in grid_columns.items()}
         keys = {field: value for field, value in keys.items() if value}
@@ -183,6 +249,7 @@ def build_b2_exports(
                     seen_accounts.add(contract)
                     stats["Unique B2 accounts"] += 1
                     _add_contact_row(groups[group], contacts_sheet, matched)
+                    records[group].append(_campaign_record(matched, row, raw_columns, raw_details, grid_details, group))
         if reason:
             stats[reason] += 1
             audit.append({
@@ -193,13 +260,17 @@ def build_b2_exports(
             })
 
     files, summaries = [], []
-    time_text = timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
     for group, contacts in groups.items():
         contacts = unique_account_contacts(contacts)
-        summaries.append({"Group": group, **_contact_summary(database, contacts)})
+        emails = {_key(account): value for account, value in contacts.emails}
+        phones = {_key(account): value for account, value in contacts.phones}
         rows = []
-        for channel, pairs in (("Email", contacts.emails), ("Viber", contacts.phones)):
-            rows.extend(_activity_rows(pairs, channel=channel, headers=EMAIL_HEADERS,
-                                       time_text=time_text, remark_by=remark_by))
-        files.append(_log_file(names[group], EMAIL_HEADERS, rows, encoding))
+        for record in records[group]:
+            account = _key(record["cardnumber"])
+            if account not in emails and account not in phones:
+                continue
+            record.update({"email": emails.get(account, ""), "phone": phones.get(account, "")})
+            rows.append({header: _template_text(record[header]) for header in B2_TEMPLATE_HEADERS})
+        summaries.append({"Group": group, "Accounts exported": len(rows), **_contact_summary(database, contacts)})
+        files.append(_log_file(names[group], B2_TEMPLATE_HEADERS, rows, encoding))
     return B2MatchResult(_bundle(files, summaries), stats, audit)

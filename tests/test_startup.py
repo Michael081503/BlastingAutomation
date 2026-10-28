@@ -273,11 +273,16 @@ class StartupTests(unittest.TestCase):
             import inspect
             import b2_matching, b2_page
             del b2_matching.DATAGRID_ROUTING_VERSION
+            del b2_matching.B2_TEMPLATE_VERSION
             b2_page.render_b2_page = lambda: None
             import app
             assert app.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
             parameters = inspect.signature(app.render_b2_page).parameters
             assert {'datagrid_upload', 'encoding'} <= parameters.keys()
+            assert b2_matching.B2_MATCHING_VERSION == 2
+            assert len(b2_page.B2_TEMPLATE_HEADERS) == 16
+            assert 'Time' not in b2_page.B2_TEMPLATE_HEADERS
+            assert 'timestamp' not in inspect.signature(b2_matching.build_b2_exports).parameters
             from app_startup import refresh_application_modules
             assert refresh_application_modules() == set()
         """)

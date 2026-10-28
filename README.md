@@ -14,7 +14,7 @@ python -m venv .venv
 
 Open **http://localhost:8501**. If the dependencies are already installed, run `python -m streamlit run app.py` directly. Stop the server with **Ctrl+C**.
 
-Use the sidebar to switch between **Workbook to template** and **AUTOSTAT**.
+Use the sidebar to switch between **Workbook to template**, **NEGATIVE B2**, and **AUTOSTAT**.
 
 ## AUTOSTAT
 
@@ -47,17 +47,19 @@ Both outputs contain the valid Email and Viber log entries for their account gro
 
 Uncheck the separation option to return to separate Email and Viber files. The two group filenames can be changed in `AUTOSTAT_BEL_FILENAMES` in `export_config.py`.
 
-### B2: match DataGrid with the SBC database
+## NEGATIVE B2: match DataGrid with the SBC database
 
-In AUTOSTAT, select **B2: Match DataGrid with SBC database**, then upload the full SBC database and the DataGrid account list. The page selects the full `SBC` sheet by its required headers. DataGrid defines the account population; database accounts absent from DataGrid are excluded.
+Open **NEGATIVE B2** and upload the full SBC database and the DataGrid account list. The page selects the full `SBC` sheet by its required headers. DataGrid defines the account population; database accounts absent from DataGrid are excluded. The existing B2 entry in AUTOSTAT also opens this blasting workflow.
 
-Uploading a DataGrid account list on **Workbook to template** also opens B2 matching automatically. Detection uses the export's column headers, so daily filenames can change. The account list is reused, and the page requests the latest full SBC database. This flow produces the two exact B2 filenames below using the activity templates.
+Uploading a DataGrid account list on **Workbook to template** also opens B2 matching automatically. Detection uses the export's column headers, so daily filenames can change. The account list is reused, and the page requests the latest full SBC database. Both B2 files use the exact 16-column layout from **1EMAIL_Blasting - Template.xlsx**: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, `NewEndo`. Sample rows from the template are never included.
 
 Upload the latest database each day, then click **Match and prepare B2 files**. Replacing either upload clears previous results and reads the new file contents, including when a replacement has the same filename. The app uses the database you upload; it does not synchronize a changing database on your computer automatically.
 
-DataGrid `Account No.` matches database `Account Key`, and `Financing/Card No.` matches database `Contract Number`. Both identifiers must identify the same record when both are supplied. Matching retains leading zeros and uses exact identifiers after trimming spaces and ignoring letter case. Unmatched, conflicting, ambiguous, and missing identifiers appear in the matching report. Matching never uses customer names. Only database Bucket Code `2` / `B2` qualifies; other or missing buckets are excluded. Product Category Code `BEL` creates **`NEGATIVE B2 - BEL.csv`**; supported card categories such as `MC` create **`NEGATIVE B2 - CARDS.csv`**. Output Account No. is the database Contract Number.
+DataGrid `Account No.` matches database `Account Key`, and `Financing/Card No.` matches database `Contract Number`. Both identifiers must identify the same record when both are supplied. Matching retains leading zeros and uses exact identifiers after trimming spaces and ignoring letter case. Unmatched, conflicting, ambiguous, and missing identifiers appear in the matching report. Matching never uses customer names. Only database Bucket Code `2` / `B2` qualifies; other or missing buckets are excluded. Product Category Code `BEL` creates **`NEGATIVE B2 - BEL.csv`**; supported card categories such as `MC` create **`NEGATIVE B2 - CARDS.csv`**. `primary_key` retains Account Key and `cardnumber` retains Contract Number.
 
-The first valid email and first valid mobile come from the matched database record. Numbered Email/Phone fields and recognized Mobile, Cellphone, Home Phone, and Business Phone columns are checked in source order. Numbers must normalize to ten digits starting with 9. Errors or uncached formulas in contact cells count as invalid contacts, allowing other contact fields to be checked. Matching/classification cell errors must be corrected. Duplicate DataGrid accounts are excluded. Each account has at most one Email and one Viber activity entry. Both outputs use the existing activity template columns, statuses, remarks, Manila timestamp, and Remark By. Accounts without valid contacts produce no entry.
+The first valid email and first valid mobile come from the matched database record. Numbered Email/Phone fields and recognized Mobile, Cellphone, Home Phone, and Business Phone columns are checked in source order. Numbers must normalize to ten digits starting with 9. Errors or uncached formulas in contact cells count as invalid contacts, allowing other contact fields to be checked. Matching/classification cell errors must be corrected. Duplicate DataGrid accounts are excluded. Each exported account has **one row**, with both contacts in `email` and `phone`; an account with only one valid contact is still included. Accounts without valid contacts produce no row.
+
+DataGrid Old I.C. supplies `indexoneuid`. Database Name, Total Outstanding, Assignment Date, and Area supply `FullName`, `OB`, `EndoDate`, and `AREA`; recognized DataGrid fields supply these when database values are missing. `Product` is CARDS or BEL and `doclass` is SBC CARDS B2 or SBC BEL B2. **Monthly and Terms remain blank**, as requested. Level, ChristmasAmnesty, and NewEndo are copied only when explicitly present; other unavailable fields stay blank. Dates use ISO text. B2 exports have no activity statuses, remarks, author, or log timestamp. AUTOSTAT's regular and B4 activity layouts retain their existing behavior.
 
 Review matching and contact counts, preview either group, download the two CSVs or their ZIP, or save both to a folder. B2 names are configurable in `AUTOSTAT_B2_FILENAMES` in `export_config.py`.
 

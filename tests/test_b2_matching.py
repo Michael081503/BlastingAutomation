@@ -15,13 +15,11 @@ from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
 from automation import AutomationError, MAPPING_VERSION, SheetInfo, inspect_workbook, read_source
-from autostat import EMAIL_HEADERS, SourceSelection, inspect_contact_source
-from b2_matching import build_b2_exports, is_datagrid_sheet, matching_sheet_score
-from folder_output import MANILA_TIMEZONE
+from autostat import SourceSelection, inspect_contact_source
+from b2_matching import B2_TEMPLATE_HEADERS, build_b2_exports, is_datagrid_sheet, matching_sheet_score
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NOW = datetime(2026, 10, 28, 15, 4, 5, tzinfo=MANILA_TIMEZONE)
 RAW_HEADERS = ['Account Key', 'Contract Number', 'Product Category Code', 'Bucket Code',
                'Phone (01)', 'Phone (02)', 'Email (01)', 'Email (02)']
 GRID_HEADERS = ['No', 'Name', 'New I.C.', 'Account No.', 'Email', 'Financing/Card No.']
@@ -99,7 +97,7 @@ class B2Tests(unittest.TestCase):
 
     def test_matching_uses_only_grid_accounts_validates_keys_buckets_and_deduplicates(self):
         raw, grid = fixtures()
-        result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False), timestamp=NOW)
+        result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
         self.assertEqual(result.stats['Database rows'], 12)
         self.assertEqual(result.stats['DataGrid rows'], 12)
         self.assertEqual(result.stats['Matched rows'], 8)
@@ -112,28 +110,76 @@ class B2Tests(unittest.TestCase):
         self.assertEqual(result.stats['Duplicate account rows removed'], 1)
         cards, bel = result.bundle.files
         self.assertEqual([file.filename for file in result.bundle.files], ['NEGATIVE B2 - CARDS.csv', 'NEGATIVE B2 - BEL.csv'])
-        self.assertEqual([file.count for file in result.bundle.files], [6, 2])
-        self.assertEqual({row['Account No.'] for row in csv_rows(cards)}, {'0000000000000001', '0009', '000123'})
-        self.assertEqual({row['Account No.'] for row in csv_rows(bel)}, {'@BEL-1'})
+        self.assertEqual([file.count for file in result.bundle.files], [3, 1])
+        self.assertEqual({row['cardnumber'] for row in csv_rows(cards)}, {'0000000000000001', '0009', '000123'})
+        self.assertEqual({row['primary_key'] for row in csv_rows(cards)}, {'00001', '00009', '00010'})
+        self.assertEqual({row['cardnumber'] for row in csv_rows(bel)}, {'@BEL-1'})
         self.assertEqual(result.bundle.summary[0]['No valid contact'], 1)
+        self.assertEqual(result.bundle.summary[0]['Accounts exported'], 3)
         for file in result.bundle.files:
             rows = csv_rows(file)
-            self.assertEqual(tuple(rows[0]), EMAIL_HEADERS)
-            identities = [(row['Account No.'], row['Status']) for row in rows]
+            self.assertEqual(tuple(rows[0]), B2_TEMPLATE_HEADERS)
+            identities = [row['cardnumber'] for row in rows]
             self.assertEqual(len(identities), len(set(identities)))
             for row in rows:
-                self.assertEqual(row['Time'], '2026-10-28 03:04:05 PM')
-                self.assertEqual(row['Remark By'], 'MBURGOS')
-                self.assertIn(row['EMAIL/ NUMBER'], row['Remark'])
-                self.assertTrue('@' in row['EMAIL/ NUMBER'] or re.fullmatch(r'9[0-9]{9}', row['EMAIL/ NUMBER']))
-        contacts = {row['EMAIL/ NUMBER'] for row in csv_rows(cards)}
-        self.assertIn('recovered@example.com', contacts)
-        self.assertIn('9191234567', contacts)
-        self.assertNotIn('database-only@example.com', contacts)
+                self.assertEqual(row['Monthly'], '')
+                self.assertEqual(row['Terms'], '')
+                self.assertTrue(row['email'] or row['phone'])
+                self.assertTrue(not row['phone'] or re.fullmatch(r'9[0-9]{9}', row['phone']))
+        self.assertIn('recovered@example.com', {row['email'] for row in csv_rows(cards)})
+        self.assertIn('9191234567', {row['phone'] for row in csv_rows(cards)})
+        self.assertNotIn('database-only@example.com', {row['email'] for row in csv_rows(cards)})
         with ZipFile(BytesIO(result.bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in result.bundle.files])
             for file in result.bundle.files:
                 self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_exact_blasting_headers_metadata_and_one_row_with_both_contacts(self):
+        self.assertEqual(B2_TEMPLATE_HEADERS, (
+            'email', 'primary_key', 'indexoneuid', 'cardnumber', 'FullName', 'phone', 'OB',
+            'Monthly', 'Terms', 'doclass', 'Level', 'Product', 'EndoDate', 'AREA', 'ChristmasAmnesty', 'NewEndo',
+        ))
+        raw = workbook_data(RAW_HEADERS + ['Name', 'Total Outstanding', 'Assignment Date', 'Area', 'Monthly', 'Terms'], [
+            ['0001', '000001', 'MC', 2, '09171234567', None, 'first@example.com', None,
+             'Database name', 1234.5, datetime(2026, 10, 2), 'Mindanao', 'Sample collector', 'SAMPLE'],
+            ['0002', '000002', 'MC', 2, 'invalid', None, 'email-only@example.com', None,
+             None, 0, None, None, None, None],
+            ['@BEL-3', '@BEL-3', 'BEL', 2, '+63 918 123 4567', None, 'invalid', None,
+             'BEL name', 321, datetime(2026, 10, 3), 'R3', None, None],
+        ], sheet_name='SBC')
+        grid = workbook_data(GRID_HEADERS + ['Old I.C.', 'Amount Referred', 'EndoDate', 'Area'], [
+            [1, 'Old name', 'WRONG-NEW-IC', '0001', 'ignore-grid@example.com', '000001', 'SBCC03-001', 999, None, None],
+            [2, 'Grid fallback', 'WRONG-NEW-IC', '0002', None, '000002', None, 999, datetime(2026, 10, 5), 'R3'],
+            [3, 'Old BEL name', None, '@BEL-3', None, '@BEL-3', 'SBCC03-003', 999, None, None],
+        ], sheet_name='Sheet')
+        result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
+        cards, bel = [csv_rows(file) for file in result.bundle.files]
+        self.assertEqual([len(cards), len(bel)], [2, 1])
+        self.assertEqual(cards[0]['primary_key'], '0001')
+        self.assertEqual(cards[0]['cardnumber'], '000001')
+        self.assertEqual(cards[0]['indexoneuid'], 'SBCC03-001')
+        self.assertEqual(cards[0]['FullName'], 'Database name')
+        self.assertEqual(cards[0]['OB'], '1234.5')
+        self.assertEqual(cards[0]['EndoDate'], '2026-10-02 00:00:00')
+        self.assertEqual(cards[0]['doclass'], 'SBC CARDS B2')
+        self.assertEqual(cards[0]['AREA'], 'Mindanao')
+        self.assertEqual(cards[0]['email'], 'first@example.com')
+        self.assertEqual(cards[0]['phone'], '9171234567')
+        self.assertEqual(cards[1]['FullName'], 'Grid fallback')
+        self.assertEqual(cards[1]['OB'], '0')
+        self.assertEqual(cards[1]['indexoneuid'], '')
+        self.assertEqual(cards[1]['EndoDate'], '2026-10-05 00:00:00')
+        self.assertEqual(cards[1]['email'], 'email-only@example.com')
+        self.assertEqual(cards[1]['phone'], '')
+        self.assertEqual(bel[0]['email'], '')
+        self.assertEqual(bel[0]['phone'], '9181234567')
+        self.assertEqual(bel[0]['doclass'], 'SBC BEL B2')
+        self.assertEqual(bel[0]['Product'], 'BEL')
+        for row in cards + bel:
+            for column in ('Monthly', 'Terms', 'Level', 'ChristmasAmnesty', 'NewEndo'):
+                self.assertEqual(row[column], '')
+            self.assertNotIn('Time', row)
+            self.assertNotIn('Remark', row)
 
     def test_incorrect_excel_dimensions_do_not_hide_headers_or_rows_in_either_reader(self):
         raw, grid = fixtures()
@@ -154,7 +200,7 @@ class B2Tests(unittest.TestCase):
         raw = workbook_data(['Account Key', 'Contract Number', 'Email (01)'], [['0001', '001', 'first@example.com']], sheet_name='SBC')
         _, grid = fixtures()
         with self.assertRaisesRegex(AutomationError, 'missing Bucket Code'):
-            build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False), timestamp=NOW)
+            build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
 
 
 class Upload(BytesIO):
@@ -188,7 +234,8 @@ class B2AppTests(unittest.TestCase):
             self.assertNotIn('result', app.session_state)
             files = app.session_state['b2_result']['matched'].bundle.files
             self.assertEqual([file.filename for file in files], ['NEGATIVE B2 - CARDS.csv', 'NEGATIVE B2 - BEL.csv'])
-            self.assertIn('first@example.com', {row['EMAIL/ NUMBER'] for row in csv_rows(files[0])})
+            self.assertIn('first@example.com', {row['email'] for row in csv_rows(files[0])})
+            self.assertFalse(any(widget.key == 'b2_remark_by' for widget in app.text_input))
             downloads = [widget.proto.label for widget in app.get('download_button')]
             self.assertIn('Download NEGATIVE B2 - CARDS.csv', downloads)
             self.assertIn('Download NEGATIVE B2 - BEL.csv', downloads)
@@ -206,7 +253,9 @@ class B2AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             files = app.session_state['b2_result']['matched'].bundle.files
-            self.assertEqual({row['EMAIL/ NUMBER'] for row in csv_rows(files[0])}, {'next-day@example.com', '9221234567'})
+            self.assertEqual(len(csv_rows(files[0])), 1)
+            self.assertEqual(csv_rows(files[0])[0]['email'], 'next-day@example.com')
+            self.assertEqual(csv_rows(files[0])[0]['phone'], '9221234567')
             self.assertEqual([file.filename for file in files], ['NEGATIVE B2 - CARDS.csv', 'NEGATIVE B2 - BEL.csv'])
 
             uploads.pop('b2_database_upload')
@@ -219,9 +268,10 @@ class B2AppTests(unittest.TestCase):
         def uploader(label, **kwargs):
             return database if kwargs.get('key') == 'b2_database_upload' else accounts if kwargs.get('key') == 'b2_grid_upload' else None
         with patch('streamlit.file_uploader', side_effect=uploader), TemporaryDirectory(prefix='b2-matching-test-') as directory:
-            app = AppTest.from_file(str(ROOT / 'pages' / 'AUTOSTAT.py')).run(timeout=20)
-            app.radio(key='autostat_workflow').set_value('B2: Match DataGrid with SBC database').run(timeout=20)
+            app = AppTest.from_file(str(ROOT / 'app.py')).run(timeout=20)
+            app.switch_page('pages/NEGATIVE_B2.py').run(timeout=20)
             self.assertEqual(len(app.exception), 0)
+            self.assertEqual(app.title[0].value, 'NEGATIVE B2')
             app.button(key='b2_prepare').click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -235,7 +285,7 @@ class B2AppTests(unittest.TestCase):
             self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in result.bundle.files})
             for file in result.bundle.files:
                 self.assertEqual((saved / file.filename).read_bytes(), file.data)
-            app.text_input(key='b2_remark_by').set_value('OTHER').run(timeout=20)
+            app.selectbox(key='b2_csv_type').set_value('CSV UTF-8 (Comma delimited)').run(timeout=20)
             self.assertNotIn('b2_result', app.session_state)
 
 

@@ -492,6 +492,7 @@ def main() -> None:
     st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
     page = st.navigation([
         st.Page(render_workbook_page, title="Workbook to template", default=True),
+        st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2", url_path="NEGATIVE_B2"),
         st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", url_path="AUTOSTAT"),
     ])
     page.run()
