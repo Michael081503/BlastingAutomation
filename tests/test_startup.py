@@ -268,7 +268,7 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
-    def test_cached_b2_page_refreshes_for_prefilled_datagrid_uploads(self):
+    def test_cached_b2_page_refreshes_for_blasting_template(self):
         self.run_isolated("""
             import inspect
             import b2_matching, b2_page
@@ -276,14 +276,25 @@ class StartupTests(unittest.TestCase):
             del b2_matching.B2_TEMPLATE_VERSION
             b2_page.render_b2_page = lambda: None
             import app
-            assert app.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
-            parameters = inspect.signature(app.render_b2_page).parameters
-            assert {'datagrid_upload', 'encoding'} <= parameters.keys()
+            assert b2_matching.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
             assert b2_matching.B2_MATCHING_VERSION == 2
             assert len(b2_page.B2_TEMPLATE_HEADERS) == 16
             assert 'Time' not in b2_page.B2_TEMPLATE_HEADERS
             assert 'timestamp' not in inspect.signature(b2_matching.build_b2_exports).parameters
             from app_startup import refresh_application_modules
+            assert refresh_application_modules() == set()
+        """)
+
+    def test_cached_autostat_page_refreshes_after_b2_moves_to_its_own_page(self):
+        self.run_isolated("""
+            import autostat_page
+            del autostat_page.AUTOSTAT_PAGE_VERSION
+            autostat_page.render_autostat = lambda: None
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert 'autostat_page' in refreshed
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 1
+            assert autostat_page.render_autostat.__name__ == 'render_autostat'
             assert refresh_application_modules() == set()
         """)
 

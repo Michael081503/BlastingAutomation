@@ -14,7 +14,13 @@ python -m venv .venv
 
 Open **http://localhost:8501**. If the dependencies are already installed, run `python -m streamlit run app.py` directly. Stop the server with **Ctrl+C**.
 
-Use the sidebar to switch between **Workbook to template**, **NEGATIVE B2**, and **AUTOSTAT**.
+Use the sidebar to switch between three separate pages:
+
+- **GEO & RECO**: the original workbook-to-template workflow, with the existing Area, product, level, and Christmas Amnesty grouping and configured filenames.
+- **NEGATIVE B2**: DataGrid matching against the latest SBC database and the two B2 blasting files.
+- **AUTOSTAT**: Email and Viber activity logs, including the existing B4 BEL/CARDS split.
+
+Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
 ## AUTOSTAT
 
@@ -49,9 +55,9 @@ Uncheck the separation option to return to separate Email and Viber files. The t
 
 ## NEGATIVE B2: match DataGrid with the SBC database
 
-Open **NEGATIVE B2** and upload the full SBC database and the DataGrid account list. The page selects the full `SBC` sheet by its required headers. DataGrid defines the account population; database accounts absent from DataGrid are excluded. The existing B2 entry in AUTOSTAT also opens this blasting workflow.
+Open **NEGATIVE B2** and upload the full SBC database and the DataGrid account list. The page selects the full `SBC` sheet by its required headers. DataGrid defines the account population; database accounts absent from DataGrid are excluded.
 
-Uploading a DataGrid account list on **Workbook to template** also opens B2 matching automatically. Detection uses the export's column headers, so daily filenames can change. The account list is reused, and the page requests the latest full SBC database. Both B2 files use the exact 16-column layout from **1EMAIL_Blasting - Template.xlsx**: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, `NewEndo`. Sample rows from the template are never included.
+B2 matching runs only on its dedicated page. Daily filenames can change because matching uses source columns and file contents. Both B2 files use the exact 16-column layout from **1EMAIL_Blasting - Template.xlsx**: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, `NewEndo`. Sample rows from the template are never included.
 
 Upload the latest database each day, then click **Match and prepare B2 files**. Replacing either upload clears previous results and reads the new file contents, including when a replacement has the same filename. The app uses the database you upload; it does not synchronize a changing database on your computer automatically.
 

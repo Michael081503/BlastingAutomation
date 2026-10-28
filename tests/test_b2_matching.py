@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import re
 import unittest
 from datetime import datetime
@@ -14,7 +13,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
-from automation import AutomationError, MAPPING_VERSION, SheetInfo, inspect_workbook, read_source
+from automation import AutomationError, inspect_workbook, read_source
 from autostat import SourceSelection, inspect_contact_source
 from b2_matching import B2_TEMPLATE_HEADERS, build_b2_exports, is_datagrid_sheet, matching_sheet_score
 
@@ -210,21 +209,16 @@ class Upload(BytesIO):
 
 
 class B2AppTests(unittest.TestCase):
-    def test_workbook_page_routes_datagrid_and_refreshes_contacts_from_daily_database(self):
+    def test_dedicated_b2_page_refreshes_contacts_from_daily_database(self):
         raw, grid = fixtures()
-        uploads = {'source_upload': Upload('Daily account list.xlsx', grid)}
-        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])) as uploader:
-            app = AppTest.from_file(str(ROOT / 'app.py'))
-            app.session_state['source_info'] = (
-                hashlib.sha256(grid).hexdigest(), MAPPING_VERSION,
-                [SheetInfo('Sheet', 1, 1, headers=('No', 'Name', 'New I.C.'))],
-            )
-            app.run(timeout=20)
+        uploads = {'b2_grid_upload': Upload('Daily account list.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
+            app = AppTest.from_file(str(ROOT / 'app.py')).run(timeout=20)
+            app.switch_page('pages/NEGATIVE_B2.py').run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertTrue(any('latest full SBC database' in message.value for message in app.info))
             self.assertNotIn('b2_result', app.session_state)
             self.assertFalse(any(widget.key == 'b2_prepare' for widget in app.button))
-            self.assertNotIn('template_upload', {call.kwargs['key'] for call in uploader.call_args_list})
 
             uploads['b2_database_upload'] = Upload('daily database.xlsx', raw)
             app.run(timeout=20)

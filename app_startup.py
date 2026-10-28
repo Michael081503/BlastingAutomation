@@ -55,7 +55,7 @@ def refresh_application_modules() -> set[str]:
             "B2_TEMPLATE_VERSION", "B2_TEMPLATE_HEADERS",
         ), ("autostat", "automation", "export_config")),
         ("b2_page", ("render_b2_page",), ("b2_matching", "autostat", "automation", "folder_output", "export_config")),
-        ("autostat_page", ("render_autostat",), ("autostat", "automation", "folder_output", "export_config", "b2_page")),
+        ("autostat_page", ("render_autostat", "AUTOSTAT_PAGE_VERSION"), ("autostat", "automation", "folder_output", "export_config")),
     )
     refreshed = set()
     for name, required, dependencies in modules:

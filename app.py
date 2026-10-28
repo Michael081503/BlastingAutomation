@@ -26,8 +26,6 @@ from exports import (
 )
 from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
-from b2_matching import is_datagrid_sheet
-from b2_page import render_b2_page
 
 from automation import (
     CSV_OUTPUT_ENCODINGS,
@@ -108,8 +106,10 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
 
 
 def render_workbook_page() -> None:
-    st.title("Workbook to template")
-    st.write("Upload your source file, choose a sheet, and export the mapped values as CSV files.")
+    st.title("BLASTING AUTOMATION")
+    st.subheader("GEO & RECO")
+    st.write("Upload your GEO or RECO workbook, choose a sheet, and export the mapped values as CSV files.")
+    st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 matching has its own NEGATIVE B2 page.")
     with st.sidebar:
         output_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
@@ -153,11 +153,6 @@ def render_workbook_page() -> None:
         except AutomationError as exc:
             st.session_state.pop("result", None)
             st.error(str(exc))
-            return
-        if any(is_datagrid_sheet(sheet.headers) for sheet in source_sheets):
-            st.session_state.pop("result", None)
-            st.info("DataGrid account list detected. Match it with the latest SBC database to prepare the two B2 files.")
-            render_b2_page(datagrid_upload=source_file, encoding=encoding)
             return
     with upload_right:
         template_file = st.file_uploader(
@@ -491,7 +486,7 @@ def render_workbook_page() -> None:
 def main() -> None:
     st.set_page_config(page_title="Blasting Automation", page_icon="📋", layout="wide")
     page = st.navigation([
-        st.Page(render_workbook_page, title="Workbook to template", default=True),
+        st.Page(render_workbook_page, title="GEO & RECO", default=True),
         st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2", url_path="NEGATIVE_B2"),
         st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", url_path="AUTOSTAT"),
     ])
