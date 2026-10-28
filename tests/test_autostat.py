@@ -92,21 +92,73 @@ class AutostatTests(unittest.TestCase):
         sources = [SourceSelection(name, content, inspect_contact_source(content, '.csv')[0])
                    for name, content in [('first.csv', data), ('second.csv', next_data)]]
         bundle = build_autostat_exports(sources, timestamp=NOW)
-        self.assertEqual([file.count for file in bundle.files], [3, 3, 1, 1])
+        self.assertEqual([file.filename for file in bundle.files], ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'])
+        self.assertEqual([file.count for file in bundle.files], [4, 4])
         email_rows = exported_rows(bundle.files[0])
-        self.assertEqual([row['Account No.'] for row in email_rows], ['0001', '0002', '0003'])
-        self.assertEqual([row['EMAIL/ NUMBER'] for row in email_rows], ['first@example.com', 'second@example.com', 'third@example.com'])
+        self.assertEqual([row['Account No.'] for row in email_rows], ['0001', '0002', '0003', '0004'])
+        self.assertEqual([row['EMAIL/ NUMBER'] for row in email_rows], ['first@example.com', 'second@example.com', 'third@example.com', 'new@example.com'])
         self.assertIn('9171234567', exported_rows(bundle.files[1])[0]['Remark'])
         self.assertEqual(bundle.summary[0]['Duplicate Email rows removed'], 2)
         self.assertEqual(bundle.summary[0]['Duplicate Viber rows removed'], 3)
         self.assertEqual(bundle.summary[1]['Duplicate Email rows removed'], 1)
         self.assertEqual(bundle.summary[1]['Duplicate Viber rows removed'], 1)
-        for indexes in ((0, 2), (1, 3)):
-            accounts = [row['Account No.'] for index in indexes for row in exported_rows(bundle.files[index])]
+        for file in bundle.files:
+            accounts = [row['Account No.'] for row in exported_rows(file)]
             self.assertEqual(len(accounts), len(set(accounts)))
         with ZipFile(BytesIO(bundle.zip_data)) as archive:
+            self.assertEqual(archive.namelist(), ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'])
             for file in bundle.files:
                 self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_later_upload_supplies_a_missing_channel_without_dropping_existing_contacts(self):
+        first = (
+            'cardnumber,email,phone\n'
+            'AbC-1,first@example.com,invalid\n'
+            '0002,bad..email@example.com,09181234567\n'
+            '0003,third@example.com,09191234567\n'
+        ).encode()
+        second = (
+            'cardnumber,email,phone\n'
+            ' abc-1 ,later@example.com,09171234567\n'
+            '0002,second@example.com,09201234567\n'
+            '0004,fourth@example.com,09211234567\n'
+        ).encode()
+        sources = [SourceSelection('same.csv', data, inspect_contact_source(data, '.csv')[0])
+                   for data in (first, second)]
+        bundle = build_autostat_exports(sources, timestamp=NOW)
+        self.assertEqual([file.count for file in bundle.files], [4, 4])
+        emails, phones = [exported_rows(file) for file in bundle.files]
+        self.assertEqual({row['Account No.'].strip().casefold(): row['EMAIL/ NUMBER'] for row in emails}, {
+            'abc-1': 'first@example.com', '0002': 'second@example.com',
+            '0003': 'third@example.com', '0004': 'fourth@example.com',
+        })
+        phone_remarks = {row['Account No.'].strip().casefold(): row['Remark'] for row in phones}
+        self.assertIn('9171234567', phone_remarks['abc-1'])
+        self.assertIn('9181234567', phone_remarks['0002'])
+        self.assertEqual([row['Account No.'] for row in emails], ['AbC-1', '0003', '0002', '0004'])
+        self.assertEqual([row['Account No.'] for row in phones], ['0002', '0003', 'abc-1', '0004'])
+        self.assertEqual(len(bundle.summary), 2)
+        self.assertEqual(bundle.summary[1]['Duplicate Email rows removed'], 1)
+        self.assertEqual(bundle.summary[1]['Duplicate Viber rows removed'], 1)
+
+    def test_compiled_outputs_keep_an_empty_channel_with_its_own_template_headers(self):
+        for contact_header, contacts, empty_index, empty_headers in (
+            ('email', ('first@example.com', 'second@example.com'), 1, VIBER_HEADERS),
+            ('phone', ('09171234567', '09181234567'), 0, EMAIL_HEADERS),
+        ):
+            with self.subTest(channel=contact_header):
+                sources = []
+                for number, contact in enumerate(contacts, 1):
+                    data = f'cardnumber,{contact_header}\n000{number},{contact}\n'.encode()
+                    sources.append(SourceSelection(f'{number}.csv', data, inspect_contact_source(data, '.csv')[0]))
+                bundle = build_autostat_exports(sources, timestamp=NOW)
+                self.assertEqual([file.filename for file in bundle.files], ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'])
+                empty = bundle.files[empty_index]
+                self.assertEqual(empty.count, 0)
+                self.assertEqual(empty.preview, [])
+                self.assertEqual(empty.headers, empty_headers)
+                self.assertEqual(empty.data.decode('cp1252').splitlines(), [','.join(empty_headers)])
+                self.assertEqual(bundle.files[1 - empty_index].count, 2)
 
     def test_account_matching_preserves_leading_zeros_and_does_not_mutate_contacts(self):
         data = b'cardnumber,email,phone\nAbC-1,first@example.com,09171234567\nabc-1,later@example.com,09181234567\n0001,zero@example.com,09191234567\n1,short@example.com,09201234567\n'
@@ -262,8 +314,10 @@ class AutostatTests(unittest.TestCase):
         data = workbook_bytes()
         sheets = inspect_contact_source(data, ".xlsx")
         bundle = build_autostat_exports([SourceSelection("source.xlsx", data, sheet) for sheet in sheets if sheet.ready], timestamp=NOW)
-        self.assertEqual(len(bundle.files), 4)
-        email, viber, empty_email, next_viber = bundle.files
+        self.assertEqual(len(bundle.files), 2)
+        email, viber = bundle.files
+        self.assertEqual([file.count for file in bundle.files], [3, 4])
+        self.assertEqual(len(bundle.summary), 2)
         self.assertEqual(tuple(exported_rows(email)[0]), EMAIL_HEADERS)
         self.assertEqual(tuple(exported_rows(viber)[0]), VIBER_HEADERS)
         first = exported_rows(email)[0]
@@ -277,16 +331,14 @@ class AutostatTests(unittest.TestCase):
         first_viber = exported_rows(viber)[0]
         self.assertEqual(first_viber["Status"], "SMS BLAST SENT - WAITING FOR REPLY")
         self.assertEqual(first_viber["Remark"], f"{REMARK_PREFIX} - 9171234567 - VIBER SENT - BLASTING")
-        self.assertEqual(exported_rows(next_viber)[0]["Account No."], "000123")
-        self.assertEqual(exported_rows(next_viber)[0]["Remark"], f"{REMARK_PREFIX} - 9201234567 - VIBER SENT - BLASTING")
-        self.assertEqual(empty_email.count, 0)
-        self.assertEqual(empty_email.preview, [])
+        self.assertEqual(exported_rows(viber)[-1]["Account No."], "000123")
+        self.assertEqual(exported_rows(viber)[-1]["Remark"], f"{REMARK_PREFIX} - 9201234567 - VIBER SENT - BLASTING")
         with ZipFile(BytesIO(bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
             for file in bundle.files:
                 self.assertEqual(archive.read(file.filename), file.data)
 
-    def test_csv_mixed_contacts_manual_mapping_and_duplicate_filenames(self):
+    def test_csv_mixed_contacts_manual_mapping_and_duplicate_source_names(self):
         data = 'Report\r\nAccount;EMAIL/ NUMBER\r\n0001;good@example.com|09171234567\r\n'.encode()
         sheet = inspect_contact_source(data, ".csv")[0]
         self.assertEqual(sheet.header_row, 2)
@@ -297,7 +349,9 @@ class AutostatTests(unittest.TestCase):
         self.assertEqual(contacts.phones, [("0001", "9171234567")])
         self.assertEqual((contacts.invalid_emails, contacts.invalid_phones), (0, 0))
         bundle = build_autostat_exports([selection, selection], timestamp=NOW)
-        self.assertEqual(len({file.filename.casefold() for file in bundle.files}), 4)
+        self.assertEqual([file.filename for file in bundle.files], ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'])
+        self.assertEqual([file.count for file in bundle.files], [1, 1])
+        self.assertEqual(len(bundle.summary), 2)
         custom = b'Notes\nCustomer,Mail contact,Cell detail\n00002,next@example.com,09181234567\n'
         detected = inspect_contact_source(custom, ".csv", sheet_name="CSV", header_row=2)[0]
         mapped = replace(detected, account_column=0, email_columns=(1,), phone_columns=(2,))
@@ -329,36 +383,36 @@ class AutostatTests(unittest.TestCase):
 
 
 class AutostatAppTests(unittest.TestCase):
-    def test_bel_split_defaults_to_two_named_downloads_and_folder_saves(self):
+    def test_bel_cards_and_cardnumber_only_uploads_compile_into_two_channel_downloads(self):
         data = b'primary_key,email,PHONE\n@BEL-1,bel@example.com,09171234567\n00001234,cards@example.com,09181234567\n'
-        upload = Upload('BEL CARDS BLASTING.xlsx.csv', data)
-        with patch('streamlit.file_uploader', return_value=[upload]), TemporaryDirectory(prefix='autostat-bel-test-') as directory:
+        uploads = [
+            Upload('BEL CARDS BLASTING.xlsx.csv', data),
+            Upload('cardnumber-only.csv', b'cardnumber,email,phone\n00009999,extra@example.com,09191234567\n'),
+        ]
+        with patch('streamlit.file_uploader', return_value=uploads), TemporaryDirectory(prefix='autostat-bel-test-') as directory:
             app = AppTest.from_file(str(ROOT / 'pages' / 'AUTOSTAT.py')).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            split = next(widget for widget in app.checkbox if widget.label == 'Separate BEL and CARDS using primary_key')
-            self.assertTrue(split.value)
+            self.assertFalse(any(widget.label == 'Separate BEL and CARDS using primary_key' for widget in app.checkbox))
             app.button(key='autostat_prepare').click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state['autostat_result']
-            self.assertEqual([file.filename for file in result['bundle'].files], ['NEGATIVE B4 - BEL.csv', 'NEGATIVE B4 - CARDS.csv'])
+            self.assertEqual([file.filename for file in result['bundle'].files], ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'])
+            self.assertEqual([file.count for file in result['bundle'].files], [3, 3])
+            self.assertEqual({row['Account No.'] for row in exported_rows(result['bundle'].files[0])},
+                             {'@BEL-1', '00001234', '00009999'})
+            self.assertEqual([file.headers for file in result['bundle'].files], [EMAIL_HEADERS, VIBER_HEADERS])
             self.assertEqual(len(app.get('download_button')), 3)
             self.assertEqual(app.dataframe[-1].value.loc[0, 'Account No.'], '@BEL-1')
             app.text_input(key='autostat_output_folder').set_value(directory).run(timeout=20)
             app.button(key='autostat_save').click().run(timeout=20)
             self.assertEqual(len(app.error), 0)
             saved = Path(app.session_state['autostat_result']['saved_folder'])
+            self.assertEqual({path.name for path in saved.iterdir()}, {'AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'})
             for file in result['bundle'].files:
                 self.assertEqual((saved / file.filename).read_bytes(), file.data)
-            with patch.dict(AUTOSTAT_BEL_FILENAMES, {'BEL': 'Changed BEL name'}):
-                app.run(timeout=20)
-                self.assertNotIn('autostat_result', app.session_state)
-            split = next(widget for widget in app.checkbox if widget.label == 'Separate BEL and CARDS using primary_key')
-            split.uncheck().run(timeout=20)
-            app.button(key='autostat_prepare').click().run(timeout=20)
-            self.assertEqual(len(app.exception), 0)
-            self.assertEqual(len(app.error), 0)
-            self.assertTrue(all(file.filename.startswith('AUTOSTAT_') for file in app.session_state['autostat_result']['bundle'].files))
+            with ZipFile(BytesIO(result['bundle'].zip_data)) as archive:
+                self.assertEqual(set(archive.namelist()), {'AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'})
 
     def test_cardnumber_is_selected_automatically_for_export(self):
         upload = Upload("contacts.csv", b"primary_key,email,cardnumber,phone\nINTERNAL-1,first@example.com,00001234,09171234567\n")
@@ -392,8 +446,10 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["autostat_result"]
-            self.assertEqual(len(result["bundle"].files), 6)
-            self.assertEqual(len(app.get("download_button")), 7)
+            self.assertEqual([file.filename for file in result['bundle'].files], ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'])
+            self.assertEqual([file.count for file in result['bundle'].files], [4, 5])
+            self.assertEqual(len(result['bundle'].summary), 3)
+            self.assertEqual(len(app.get("download_button")), 3)
             self.assertEqual(sum(row["Viber rows"] for row in result["bundle"].summary), 5)
             self.assertFalse(Path(directory).joinpath("AUTOSTAT").exists())
             app.run(timeout=20)

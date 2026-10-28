@@ -18,19 +18,19 @@ Use the sidebar to switch between three separate pages:
 
 - **GEO & RECO**: the original workbook-to-template workflow, with the existing Area, product, level, and Christmas Amnesty grouping and configured filenames.
 - **NEGATIVE B2**: DataGrid matching against the latest SBC database and the two B2 blasting files.
-- **AUTOSTAT**: Email and Viber activity logs, including the existing B4 BEL/CARDS split.
+- **AUTOSTAT**: all uploaded account lists compiled into one Email activity file and one Viber activity file.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
 ## AUTOSTAT
 
-AUTOSTAT checks account lists for valid email addresses and mobile numbers, then creates activity logs using the supplied `TEMPLATE_EMAIL.xlsx` and `TEMPLATE_VIBER.xlsx` layouts. Both layouts are built in; the sample account, email address, and old timestamp are not included. Outputs are CSV files, as in the existing workflow.
+AUTOSTAT checks account lists for valid email addresses and mobile numbers, then compiles every selected file and sheet into **`AUTOSTAT_Email.csv`** and **`AUTOSTAT_Viber.csv`** using the supplied `TEMPLATE_EMAIL.xlsx` and `TEMPLATE_VIBER.xlsx` layouts. Both layouts are built in; the sample account, email address, and old timestamp are not included. Outputs are CSV files, as in the existing workflow.
 
 1. Open **AUTOSTAT** in the sidebar and upload one or more `.xlsx` or `.csv` source files.
 2. Review **Check source columns**. All workbook sheets with recognized account and contact headers are selected by default. For other layouts, select the sheet, set its header row, and choose its account, email, and phone columns. Several email or phone columns can be selected. Account numbers must use a separate column from contacts.
 3. Check **Remark By**, which defaults to `MBURGOS`. The log timestamp defaults to the time you prepare the files in Asia/Manila. Uncheck **Use current Manila date and time** to enter a date and time.
 4. Click **Preview and prepare AUTOSTAT files**. Review the per-sheet counts for invalid contacts, missing accounts, and rows with no valid contacts, then preview the logs.
-5. Download the separate CSVs, download all files as a ZIP, or save them directly to a folder on the computer running the app.
+5. Download the two compiled CSVs, download both as a ZIP, or save them directly to a folder on the computer running the app.
 
 Email validation uses the same local format checks as the existing workflow. For phones, AUTOSTAT removes spaces and common phone formatting, keeps the **rightmost 10 digits**, and accepts the result only when it **starts with 9**. For example, `09171234567`, `+63 (917) 123-4567`, and `9171234567` become `9171234567`. Short numbers, results beginning with another digit, and text containing letters are rejected. Numeric Excel phones and integral CSV numbers with `.0` or scientific notation are supported.
 
@@ -38,20 +38,9 @@ AUTOSTAT automatically selects **`cardnumber`** as the source for **`Account No.
 
 AUTOSTAT exports each account number once per channel, keeping its first valid email and first valid phone. Repeated accounts across selected rows, sheets, and files are removed independently for Email and Viber. The per-sheet summary shows **Duplicate Email rows removed** and **Duplicate Viber rows removed** alongside the exported channel counts. Account matching trims surrounding spaces and ignores letter case while preserving leading zeros and punctuation. Multiple contacts in one cell can be separated by commas, semicolons, pipes, or line breaks; the first valid contact in the selected column order is kept for each channel. Missing account numbers are excluded. An account with valid email and phone details appears in both logs; an account with neither appears in neither. Source data is not changed.
 
-Each selected sheet creates `AUTOSTAT_<source>_<sheet>_Email.csv` and `AUTOSTAT_<source>_<sheet>_Viber.csv`. If a channel has no valid contacts, its file contains headers only. Duplicate source names receive numbered suffixes. The Email output keeps all 11 supplied headers, including the extra reference header at the end; unused fields stay blank. The Viber output keeps its five headers. The Email remark formula is rendered as text with the validated address; the Viber `NUMBER` placeholder is replaced with the normalized phone. Template statuses are copied exactly, and Remark By and Time are filled from the page settings.
+All selected sources contribute to the same two files, in upload and selected-sheet order. BEL, CARDS, and other accounts are compiled together by channel. Duplicate filenames do not create additional output files. If a channel has no valid contacts, its file contains headers only. The Email output keeps all 11 supplied headers, including the extra reference header at the end; unused fields stay blank. The Viber output keeps its five headers. The Email remark formula is rendered as text with the validated address; the Viber `NUMBER` placeholder is replaced with the normalized phone. Template statuses are copied exactly, and Remark By and Time are filled from the page settings. The per-source summary still identifies each contributing file and sheet.
 
 Preparing these logs does not send emails or Viber messages. Source files are never modified. Changing source files, sheets, columns, header rows, remark author, timestamp settings, or CSV encoding clears the prepared result so it can be rebuilt from the new inputs.
-
-### BEL and CARDS separation
-
-When a selected source sheet has `BEL` anywhere in its `primary_key` values, AUTOSTAT automatically selects **Separate BEL and CARDS using primary_key**. It creates exactly two CSV files across all selected sources and sheets:
-
-- **`NEGATIVE B4 - BEL.csv`**: rows whose `primary_key` contains `BEL`, ignoring case.
-- **`NEGATIVE B4 - CARDS.csv`**: all other rows.
-
-Both outputs contain the valid Email and Viber log entries for their account group. Each account has at most one Email entry and one Viber entry across the combined outputs; accounts with both channels retain those two distinct activities. They use the Email template's 11-column layout, which includes the Viber template's five columns. Email entries retain the Email status and remark; Viber entries retain the SMS status and Viber remark. The contact appears in `EMAIL/ NUMBER` for either type. The timestamp, author, contact validation, and selected account-number column work as before. Grouping always uses `primary_key`, even when `cardnumber` supplies `Account No.`. Each selected sheet must have one unambiguous `primary_key` column. An empty group still produces a file with template headers only.
-
-Uncheck the separation option to return to separate Email and Viber files. The two group filenames can be changed in `AUTOSTAT_BEL_FILENAMES` in `export_config.py`.
 
 ## NEGATIVE B2: match DataGrid with the SBC database
 
@@ -65,7 +54,7 @@ DataGrid `Account No.` matches database `Account Key`, and `Financing/Card No.` 
 
 The first valid email and first valid mobile come from the matched database record. Numbered Email/Phone fields and recognized Mobile, Cellphone, Home Phone, and Business Phone columns are checked in source order. Numbers must normalize to ten digits starting with 9. Errors or uncached formulas in contact cells count as invalid contacts, allowing other contact fields to be checked. Matching/classification cell errors must be corrected. Duplicate DataGrid accounts are excluded. Each exported account has **one row**, with both contacts in `email` and `phone`; an account with only one valid contact is still included. Accounts without valid contacts produce no row.
 
-DataGrid Old I.C. supplies `indexoneuid`. Database Name, Total Outstanding, Assignment Date, and Area supply `FullName`, `OB`, `EndoDate`, and `AREA`; recognized DataGrid fields supply these when database values are missing. `Product` is CARDS or BEL and `doclass` is SBC CARDS B2 or SBC BEL B2. **Monthly and Terms remain blank**, as requested. Level, ChristmasAmnesty, and NewEndo are copied only when explicitly present; other unavailable fields stay blank. Dates use ISO text. B2 exports have no activity statuses, remarks, author, or log timestamp. AUTOSTAT's regular and B4 activity layouts retain their existing behavior.
+DataGrid Old I.C. supplies `indexoneuid`. Database Name, Total Outstanding, Assignment Date, and Area supply `FullName`, `OB`, `EndoDate`, and `AREA`; recognized DataGrid fields supply these when database values are missing. `Product` is CARDS or BEL and `doclass` is SBC CARDS B2 or SBC BEL B2. **Monthly and Terms remain blank**, as requested. Level, ChristmasAmnesty, and NewEndo are copied only when explicitly present; other unavailable fields stay blank. Dates use ISO text. B2 exports have no activity statuses, remarks, author, or log timestamp. AUTOSTAT compiles activity logs on its own page.
 
 Review matching and contact counts, preview either group, download the two CSVs or their ZIP, or save both to a folder. B2 names are configurable in `AUTOSTAT_B2_FILENAMES` in `export_config.py`.
 

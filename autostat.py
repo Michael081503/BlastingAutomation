@@ -23,8 +23,9 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 5
+AUTOSTAT_VERSION = 6
 ACCOUNT_DEDUP_VERSION = 1
+COMPILED_OUTPUT_VERSION = 1
 PREFERRED_ACCOUNT_HEADER = "cardnumber"
 REMARK_PREFIX = "SPMA | 08 With SMS / email / DL without response"
 # Column labels, statuses and remark text come from the supplied templates.
@@ -452,30 +453,26 @@ def build_autostat_exports(
     sources: list[SourceSelection], *, timestamp: datetime, remark_by: str = "MBURGOS",
     encoding: str = "cp1252",
 ) -> AutostatBundle:
+    """Compile every selected source into one deduplicated file per channel."""
     if not sources:
         raise AutomationError("Select at least one source sheet.")
     if not remark_by.strip():
         raise AutomationError("Enter Remark By before preparing the files.")
     time_text = timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
-    files, summaries, used_names = [], [], set()
+    summaries = []
+    channels = {"Email": [], "Viber": []}
     seen = {"email": set(), "viber": set()}
     for source in sources:
         contacts = unique_account_contacts(extract_contacts(source), seen=seen)
         summaries.append(_contact_summary(source, contacts))
-        label = f"{Path(source.name).stem}_{source.sheet.name}"
-        label = re.sub(r'[^\w .-]+', "_", label).strip(" .")[:110].rstrip(" .") or "source"
-        base, suffix = label, 2
-        while base.casefold() in used_names:
-            base = f"{label}_{suffix}"
-            suffix += 1
-        used_names.add(base.casefold())
-        for channel, pairs, headers in (
-            ("Email", contacts.emails, EMAIL_HEADERS),
-            ("Viber", contacts.phones, VIBER_HEADERS),
-        ):
-            files.append(_log_file(
-                f"AUTOSTAT_{base}_{channel}.csv", headers,
-                _activity_rows(pairs, channel=channel, headers=headers, time_text=time_text, remark_by=remark_by),
-                encoding,
-            ))
+        channels["Email"].extend(contacts.emails)
+        channels["Viber"].extend(contacts.phones)
+    files = [
+        _log_file(
+            f"AUTOSTAT_{channel}.csv", headers,
+            _activity_rows(channels[channel], channel=channel, headers=headers, time_text=time_text, remark_by=remark_by),
+            encoding,
+        )
+        for channel, headers in (("Email", EMAIL_HEADERS), ("Viber", VIBER_HEADERS))
+    ]
     return _bundle(files, summaries)

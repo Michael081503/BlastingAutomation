@@ -49,6 +49,7 @@ def refresh_application_modules() -> set[str]:
             "AUTOSTAT_VERSION", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "build_bel_exports", "has_bel_primary_keys",
             "ACCOUNT_DEDUP_VERSION", "unique_account_contacts",
+            "COMPILED_OUTPUT_VERSION",
         ), ("automation", "email_validation", "export_config", "exports")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",

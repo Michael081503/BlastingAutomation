@@ -11,22 +11,23 @@ import pandas as pd
 import streamlit as st
 from openpyxl.utils import get_column_letter
 
-from automation import AutomationError, CSV_OUTPUT_ENCODINGS, normalize_header
+from automation import AutomationError, CSV_OUTPUT_ENCODINGS
 from autostat import (
-    AUTOSTAT_VERSION, EMAIL_HEADERS, PREFERRED_ACCOUNT_HEADER, VIBER_HEADERS, SourceSelection,
-    build_autostat_exports, build_bel_exports, has_bel_primary_keys, inspect_contact_source,
+    AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, PREFERRED_ACCOUNT_HEADER, VIBER_HEADERS, SourceSelection,
+    build_autostat_exports, inspect_contact_source,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
-from export_config import AUTOSTAT_BEL_FILENAMES, OUTPUT_FOLDER
+from export_config import OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 
-AUTOSTAT_PAGE_VERSION = 1
+AUTOSTAT_PAGE_VERSION = 2
 
 
 def render_autostat() -> None:
     st.title("AUTOSTAT")
-    st.write("Find valid emails and mobile numbers in your files and prepare Email and Viber activity logs.")
+    st.write("Compile all uploaded files into one Email activity file and one Viber activity file.")
+    st.caption("All selected files and sheets are combined into AUTOSTAT_Email.csv and AUTOSTAT_Viber.csv, with each account appearing once per channel.")
     st.caption(
         "Phone rule: remove formatting, take the rightmost 10 digits, and accept only numbers starting with 9. "
         "Email validation checks the address format."
@@ -39,7 +40,7 @@ def render_autostat() -> None:
     encoding = CSV_OUTPUT_ENCODINGS[output_format]
     uploads = st.file_uploader(
         "Source files", type=["xlsx", "csv"], accept_multiple_files=True, key="autostat_uploads",
-        help="Upload one or more account lists. Both templates are already built in.",
+        help="Upload one or more account lists. All selected sheets compile into one Email file and one Viber file.",
     )
     with st.expander("Email and Viber templates"):
         st.write("Email template")
@@ -142,42 +143,14 @@ def render_autostat() -> None:
                     st.info("Select a sheet and its columns to include this file.")
         except (AutomationError, UnicodeError, ValueError) as exc:
             problems.append(f"{upload.name}: {exc}")
-    detected_bel = False
-    for source in sources:
-        key = ("bel", hashlib.sha256(source.data).hexdigest(), source.sheet.name, source.sheet.header_row, AUTOSTAT_VERSION)
-        try:
-            if key not in cache:
-                cache[key] = has_bel_primary_keys(source)
-            active_cache[key] = cache[key]
-            detected_bel = detected_bel or cache[key]
-        except (AutomationError, ValueError) as exc:
-            problems.append(f"{source.name}: {exc}")
     st.session_state["autostat_source_info"] = active_cache
-    split_bel = st.checkbox(
-        "Separate BEL and CARDS using primary_key", value=detected_bel,
-        key=f"autostat_split_bel_{hash(tuple(configurations))}",
-    )
-    if split_bel:
-        st.caption(
-            f"Creates exactly two files: {AUTOSTAT_BEL_FILENAMES['BEL']}.csv and "
-            f"{AUTOSTAT_BEL_FILENAMES['Other']}.csv. primary_key containing BEL goes to BEL; all other rows go to CARDS."
-        )
-        st.caption(
-            "Each file contains both Email and Viber log rows using the Email template's columns. "
-            "Each row keeps its channel's status and remark, with the contact in EMAIL/ NUMBER. "
-            "Each account has at most one Email entry and one Viber entry. "
-            "Selected files and sheets are combined into these two outputs."
-        )
-        for source in sources:
-            if sum(normalize_header(header) == "primarykey" for header in source.sheet.headers) != 1:
-                problems.append(f"{source.name} / {source.sheet.name}: BEL separation requires one primary_key column.")
     for problem in problems:
         st.error(problem)
     if not sources:
         st.info("Select at least one sheet with an account number column and an email or phone column.")
     signature = (
-        AUTOSTAT_VERSION, EMAIL_VALIDATION_VERSION, tuple(configurations), remark_by,
-        fixed_timestamp, encoding, EMAIL_HEADERS, VIBER_HEADERS, split_bel, tuple(AUTOSTAT_BEL_FILENAMES.items()),
+        AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, AUTOSTAT_PAGE_VERSION, EMAIL_VALIDATION_VERSION, tuple(configurations), remark_by,
+        fixed_timestamp, encoding, EMAIL_HEADERS, VIBER_HEADERS,
     )
     previous = st.session_state.get("autostat_result")
     if previous is not None and (previous["signature"] != signature or problems):
@@ -188,8 +161,7 @@ def render_autostat() -> None:
         try:
             with st.spinner("Checking contacts and preparing AUTOSTAT logs..."):
                 timestamp = fixed_timestamp or datetime.now(MANILA_TIMEZONE)
-                builder = build_bel_exports if split_bel else build_autostat_exports
-                bundle = builder(sources, timestamp=timestamp, remark_by=remark_by, encoding=encoding)
+                bundle = build_autostat_exports(sources, timestamp=timestamp, remark_by=remark_by, encoding=encoding)
                 st.session_state["autostat_result"] = {"signature": signature, "bundle": bundle, "timestamp": timestamp}
         except AutomationError as exc:
             st.error(str(exc))

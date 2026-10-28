@@ -67,7 +67,7 @@ class StartupTests(unittest.TestCase):
                 [autostat.SourceSelection('contacts.csv', data, sheet)], timestamp=datetime(2026, 10, 28),
             )
             assert [file.filename for file in bundle.files] == ['NEGATIVE B4 - BEL.csv', 'NEGATIVE B4 - CARDS.csv']
-            assert autostat_page.build_bel_exports is autostat.build_bel_exports
+            assert autostat_page.build_autostat_exports is autostat.build_autostat_exports
             assert refresh_application_modules() == set()
         """)
 
@@ -87,6 +87,32 @@ class StartupTests(unittest.TestCase):
             )
             assert [file.count for file in bundle.files] == [1, 1]
             assert autostat_page.AUTOSTAT_VERSION == autostat.AUTOSTAT_VERSION
+            assert refresh_application_modules() == set()
+        """)
+
+    def test_cached_autostat_refreshes_to_two_compiled_channel_files(self):
+        self.run_isolated("""
+            from datetime import datetime
+            import autostat, autostat_page
+            del autostat.COMPILED_OUTPUT_VERSION
+            autostat.AUTOSTAT_VERSION = 5
+            autostat_page.build_autostat_exports = lambda *args, **kwargs: None
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat', 'autostat_page'} <= refreshed
+            contents = [
+                b'cardnumber,email,phone\\n0001,first@example.com,\\n',
+                b'cardnumber,email,phone\\n0001,later@example.com,09171234567\\n0002,second@example.com,09181234567\\n',
+            ]
+            sources = [autostat.SourceSelection(
+                f'source-{index}.csv', data, autostat.inspect_contact_source(data, '.csv')[0],
+            ) for index, data in enumerate(contents)]
+            bundle = autostat_page.build_autostat_exports(sources, timestamp=datetime(2026, 10, 28))
+            assert [file.filename for file in bundle.files] == ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv']
+            assert [file.count for file in bundle.files] == [2, 2]
+            assert len(bundle.summary) == 2
+            assert autostat.AUTOSTAT_VERSION == 6
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 2
             assert refresh_application_modules() == set()
         """)
 
@@ -293,7 +319,7 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'autostat_page' in refreshed
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 1
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 2
             assert autostat_page.render_autostat.__name__ == 'render_autostat'
             assert refresh_application_modules() == set()
         """)
