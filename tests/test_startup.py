@@ -205,6 +205,27 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_exports_refresh_for_grouping_other_source_sheets(self):
+        self.run_isolated("""
+            import automation, exports, folder_output
+            error_class = automation.AutomationError
+            del exports.GROUPED_SHEET_EXPORT_VERSION
+            import app
+            assert app.GROUPED_SHEET_EXPORT_VERSION == 1
+            assert exports.AutomationError is error_class
+            assert folder_output.AutomationError is error_class
+            bundle = app.build_negative_exports(
+                automation.create_default_csv_template(),
+                [{'email': 'first@example.com', 'product': 'CARDS', 'level': 1,
+                  'ChristmasAmnesty': 'QUALIFIED'}],
+                '', 1, '.csv', source_sheet='POSITIVE',
+            )
+            assert all(file.filename.startswith('POSITIVE - ') for file in bundle.files)
+            assert bundle.counts['qualified_cards_level_1'] == 1
+            from app_startup import refresh_application_modules
+            assert refresh_application_modules() == set()
+        """)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -38,6 +38,7 @@ def refresh_application_modules() -> set[str]:
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
             "GEO_FILENAME_CONFIG_VERSION",
+            "GROUPED_SHEET_EXPORT_VERSION",
         ), ("email_validation", "export_config", "automation")),
         ("folder_output", ("save_files_to_folder",), ("automation", "exports")),
         ("autostat", (

@@ -39,6 +39,7 @@ GROUP_LABELS = {
 REVIEW_GROUP_KEYS = frozenset({"qualified_review", "blank_review"})
 CHANNEL_LABELS = {"email": "Email", "viber": "Viber"}
 GEO_FILENAME_CONFIG_VERSION = 2
+GROUPED_SHEET_EXPORT_VERSION = 1
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
     "qualified_cards": "QUALIFIED / CARDS",
@@ -265,12 +266,13 @@ def build_negative_exports(
     template_extension: str = ".xlsx",
     *,
     encoding: str = "cp1252",
+    source_sheet: str = "NEGATIVE",
 ) -> ExportBundle:
-    """Export every nonempty NEGATIVE group as Email and Viber CSV files."""
+    """Apply the NEGATIVE grouping rules to any source sheet."""
     return _build_grouped_exports(
         template, records, sheet_name, header_row, template_extension,
         groups=separate_negative(records), labels=GROUP_LABELS, names=OUTPUT_FILENAMES,
-        zip_name=ZIP_FILENAME, encoding=encoding,
+        zip_name=ZIP_FILENAME, encoding=encoding, source_sheet=source_sheet,
     )
 
 
@@ -282,6 +284,7 @@ def build_geo_exports(
     template_extension: str = ".xlsx",
     *,
     encoding: str = "cp1252",
+    source_sheet: str = "NEGATIVE",
 ) -> ExportBundle:
     """Create CSV files by Area, Christmas Amnesty, product, and channel."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
@@ -290,6 +293,7 @@ def build_geo_exports(
     return _build_grouped_exports(
         template, records, "", 1, ".csv", groups=separate_geo(records),
         labels=GEO_GROUP_LABELS, names=GEO_OUTPUT_FILENAMES, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
+        source_sheet=source_sheet,
     )
 
 
@@ -297,17 +301,20 @@ def _build_grouped_exports(
     template: bytes, records: list[dict[str, Any]], sheet_name: str, header_row: int,
     template_extension: str, *, groups: dict[str, list[dict[str, Any]]],
     labels: dict[str, str], names: dict[str, str], zip_name: str, encoding: str,
+    source_sheet: str = "NEGATIVE",
 ) -> ExportBundle:
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     counts = {key: len(rows) for key, rows in groups.items()}
+    safe_sheet = re.sub(r'[^\w .-]+', "_", source_sheet).strip(" .") or "sheet"
+    prefix = "" if normalize_header(source_sheet) == "negative" else f"{safe_sheet} - "
     filenames = {}
     for key in groups:
         if key not in names:
             raise AutomationError(f'Missing filename for "{key}" in export_config.py.')
-        filenames[key] = export_filename(names[key], ".csv")
+        filenames[key] = export_filename(prefix + export_filename(names[key], ".csv"), ".csv")
     if len({name.casefold() for name in filenames.values()}) != len(filenames):
         raise AutomationError("Export filenames must be unique. Check export_config.py.")
-    zip_name = export_filename(zip_name, ".zip")
+    zip_name = export_filename(prefix + export_filename(zip_name, ".zip"), ".zip")
     files = []
     for key, rows in groups.items():
         if not rows:

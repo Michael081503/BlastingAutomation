@@ -19,6 +19,7 @@ from export_config import (
 )
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
+    GROUPED_SHEET_EXPORT_VERSION,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
 from folder_output import save_files_to_folder
@@ -147,7 +148,7 @@ def render_workbook_page() -> None:
     if source_file is None:
         st.session_state.pop("result", None)
         st.info("Upload a source workbook to begin. NEGATIVE will be selected automatically if it exists.")
-        st.caption("NEGATIVE exports are separated by Christmas Amnesty, product, and level.")
+        st.caption("Every worksheet uses the same separation rules. GEO worksheets separate Mindanao and R3 first.")
         return
 
     source_bytes = source_file.getvalue()
@@ -178,7 +179,7 @@ def render_workbook_page() -> None:
             key=f"source_sheet_{source_digest}",
         )
         source_info = next(sheet for sheet in source_sheets if sheet.name == source_sheet)
-        st.caption("Start with NEGATIVE, then choose another sheet when ready.")
+        st.caption("Start with NEGATIVE, then choose another sheet. The same grouping rules apply to every sheet.")
     with sheet_right:
         if template_sheets:
             best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
@@ -205,7 +206,6 @@ def render_workbook_page() -> None:
             "Additional template columns will be blank."
         )
 
-    grouped = False
     geo = source_info.has_area
     if geo:
         st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
@@ -218,29 +218,37 @@ def render_workbook_page() -> None:
         "Invalid email formats are removed from Email files. Spaces around valid addresses are trimmed. "
         "This checks the address format; it does not confirm that a mailbox exists or can receive mail."
     )
-    if geo or normalize_header(source_sheet) == "negative":
-        grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
-        grouped = st.radio(
-            "Output files",
-            [grouped_label, "All accounts in one group"],
-            key=f"output_mode_{source_digest}",
-        ) == grouped_label
-        if grouped:
-            if geo:
-                st.caption(
-                    "Mindanao and R3 (Region 3) are separated first. "
-                    "Other or missing Area values go to separate review files. AREA retains its source value."
-                )
-                st.caption(
-                    "QUALIFIED: CARDS and BEL. BLANK: CARDS, BEL, and other products. "
-                    "Each product group combines all levels. Empty groups produce no file. "
-                    "Qualified other products go to a separate review group."
-                )
-            else:
-                st.caption(
-                    "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
-                    "BLANK: the same three groups, plus other products. Empty groups produce no file."
-                )
+    grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
+    output_modes = [grouped_label, "All accounts in one group"]
+    saved_modes = st.session_state.setdefault("sheet_output_modes", {})
+    mode_key = (source_digest, source_sheet)
+    previous_mode = saved_modes.get(mode_key, grouped_label)
+    output_mode = st.radio(
+        "Output files",
+        output_modes,
+        index=output_modes.index(previous_mode) if previous_mode in output_modes else 0,
+        key=f"output_mode_{source_digest}_{source_sheet}",
+    )
+    saved_modes[mode_key] = output_mode
+    grouped = output_mode == grouped_label
+    if grouped:
+        if geo:
+            st.caption(
+                "Mindanao and R3 (Region 3) are separated first. "
+                "Other or missing Area values go to separate review files. AREA retains its source value."
+            )
+            st.caption(
+                "QUALIFIED: CARDS and BEL. BLANK: CARDS, BEL, and other products. "
+                "Each product group combines all levels. Empty groups produce no file. "
+                "Qualified other products go to a separate review group."
+            )
+        else:
+            st.caption(
+                "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
+                "BLANK: the same three groups, plus other products. Empty groups produce no file."
+            )
+        if normalize_header(source_sheet) != "negative":
+            st.caption("Grouped filenames include the selected worksheet name before the configured group name.")
     st.caption("Output filenames are set in export_config.py. Edit the quoted names there, then prepare the files again.")
 
     with st.expander("Header rows", expanded=False):
@@ -272,7 +280,7 @@ def render_workbook_page() -> None:
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
-        "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION,
+        "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION,
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result["signature"] != signature:
@@ -289,7 +297,7 @@ def render_workbook_page() -> None:
                         builder = build_geo_exports if geo else build_negative_exports
                         bundle = builder(
                             template_bytes, mapped.records, template_sheet,
-                            template_header, template_extension, encoding=encoding,
+                            template_header, template_extension, encoding=encoding, source_sheet=source_sheet,
                         )
                     else:
                         bundle = build_sheet_exports(

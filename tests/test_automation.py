@@ -441,6 +441,31 @@ class FakeUpload(BytesIO):
 
 
 class SeparationTests(unittest.TestCase):
+    def test_other_sheet_keeps_every_negative_group_and_template_layout(self):
+        rows = [sample_row(product=product, level=level, **{"Christmas Amnesty": status})
+                for status, product, level in (
+                    ("QUALIFIED", "CARDS", 1), ("QUALIFIED", "CARDS", 6), ("QUALIFIED", "BEL", 3),
+                    (None, "CARDS", 1), (None, "CARDS", 6), (None, "BEL", 2), (None, "PL", 4),
+                    ("QUALIFIED", "PL", 2), (None, "CARDS", 2),
+                )]
+        records = read_source(source_file(rows), "NEGATIVE", 1).records
+        for extension, template, template_sheet in (
+            (".csv", create_default_csv_template(), ""), (".xlsx", create_default_template(), "Template"),
+        ):
+            with self.subTest(template=extension):
+                negative = build_negative_exports(template, records, template_sheet, 1, extension)
+                other = build_negative_exports(template, records, template_sheet, 1, extension, source_sheet="POSITIVE")
+                self.assertEqual(other.counts, negative.counts)
+                self.assertEqual(len(other.files), 18)
+                self.assertEqual(other.zip_filename, "POSITIVE - " + negative.zip_filename)
+                with ZipFile(BytesIO(other.zip_data)) as archive:
+                    for actual, original in zip(other.files, negative.files):
+                        self.assertEqual(actual.filename, "POSITIVE - " + original.filename)
+                        self.assertEqual(actual.group_key, original.group_key)
+                        self.assertEqual(actual.channel, original.channel)
+                        self.assertEqual(actual.data, original.data)
+                        self.assertEqual(archive.read(actual.filename), actual.data)
+
     def records(self, cases):
         rows = [sample_row(**{"product": product, "level": level, "Christmas Amnesty": status})
                 for status, product, level in cases]
@@ -670,6 +695,23 @@ class ChannelTests(unittest.TestCase):
 
 
 class GeoTests(unittest.TestCase):
+    def test_other_geo_sheet_keeps_area_grouping_and_doclass(self):
+        records = read_source(geo_source_file([
+            sample_row(Area="Mindanao", product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Mindanao", product="CARDS", level=6, **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(Area="Region 3", product="BEL"),
+        ]), "NEGATIVE", 1).records
+        negative = build_geo_exports(create_default_csv_template(), records, "", 1, ".csv")
+        other = build_geo_exports(create_default_csv_template(), records, "", 1, ".csv", source_sheet="OVERALL")
+        self.assertEqual(other.counts, negative.counts)
+        self.assertEqual(len(other.files), 4)
+        self.assertEqual(other.zip_filename, "OVERALL - " + negative.zip_filename)
+        for actual, original in zip(other.files, negative.files):
+            self.assertEqual(actual.filename, "OVERALL - " + original.filename)
+            self.assertEqual(actual.data, original.data)
+            for row in actual.preview:
+                self.assertEqual(row["doclass"], "SBC GEO Mindanao" if row["AREA"] == "Mindanao" else "SBC GEO R3")
+
     def test_doclass_matches_area_in_both_channels_template_formats_and_export_modes(self):
         cases = [
             ("Mindanao", "SBC GEO Mindanao"), ("  mInDaNaO  ", "SBC GEO Mindanao"),
@@ -894,6 +936,87 @@ class FolderOutputTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_other_worksheets_default_to_negative_rules_and_remember_their_own_mode(self):
+        rows = [
+            sample_row(product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
+            sample_row(product="CARDS", level=6), sample_row(product="BEL", level=2),
+            sample_row(product="PL", level=3),
+        ]
+        workbook = loaded(source_file(rows))
+        for name in ("POSITIVE", "CONTACTED"):
+            sheet = workbook.create_sheet(name)
+            sheet.append(list(FIELD_MAPPING))
+            for row in rows:
+                sheet.append([name if header == "Name" else row.get(header) for header in FIELD_MAPPING])
+        upload = FakeUpload("accounts.xlsx", save(workbook))
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None), TemporaryDirectory(prefix="other-sheet-test-") as directory:
+            app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            self.assertEqual(app.selectbox[0].value, "NEGATIVE")
+            app.button[0].click().run(timeout=20)
+            baseline = app.session_state["result"]
+            app.selectbox[0].select("POSITIVE").run(timeout=20)
+            self.assertNotIn("result", app.session_state)
+            self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
+            app.button[0].click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state["result"]
+            self.assertTrue(result["grouped"])
+            self.assertFalse(result["geo"])
+            self.assertEqual(result["group_counts"], baseline["group_counts"])
+            self.assertEqual([file.filename for file in result["files"]], ["POSITIVE - " + file.filename for file in baseline["files"]])
+            self.assertTrue(all(row["FullName"] == "POSITIVE" for file in result["files"] for row in file.preview))
+            self.assertEqual(app.main.dataframe[-1].value.loc[0, "FullName"], "POSITIVE")
+            app.text_input(key="output_folder").set_value(directory).run(timeout=20)
+            app.button(key="save_to_folder").click().run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            saved = Path(app.session_state["result"]["saved_folder"])
+            for file in result["files"]:
+                self.assertEqual((saved / file.filename).read_bytes(), file.data)
+            app.radio[0].set_value("All accounts in one group").run(timeout=20)
+            app.selectbox[0].select("CONTACTED").run(timeout=20)
+            self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
+            app.button[0].click().run(timeout=20)
+            self.assertTrue(all(file.filename.startswith("CONTACTED - ") for file in app.session_state["result"]["files"]))
+            app.selectbox[0].select("POSITIVE").run(timeout=20)
+            self.assertEqual(app.radio[0].value, "All accounts in one group")
+            app.button[0].click().run(timeout=20)
+            self.assertFalse(app.session_state["result"]["grouped"])
+            self.assertEqual(len(app.session_state["result"]["files"]), 2)
+
+    def test_grouping_defaults_on_workbooks_without_negative_and_on_other_geo_sheets(self):
+        for geo in (False, True):
+            with self.subTest(geo=geo):
+                data = (geo_source_file([
+                    sample_row(Area="Mindanao", product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
+                    sample_row(Area="Mindanao", product="CARDS", level=6, **{"Christmas Amnesty": "QUALIFIED"}),
+                    sample_row(Area="Region 3", product="BEL"),
+                ]) if geo else source_file([sample_row(product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"})], other_sheet=False))
+                workbook = loaded(data)
+                if "Summary" in workbook.sheetnames:
+                    del workbook["Summary"]
+                workbook["NEGATIVE"].title = "ACTIVE GEO" if geo else "PROMISE TO PAY"
+                upload = FakeUpload("other.xlsx", save(workbook))
+                with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None):
+                    app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+                    name = "ACTIVE GEO" if geo else "PROMISE TO PAY"
+                    self.assertEqual(app.selectbox[0].value, name)
+                    self.assertEqual(app.radio[0].value, "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups")
+                    app.button[0].click().run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    result = app.session_state["result"]
+                    self.assertTrue(result["grouped"])
+                    self.assertEqual(result["geo"], geo)
+                    self.assertTrue(all(file.filename.startswith(name + " - ") for file in result["files"]))
+                    self.assertTrue(result["zip_filename"].startswith(name + " - "))
+                    if geo:
+                        self.assertEqual(result["group_counts"]["mindanao_qualified_cards"], 2)
+                        self.assertEqual(len(result["files"]), 4)
+                        for file in result["files"]:
+                            for row in file.preview:
+                                self.assertEqual(row["doclass"], "SBC GEO Mindanao" if row["AREA"] == "Mindanao" else "SBC GEO R3")
+
     def test_configured_geo_names_apply_to_downloads_preview_and_folder(self):
         upload = FakeUpload("GEO.xlsx", geo_source_file([
             sample_row(Area="Mindanao", product="CARDS", **{"Christmas Amnesty": "QUALIFIED"}),

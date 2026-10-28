@@ -1,6 +1,6 @@
 # Blasting Automation
 
-A local Streamlit app that copies data from an Excel worksheet into your template's column layout. It starts with **NEGATIVE**, separates rows by Christmas Amnesty, product, and level, then creates **Email** and **Viber CSV files** for every group. GEO worksheets with an **Area** column first separate **Mindanao** and **R3**. Other sheets without Area also get Email/Viber CSV files while their grouping rules are pending. Outputs are always `.csv`, whether the template is Excel, CSV, or the built-in blank template.
+A local Streamlit app that copies data from an Excel worksheet into your template's column layout. It starts with **NEGATIVE** and applies the same separation rules to every selected worksheet: Christmas Amnesty, product, and level, followed by **Email** and **Viber CSV files** for every group. GEO worksheets with an **Area** column first separate **Mindanao** and **R3**, combining all levels within each product. Outputs are always `.csv`, whether the template is Excel, CSV, or the built-in blank template.
 
 ## Run
 
@@ -73,7 +73,7 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 3. Choose the source sheet. **NEGATIVE** is selected automatically.
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
-6. For NEGATIVE, keep **Separate Christmas Amnesty groups** selected to create the groups below. Worksheets with Area default to **Separate Area and Christmas Amnesty groups** instead. **All accounts in one group** skips these group filters. Every group is still split into Email and Viber files.
+6. For any worksheet, keep **Separate Christmas Amnesty groups** selected to create the groups below. Worksheets with Area default to **Separate Area and Christmas Amnesty groups** instead. **All accounts in one group** skips these group filters. Every group is still split into Email and Viber files. Each worksheet remembers its own output-mode selection.
 7. Click **Preview and prepare files**, then review the email-validation counts and export previews.
 8. Under **Save to a folder**, enter an output location and click **Save files to folder**. The app displays the full path of the created folder. Individual downloads and **Download all files (ZIP)** are also available.
 
@@ -122,7 +122,9 @@ An account with an invalid email still goes into its Viber file when it has a ph
 
 Validation runs locally without DNS queries, sending messages, or contacting mail servers. It checks the address format, not whether the individual mailbox exists or whether a message will be delivered. A well-formed address may still bounce.
 
-## NEGATIVE separation
+## Worksheet separation
+
+The following rules apply to NEGATIVE and all other source sheets without an Area column. Select one worksheet at a time using **Source sheet**. NEGATIVE keeps its configured filenames. Other worksheets prefix the same configured group filenames and ZIP name with their worksheet name, so their exports are distinguishable. For example, a sheet called `POSITIVE` creates `POSITIVE - CS AMNESTY NEGA CARDS - L1_Email.csv` for that populated group. The configured base names remain editable in `export_config.py`. Templates, validation, review groups, previews, ZIP downloads, and folder saves work identically for all worksheets.
 
 | Christmas Amnesty | Product | Level | Base filename |
 | --- | --- | --- | --- |
@@ -158,7 +160,7 @@ Every nonempty group then produces Email and Viber CSV files, so five populated 
 
 The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `placement`, `Product`, `OB (MASTERLIST}`, and `Phone 1` are accepted. `assign_date` supplies `EndoDate`; `placement` supplies `Level`. The source Area is copied into `AREA`, preserving `Region 3` as the source value even though its group is named R3. The `doclass` template column is filled automatically with **`SBC GEO Mindanao`** for Mindanao accounts and **`SBC GEO R3`** for Region 3 / R3 accounts, ignoring capitalization, spacing, and punctuation in Area. This applies to both Email and Viber files, previews, ZIPs, folder saves, and the all-accounts mode. Other or missing Areas leave `doclass` blank. Area is optional for existing workbooks. GEO grouped exports require an AREA template header; the built-in 16-column template already includes AREA and doclass.
 
-GEO grouping works on each worksheet with an Area column. **NEGATIVE** remains the default; select one source sheet at a time. **OVERALL** and the other sheets may overlap, so processing them separately does not create a deduplicated combined export.
+GEO grouping works on each worksheet with an Area column. **NEGATIVE** remains the default; select one source sheet at a time. Other GEO sheets prefix the configured filenames and ZIP name with their worksheet name. **OVERALL** and the other sheets may overlap, so processing them separately does not create a deduplicated combined export.
 
 Edit the GEO filenames directly in `GEO_OUTPUT_FILENAMES` at the top of [export_config.py](export_config.py). Mindanao and R3 each have five entries, followed by the review filenames. Each quoted value is the full base name for that Area and group. The app appends `_Email` or `_Viber` and `.csv`. For example, `CS AMNESTY GEO CARDS_MINDANAO` produces `CS AMNESTY GEO CARDS_MINDANAO_Email.csv` and `CS AMNESTY GEO CARDS_MINDANAO_Viber.csv`. Change the ZIP name in `GEO_ZIP_FILENAME`.
 
