@@ -38,6 +38,7 @@ from automation import (
     csv_template_headers,
     default_source_sheet,
     inspect_workbook,
+    inspect_source_sheet,
     normalize_header,
     output_filename,
     read_source,
@@ -206,6 +207,38 @@ def render_workbook_page() -> None:
             "Additional template columns will be blank."
         )
 
+    with st.expander("Header rows", expanded=False):
+        st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
+        header_left, header_right = st.columns(2)
+        with header_left:
+            source_header = int(st.number_input(
+                "Source header row",
+                min_value=1,
+                max_value=1_048_575,
+                value=source_info.header_row,
+                step=1,
+                key=f"source_header_{source_digest}_{source_sheet}",
+            ))
+        with header_right:
+            template_header = int(st.number_input(
+                "Template header row",
+                min_value=1,
+                max_value=1_048_575,
+                value=template_info.header_row if template_info is not None else 1,
+                step=1,
+                disabled=template_extension == ".csv",
+                key=f"template_header_{template_digest}_{template_sheet}",
+            ))
+    if source_header != source_info.header_row:
+        try:
+            source_info = inspect_source_sheet(source_bytes, source_sheet, source_header)
+        except AutomationError as exc:
+            st.error(str(exc))
+            return
+
+    missing_fields = [target for target in TARGET_HEADERS if target not in source_info.available_fields]
+    if missing_fields:
+        st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
     geo = source_info.has_area
     if geo:
         st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
@@ -219,15 +252,21 @@ def render_workbook_page() -> None:
         "This checks the address format; it does not confirm that a mailbox exists or can receive mail."
     )
     grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
-    output_modes = [grouped_label, "All accounts in one group"]
+    grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
+    if not geo:
+        grouping_fields["level"] = "level"
+    missing_grouping = [label for field, label in grouping_fields.items() if field not in source_info.available_fields]
+    output_modes = ["All accounts in one group"] if missing_grouping else [grouped_label, "All accounts in one group"]
+    if missing_grouping:
+        st.caption("Grouping columns are missing: " + ", ".join(missing_grouping) + ". All available accounts will be prepared as Email and Viber files.")
     saved_modes = st.session_state.setdefault("sheet_output_modes", {})
-    mode_key = (source_digest, source_sheet)
-    previous_mode = saved_modes.get(mode_key, grouped_label)
+    mode_key = (source_digest, source_sheet, source_header)
+    previous_mode = saved_modes.get(mode_key, output_modes[0])
     output_mode = st.radio(
         "Output files",
         output_modes,
         index=output_modes.index(previous_mode) if previous_mode in output_modes else 0,
-        key=f"output_mode_{source_digest}_{source_sheet}",
+        key=f"output_mode_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
     )
     saved_modes[mode_key] = output_mode
     grouped = output_mode == grouped_label
@@ -251,29 +290,6 @@ def render_workbook_page() -> None:
             st.caption("Grouped filenames include the selected worksheet name before the configured group name.")
     st.caption("Output filenames are set in export_config.py. Edit the quoted names there, then prepare the files again.")
 
-    with st.expander("Header rows", expanded=False):
-        st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
-        header_left, header_right = st.columns(2)
-        with header_left:
-            source_header = int(st.number_input(
-                "Source header row",
-                min_value=1,
-                max_value=1_048_575,
-                value=source_info.header_row,
-                step=1,
-                key=f"source_header_{source_digest}_{source_sheet}",
-            ))
-        with header_right:
-            template_header = int(st.number_input(
-                "Template header row",
-                min_value=1,
-                max_value=1_048_575,
-                value=template_info.header_row if template_info is not None else 1,
-                step=1,
-                disabled=template_extension == ".csv",
-                key=f"template_header_{template_digest}_{template_sheet}",
-            ))
-
     signature = (
         source_digest, template_digest, source_sheet, source_header,
         template_sheet, template_header, template_extension,
@@ -290,7 +306,7 @@ def render_workbook_page() -> None:
         st.session_state.pop("result", None)
         try:
             with st.spinner(f"Reading {source_sheet} and filling the template…"):
-                mapped = read_source(source_bytes, source_sheet, source_header)
+                mapped = read_source(source_bytes, source_sheet, source_header, allow_missing=True)
                 export_result = {}
                 if mapped.records:
                     if grouped:

@@ -189,6 +189,52 @@ class EmailValidationTests(unittest.TestCase):
 
 
 class MappingTests(unittest.TestCase):
+    def test_template_headers_are_also_accepted_as_source_headers(self):
+        row = {target: sample_row()[source] for source, target in FIELD_MAPPING.items()}
+        data = source_file([row], headers=list(TARGET_HEADERS), other_sheet=False)
+        info = inspect_workbook(data)[0]
+        self.assertEqual(info.matched_fields, len(FIELD_MAPPING))
+        self.assertEqual(read_source(data, 'NEGATIVE', 1).records,
+                         read_source(source_file(), 'NEGATIVE', 1).records)
+
+    def test_partial_source_copies_present_values_and_leaves_missing_fields_blank(self):
+        headers = ['debtor_email', 'OLD I.C', 'Account no.', 'financing/Card no.', 'Name']
+        data = source_file([sample_row(), sample_row(debtor_email='bad..email@example.com')], headers=headers)
+        with self.assertRaisesRegex(AutomationError, 'Source headers are missing'):
+            read_source(data, 'NEGATIVE', 1)
+        result = read_source(data, 'NEGATIVE', 1, allow_missing=True)
+        self.assertEqual(len(result.records), 1)
+        self.assertEqual(result.invalid_email_rows, 1)
+        self.assertEqual(result.no_contact_rows_skipped, 1)
+        record = result.records[0]
+        self.assertEqual(record['primary_key'], sample_row()['Account no.'])
+        self.assertEqual(record['cardnumber'], sample_row()['financing/Card no.'])
+        self.assertEqual(record['FullName'], 'Ana Cruz')
+        for field in ('endodate', 'level', 'product', 'OB', 'phone', 'ChristmasAmnesty'):
+            self.assertIsNone(record[field])
+
+    def test_partial_source_requires_account_and_contact_and_accepts_phone_aliases(self):
+        for phone_header in ('PHONE', 'phone number', 'Mobile Number', 'contact number'):
+            with self.subTest(phone=phone_header):
+                data = source_file([{'primary_key': '0001', phone_header: '09171234567'}], headers=['primary_key', phone_header])
+                row = read_source(data, 'NEGATIVE', 1, allow_missing=True).records[0]
+                self.assertEqual(row['primary_key'], '0001')
+                self.assertEqual(row['phone'], '09171234567')
+                self.assertIsNone(row['email'])
+        for headers, values, error in (
+            (['email'], {'email': 'first@example.com'}, 'No account-number column'),
+            (['cardnumber'], {'cardnumber': '0001'}, 'No email or phone column'),
+        ):
+            with self.subTest(headers=headers):
+                with self.assertRaisesRegex(AutomationError, error):
+                    read_source(source_file([values], headers=headers), 'NEGATIVE', 1, allow_missing=True)
+
+    def test_best_data_sheet_is_selected_when_negative_is_absent(self):
+        workbook = loaded(source_file())
+        workbook['NEGATIVE'].title = 'Accounts'
+        sheets = inspect_workbook(save(workbook))
+        self.assertEqual(default_source_sheet(sheets), 'Accounts')
+
     def test_negative_default_and_detect_header_below_title(self):
         sheets = inspect_workbook(source_file(title_rows=3))
         self.assertEqual(default_source_sheet(sheets), "NEGATIVE")
@@ -936,6 +982,60 @@ class FolderOutputTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_partial_upload_maps_available_values_with_csv_and_excel_templates(self):
+        headers = ['debtor_email', 'OLD I.C', 'Account no.', 'financing/Card no.', 'Name']
+        upload = FakeUpload('partial.xlsx', source_file(headers=headers))
+        for template in (None, FakeUpload('template.xlsx', create_default_template())):
+            with self.subTest(excel_template=template is not None), patch(
+                'streamlit.file_uploader', side_effect=lambda label, **kwargs: upload if kwargs.get('key') == 'source_upload' else template,
+            ):
+                app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+                self.assertEqual(len(app.exception), 0)
+                self.assertEqual(app.radio[0].options, ['All accounts in one group'])
+                app.button[0].click().run(timeout=20)
+                self.assertEqual(len(app.exception), 0)
+                self.assertEqual(len(app.error), 0)
+                result = app.session_state['result']
+                self.assertFalse(result['grouped'])
+                self.assertEqual([file.count for file in result['files']], [1, 0])
+                values = list(csv.DictReader(StringIO(result['files'][0].data.decode('cp1252'))))[0]
+                self.assertEqual(values['FullName'], 'Ana Cruz')
+                self.assertEqual(values['cardnumber'], sample_row()['financing/Card no.'])
+                for field in ('EndoDate', 'Level', 'Product', 'OB', 'phone', 'ChristmasAmnesty'):
+                    self.assertEqual(values[field], '')
+
+    def test_partial_upload_keeps_grouping_when_group_fields_are_present(self):
+        for geo in (False, True):
+            with self.subTest(geo=geo):
+                row = {'primary_key': '0001', 'email': 'first@example.com', 'PHONE': '09171234567',
+                       'Product': 'CARDS', 'ChristmasAmnesty': 'QUALIFIED'}
+                row.update({'Area': 'Mindanao'} if geo else {'Level': 1})
+                upload = FakeUpload('partial-grouped.xlsx', source_file([row], headers=list(row)))
+                with patch('streamlit.file_uploader', side_effect=lambda label, **kwargs: upload if kwargs.get('key') == 'source_upload' else None):
+                    app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+                    app.button[0].click().run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    result = app.session_state['result']
+                    self.assertTrue(result['grouped'])
+                    self.assertEqual(result['geo'], geo)
+                    expected_group = 'mindanao_qualified_cards' if geo else 'qualified_cards_level_1'
+                    self.assertEqual(result['group_counts'][expected_group], 1)
+                    self.assertTrue(all(file.group_key == expected_group for file in result['files']))
+
+    def test_manual_header_change_rechecks_grouping_fields(self):
+        upload = FakeUpload('late-headers.xlsx', source_file(title_rows=59, other_sheet=False))
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kwargs: upload if kwargs.get('key') == 'source_upload' else None):
+            app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            self.assertEqual(app.radio[0].options, ['All accounts in one group'])
+            field = next(widget for widget in app.number_input if widget.label == 'Source header row')
+            field.set_value(60).run(timeout=20)
+            self.assertEqual(app.radio[0].value, 'Separate Christmas Amnesty groups')
+            app.button[0].click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(app.session_state['result']['count'], 1)
+
     def test_other_worksheets_default_to_negative_rules_and_remember_their_own_mode(self):
         rows = [
             sample_row(product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
@@ -1244,7 +1344,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.success), 0)
             self.assertEqual(len(app.get("download_button")), 1)
 
-    def test_uploaded_csv_template_and_missing_header_error(self):
+    def test_uploaded_csv_template_and_optional_missing_phone_header(self):
         upload = FakeUpload("source.xlsx", source_file())
         headers = ["Custom Field"] + list(reversed(TARGET_HEADERS))
         template = FakeUpload("template.csv", (";".join(headers) + "\n").encode())
@@ -1269,8 +1369,9 @@ class AppTests(unittest.TestCase):
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             app.button[0].click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertIn("phone_1", app.error[0].value)
-            self.assertEqual(len(app.get("download_button")), 1)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual([file.count for file in app.session_state['result']['files']], [1, 0])
+            self.assertEqual(len(app.get("download_button")), 4)
 
     def test_uploaded_excel_template_produces_csv_in_both_export_modes(self):
         upload = FakeUpload("source.xlsx", source_file([

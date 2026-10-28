@@ -189,7 +189,7 @@ class StartupTests(unittest.TestCase):
             del automation.geo_doclass
             del automation.DERIVED_TEMPLATE_HEADERS
             import app
-            assert app.MAPPING_VERSION == 3
+            assert app.MAPPING_VERSION == 4
             assert 'doclass' in app.DERIVED_TEMPLATE_HEADERS
             assert exports.geo_doclass is automation.geo_doclass
             assert folder_output.AutomationError is automation.AutomationError
@@ -224,6 +224,31 @@ class StartupTests(unittest.TestCase):
             assert bundle.counts['qualified_cards_level_1'] == 1
             from app_startup import refresh_application_modules
             assert refresh_application_modules() == set()
+        """)
+
+    def test_cached_modules_refresh_for_partial_source_headers(self):
+        self.run_isolated("""
+            from io import BytesIO
+            from openpyxl import Workbook
+            import automation, exports
+            del automation.SheetInfo.available_fields
+            del automation.inspect_source_sheet
+            import app
+            assert app.MAPPING_VERSION == 4
+            assert exports.AutomationError is automation.AutomationError
+            workbook = Workbook()
+            workbook.active.append(['primary_key', 'email', 'PHONE'])
+            workbook.active.append(['0001', 'first@example.com', '09171234567'])
+            output = BytesIO()
+            workbook.save(output)
+            workbook.close()
+            data = output.getvalue()
+            info = automation.inspect_workbook(data)[0]
+            assert set(info.available_fields) == {'primary_key', 'email', 'phone'}
+            mapped = app.read_source(data, info.name, 1, allow_missing=True)
+            assert mapped.records[0]['primary_key'] == '0001'
+            assert mapped.records[0]['phone'] == '09171234567'
+            assert mapped.records[0]['product'] is None
         """)
 
 

@@ -44,8 +44,9 @@ SOURCE_ALIASES = {
     "level": ("placement",),
     "product": ("Product Type",),
     "OB (Masterlist)": ("OB",),
+    "phone_1": ("phone number", "mobile", "mobile number", "contact number"),
 }
-MAPPING_VERSION = 3
+MAPPING_VERSION = 4
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 DERIVED_TEMPLATE_HEADERS = ("doclass",)
 GEO_DOCLASS_BY_AREA = {
@@ -77,6 +78,7 @@ class SheetInfo:
     header_row: int
     matched_fields: int
     has_area: bool = False
+    available_fields: tuple[str, ...] = ()
 
 
 @dataclass
@@ -102,7 +104,8 @@ def geo_doclass(area: Any) -> str | None:
 
 
 def _source_aliases(source: str) -> set[str]:
-    return {normalize_header(label) for label in (source, *SOURCE_ALIASES.get(source, ()))}
+    target = {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.get(source, source)
+    return {normalize_header(label) for label in (source, target, *SOURCE_ALIASES.get(source, ()))}
 
 
 def _load(data: bytes, *, read_only: bool = True, data_only: bool = False):
@@ -143,16 +146,32 @@ def _detect_header(sheet, *, template: bool = False) -> tuple[int, int]:
     return best_row, best_score
 
 
+def _sheet_info(sheet, *, template: bool = False, header_row: int | None = None) -> SheetInfo:
+    if header_row is None:
+        header_row, matched_fields = _detect_header(sheet, template=template)
+    else:
+        labels = {normalize_header(value) for value in _headers(sheet, header_row)}
+        matched_fields = sum(bool(labels & group) for group in _header_groups(template))
+    labels = {normalize_header(value) for value in _headers(sheet, header_row)}
+    available = tuple(target for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items()
+                      if labels & _source_aliases(source))
+    return SheetInfo(sheet.title, header_row, matched_fields, "area" in labels, available)
+
+
+def inspect_source_sheet(data: bytes, sheet_name: str, header_row: int) -> SheetInfo:
+    """Check the available source fields after a manual header-row change."""
+    workbook = _load(data)
+    try:
+        return _sheet_info(_worksheet(workbook, sheet_name), header_row=header_row)
+    finally:
+        workbook.close()
+
+
 def inspect_workbook(data: bytes, *, template: bool = False) -> list[SheetInfo]:
     """Find likely header rows without loading all the worksheet data into memory."""
     workbook = _load(data)
     try:
-        sheets = []
-        for sheet in workbook.worksheets:
-            header_row, matched_fields = _detect_header(sheet, template=template)
-            has_area = any(normalize_header(header) == "area" for header in _headers(sheet, header_row))
-            sheets.append(SheetInfo(sheet.title, header_row, matched_fields, has_area))
-        return sheets
+        return [_sheet_info(sheet, template=template) for sheet in workbook.worksheets]
     finally:
         workbook.close()
 
@@ -162,7 +181,7 @@ def default_source_sheet(sheets: list[SheetInfo]) -> str:
         raise AutomationError("The source workbook has no worksheets.")
     return next(
         (sheet.name for sheet in sheets if normalize_header(sheet.name) == "negative"),
-        sheets[0].name,
+        max(sheets, key=lambda sheet: sheet.matched_fields).name,
     )
 
 
@@ -177,7 +196,9 @@ def _headers(sheet, row: int) -> list[Any]:
     return list(next(sheet.iter_rows(min_row=row, max_row=row, values_only=True), ()))
 
 
-def _column_lookup(headers: list[Any], *, template: bool = False) -> dict[str, int]:
+def _column_lookup(
+    headers: list[Any], *, template: bool = False, allow_missing: bool = False,
+) -> dict[str, int]:
     """Resolve required fields by column position; reject ambiguous headers."""
     normalized = [normalize_header(value) for value in headers]
     positions = {}
@@ -198,7 +219,7 @@ def _column_lookup(headers: list[Any], *, template: bool = False) -> dict[str, i
             )
         elif matches:
             positions[target] = matches[0]
-    if missing:
+    if missing and (template or not allow_missing):
         kind = "Template" if template else "Source"
         raise AutomationError(
             f"{kind} headers are missing: {', '.join(missing)}. "
@@ -233,14 +254,21 @@ def _identifier(value: Any, number_format: str) -> str | None:
     return str(value).strip()
 
 
-def read_source(data: bytes, sheet_name: str, header_row: int) -> MappedData:
+def read_source(
+    data: bytes, sheet_name: str, header_row: int, *, allow_missing: bool = False,
+) -> MappedData:
     """Read all mapped values, including hidden/filtered rows, in source order."""
     _check_header_row(header_row)
     formulas = _load(data)
     cached = None
     try:
         source = _worksheet(formulas, sheet_name)
-        positions = _column_lookup(_headers(source, header_row))
+        positions = _column_lookup(_headers(source, header_row), allow_missing=allow_missing)
+        if allow_missing:
+            if not {"email", "phone"}.intersection(positions):
+                raise AutomationError("No email or phone column was found. Check the source sheet and header row.")
+            if not {"primary_key", "cardnumber"}.intersection(positions):
+                raise AutomationError("No account-number column was found. Use Account no., primary_key, or cardnumber as its header.")
         cached = _load(data, data_only=True)
         values = _worksheet(cached, sheet_name)
         result = MappedData([], [])
@@ -250,7 +278,7 @@ def read_source(data: bytes, sheet_name: str, header_row: int) -> MappedData:
         for row_number, (source_row, value_row) in enumerate(
             zip(source_iterator, value_iterator), header_row + 1
         ):
-            record = {}
+            record = dict.fromkeys(TARGET_HEADERS)
             invalid_email = False
             for target, column in positions.items():
                 original, cell = source_row[column], value_row[column]
