@@ -50,7 +50,9 @@ def refresh_application_modules() -> set[str]:
             "build_bel_exports", "has_bel_primary_keys",
             "ACCOUNT_DEDUP_VERSION", "unique_account_contacts",
         ), ("automation", "email_validation", "export_config", "exports")),
-        ("b2_matching", ("B2_MATCHING_VERSION", "build_b2_exports"), ("autostat", "automation", "export_config")),
+        ("b2_matching", (
+            "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
+        ), ("autostat", "automation", "export_config")),
         ("b2_page", ("render_b2_page",), ("b2_matching", "autostat", "automation", "folder_output", "export_config")),
         ("autostat_page", ("render_autostat",), ("autostat", "automation", "folder_output", "export_config", "b2_page")),
     )

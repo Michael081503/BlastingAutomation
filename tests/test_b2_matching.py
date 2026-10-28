@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import re
 import unittest
 from datetime import datetime
@@ -13,9 +14,9 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
-from automation import AutomationError, inspect_workbook, read_source
+from automation import AutomationError, MAPPING_VERSION, SheetInfo, inspect_workbook, read_source
 from autostat import EMAIL_HEADERS, SourceSelection, inspect_contact_source
-from b2_matching import build_b2_exports, matching_sheet_score
+from b2_matching import build_b2_exports, is_datagrid_sheet, matching_sheet_score
 from folder_output import MANILA_TIMEZONE
 
 
@@ -86,6 +87,16 @@ def csv_rows(file):
 
 
 class B2Tests(unittest.TestCase):
+    def test_datagrid_detection_uses_export_headers_without_routing_campaign_sources(self):
+        self.assertTrue(is_datagrid_sheet(GRID_HEADERS))
+        self.assertTrue(is_datagrid_sheet([' ACCOUNT NO. ', 'Financing/Card No.', 'Status Code', 'Email']))
+        self.assertTrue(is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Client Name']))
+        for headers in (RAW_HEADERS, ['primary_key', 'cardnumber', 'email', 'PHONE'],
+                        ['Account no.', 'financing/Card no.', 'Name', 'debtor_email', 'phone_1'],
+                        ['No', 'Name', 'New I.C.', 'Email']):
+            with self.subTest(headers=headers):
+                self.assertFalse(is_datagrid_sheet(headers))
+
     def test_matching_uses_only_grid_accounts_validates_keys_buckets_and_deduplicates(self):
         raw, grid = fixtures()
         result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False), timestamp=NOW)
@@ -153,6 +164,55 @@ class Upload(BytesIO):
 
 
 class B2AppTests(unittest.TestCase):
+    def test_workbook_page_routes_datagrid_and_refreshes_contacts_from_daily_database(self):
+        raw, grid = fixtures()
+        uploads = {'source_upload': Upload('Daily account list.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])) as uploader:
+            app = AppTest.from_file(str(ROOT / 'app.py'))
+            app.session_state['source_info'] = (
+                hashlib.sha256(grid).hexdigest(), MAPPING_VERSION,
+                [SheetInfo('Sheet', 1, 1, headers=('No', 'Name', 'New I.C.'))],
+            )
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(any('latest full SBC database' in message.value for message in app.info))
+            self.assertNotIn('b2_result', app.session_state)
+            self.assertFalse(any(widget.key == 'b2_prepare' for widget in app.button))
+            self.assertNotIn('template_upload', {call.kwargs['key'] for call in uploader.call_args_list})
+
+            uploads['b2_database_upload'] = Upload('daily database.xlsx', raw)
+            app.run(timeout=20)
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertNotIn('result', app.session_state)
+            files = app.session_state['b2_result']['matched'].bundle.files
+            self.assertEqual([file.filename for file in files], ['NEGATIVE B2 - CARDS.csv', 'NEGATIVE B2 - BEL.csv'])
+            self.assertIn('first@example.com', {row['EMAIL/ NUMBER'] for row in csv_rows(files[0])})
+            downloads = [widget.proto.label for widget in app.get('download_button')]
+            self.assertIn('Download NEGATIVE B2 - CARDS.csv', downloads)
+            self.assertIn('Download NEGATIVE B2 - BEL.csv', downloads)
+            self.assertFalse(any('_filled_' in label for label in downloads))
+
+            updated = workbook_data(RAW_HEADERS, [
+                ['00001', '0000000000000001', 'MC', 2, '09221234567', None, 'next-day@example.com', None],
+                ['@BEL-1', '@BEL-1', 'BEL', 2, '09181234567', None, 'bel@example.com', None],
+            ], sheet_name='SBC')
+            uploads['b2_database_upload'] = Upload('daily database.xlsx', updated)
+            app.run(timeout=20)
+            self.assertNotIn('b2_result', app.session_state)
+            self.assertFalse(any('Download NEGATIVE B2' in widget.proto.label for widget in app.get('download_button')))
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            files = app.session_state['b2_result']['matched'].bundle.files
+            self.assertEqual({row['EMAIL/ NUMBER'] for row in csv_rows(files[0])}, {'next-day@example.com', '9221234567'})
+            self.assertEqual([file.filename for file in files], ['NEGATIVE B2 - CARDS.csv', 'NEGATIVE B2 - BEL.csv'])
+
+            uploads.pop('b2_database_upload')
+            app.run(timeout=20)
+            self.assertNotIn('b2_result', app.session_state)
+
     def test_matching_workflow_downloads_two_files_saves_and_invalidates(self):
         raw, grid = fixtures()
         database, accounts = Upload('database.xlsx', raw), Upload('DataGrid.xlsx', grid)

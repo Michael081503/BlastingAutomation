@@ -26,6 +26,8 @@ from exports import (
 )
 from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
+from b2_matching import is_datagrid_sheet
+from b2_page import render_b2_page
 
 from automation import (
     CSV_OUTPUT_ENCODINGS,
@@ -33,6 +35,7 @@ from automation import (
     DERIVED_TEMPLATE_HEADERS,
     FIELD_MAPPING,
     MAPPING_VERSION,
+    WORKBOOK_READER_VERSION,
     OPTIONAL_FIELD_MAPPING,
     TARGET_HEADERS,
     AutomationError,
@@ -53,11 +56,12 @@ def workbook_info(data: bytes, *, template: bool = False):
     """Cache only workbook metadata, scoped to this browser session."""
     slot = "template_info" if template else "source_info"
     digest = hashlib.sha256(data).hexdigest()
+    signature = (digest, MAPPING_VERSION, WORKBOOK_READER_VERSION)
     previous = st.session_state.get(slot)
-    if previous is None or len(previous) != 3 or previous[:2] != (digest, MAPPING_VERSION):
-        previous = (digest, MAPPING_VERSION, inspect_workbook(data, template=template))
+    if previous is None or len(previous) != 4 or previous[:3] != signature:
+        previous = (*signature, inspect_workbook(data, template=template))
         st.session_state[slot] = previous
-    return previous[2]
+    return previous[3]
 
 
 def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
@@ -142,6 +146,19 @@ def render_workbook_page() -> None:
     upload_left, upload_right = st.columns(2)
     with upload_left:
         source_file = st.file_uploader("1. Source workbook", type=["xlsx"], key="source_upload")
+    if source_file is not None:
+        source_bytes = source_file.getvalue()
+        try:
+            source_sheets = workbook_info(source_bytes)
+        except AutomationError as exc:
+            st.session_state.pop("result", None)
+            st.error(str(exc))
+            return
+        if any(is_datagrid_sheet(sheet.headers) for sheet in source_sheets):
+            st.session_state.pop("result", None)
+            st.info("DataGrid account list detected. Match it with the latest SBC database to prepare the two B2 files.")
+            render_b2_page(datagrid_upload=source_file, encoding=encoding)
+            return
     with upload_right:
         template_file = st.file_uploader(
             "2. Template (optional)",
@@ -156,13 +173,11 @@ def render_workbook_page() -> None:
         st.caption("Every worksheet uses the same separation rules. GEO worksheets separate Mindanao and R3 first.")
         return
 
-    source_bytes = source_file.getvalue()
     template_bytes = template_file.getvalue() if template_file is not None else blank_template
     template_extension = Path(template_file.name).suffix.lower() if template_file is not None else ".csv"
     source_digest = hashlib.sha256(source_bytes).hexdigest()
     template_digest = hashlib.sha256(template_bytes).hexdigest()
     try:
-        source_sheets = workbook_info(source_bytes)
         default_sheet = default_source_sheet(source_sheets)
         template_sheets = (
             workbook_info(template_bytes, template=True) if template_extension == ".xlsx" else []

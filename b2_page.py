@@ -8,32 +8,45 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from automation import AutomationError, CSV_OUTPUT_ENCODINGS, MAPPING_VERSION
+from automation import AutomationError, CSV_OUTPUT_ENCODINGS, MAPPING_VERSION, WORKBOOK_READER_VERSION
 from autostat import AUTOSTAT_VERSION, SourceSelection, inspect_contact_source
 from b2_matching import B2_MATCHING_VERSION, build_b2_exports, matching_sheet_score
 from export_config import AUTOSTAT_B2_FILENAMES, OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 
-def render_b2_page() -> None:
+def render_b2_page(*, datagrid_upload=None, encoding: str | None = None) -> None:
     st.subheader("NEGATIVE B2 — match accounts and contacts")
     st.write("Use DataGrid as the account list and the full SBC database as the source of contact details.")
+    st.caption(
+        "Upload the latest SBC database each day. Replacing either workbook clears previous downloads, "
+        "even when the filename is unchanged."
+    )
     st.caption(
         "Account No. matches Account Key; Financing/Card No. matches Contract Number. "
         "When both identifiers are present, both must match the same database record. "
         "Only verified B2 accounts are included. Account No. in the logs uses Contract Number."
     )
-    with st.sidebar:
-        output_format = st.selectbox("CSV file type", list(CSV_OUTPUT_ENCODINGS), key="b2_csv_type")
-    encoding = CSV_OUTPUT_ENCODINGS[output_format]
+    if encoding is None:
+        with st.sidebar:
+            output_format = st.selectbox("CSV file type", list(CSV_OUTPUT_ENCODINGS), key="b2_csv_type")
+        encoding = CSV_OUTPUT_ENCODINGS[output_format]
     left, right = st.columns(2)
     with left:
-        database_upload = st.file_uploader("1. Full SBC database", type=["xlsx"], key="b2_database_upload")
+        database_upload = st.file_uploader("1. Latest full SBC database", type=["xlsx"], key="b2_database_upload")
     with right:
-        grid_upload = st.file_uploader("2. DataGrid account list", type=["xlsx"], key="b2_grid_upload")
+        if datagrid_upload is None:
+            grid_upload = st.file_uploader("2. DataGrid account list", type=["xlsx"], key="b2_grid_upload")
+        else:
+            grid_upload = datagrid_upload
+            st.write(f"DataGrid account list: {grid_upload.name}")
     if database_upload is None or grid_upload is None:
         st.session_state.pop("b2_result", None)
-        st.info("Upload both workbooks to prepare NEGATIVE B2 - CARDS and NEGATIVE B2 - BEL.")
+        st.info(
+            "Upload the latest full SBC database to prepare NEGATIVE B2 - CARDS.csv and NEGATIVE B2 - BEL.csv."
+            if grid_upload is not None else
+            "Upload both workbooks to prepare NEGATIVE B2 - CARDS.csv and NEGATIVE B2 - BEL.csv."
+        )
         return
     sources, signatures = [], []
     cache = st.session_state.setdefault("b2_source_info", {})
@@ -41,7 +54,7 @@ def render_b2_page() -> None:
         data = upload.getvalue()
         digest = hashlib.sha256(data).hexdigest()
         try:
-            key = (digest, AUTOSTAT_VERSION, MAPPING_VERSION)
+            key = (digest, AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION)
             if key not in cache:
                 cache[key] = inspect_contact_source(data, ".xlsx")
             sheets = cache[key]
@@ -57,7 +70,7 @@ def render_b2_page() -> None:
             ))
             if header != sheet.header_row:
                 sheet = inspect_contact_source(data, ".xlsx", sheet_name=selected, header_row=header)[0]
-            st.caption(f"{label}: {len(sheet.headers)} source columns found.")
+            st.caption(f"{label}: {upload.name} — {len(sheet.headers)} source columns found.")
             sources.append(SourceSelection(upload.name, data, sheet))
             signatures.append((upload.name, digest, selected, header))
         except AutomationError as exc:

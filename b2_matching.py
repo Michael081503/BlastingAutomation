@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any
+from typing import Any, Sequence
 
 from automation import AutomationError, _identifier, normalize_header
 from autostat import (
@@ -18,6 +18,7 @@ from exports import export_filename
 
 
 B2_MATCHING_VERSION = 1
+DATAGRID_ROUTING_VERSION = 1
 RAW_FIELDS = {
     "account_key": ("Account Key",),
     "contract": ("Contract Number",),
@@ -33,6 +34,15 @@ GRID_FIELDS = {
 def _key(value: Any) -> str:
     text = "" if value is None else str(value).strip().casefold()
     return "" if text in {"", "-", "n/a", "#n/a", "null", "none"} else text
+
+
+def is_datagrid_sheet(headers: Sequence[str]) -> bool:
+    """Recognize the account-list export by its columns, independent of its name."""
+    labels = {normalize_header(header) for header in headers}
+    return {"accountno", "financingcardno"} <= labels and (
+        bool(labels & {"statuscode", "clientname"})
+        or {"no", "name", "newic"} <= labels
+    )
 
 
 def matching_sheet_score(sheet: ContactSheet, *, database: bool) -> int:

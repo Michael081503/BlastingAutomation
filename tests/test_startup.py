@@ -268,6 +268,20 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_b2_page_refreshes_for_prefilled_datagrid_uploads(self):
+        self.run_isolated("""
+            import inspect
+            import b2_matching, b2_page
+            del b2_matching.DATAGRID_ROUTING_VERSION
+            b2_page.render_b2_page = lambda: None
+            import app
+            assert app.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
+            parameters = inspect.signature(app.render_b2_page).parameters
+            assert {'datagrid_upload', 'encoding'} <= parameters.keys()
+            from app_startup import refresh_application_modules
+            assert refresh_application_modules() == set()
+        """)
+
 
 if __name__ == "__main__":
     unittest.main()
