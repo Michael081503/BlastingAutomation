@@ -160,7 +160,8 @@ h1 {
 }
 
 [data-testid="stSidebarHeader"] {
-    padding: 1.3rem 1.1rem 0.85rem;
+    height: auto;
+    padding: 2.75rem 1.1rem 0.85rem;
 }
 
 [data-testid="stSidebarLogo"] {
