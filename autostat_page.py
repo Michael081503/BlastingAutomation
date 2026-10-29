@@ -12,15 +12,15 @@ import pandas as pd
 import streamlit as st
 from openpyxl.utils import get_column_letter
 
-from automation import AutomationError, CSV_OUTPUT_ENCODINGS, OB_SORT_VERSION
+from automation import AutomationError, CSV_OUTPUT_ENCODINGS, OB_SORT_VERSION, normalize_header
 from autostat import (
     AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, VIBER_HEADERS, SourceSelection,
     autostat_source_excluded, build_autostat_excel, build_autostat_exports, inspect_contact_source,
     build_autostat_channel_excel, build_autostat_excel_zip,
 )
 from b2_autostat import (
-    B2_AUTOSTAT_VERSION, B2_EMAIL_HEADERS, B2_PHONE_HEADERS, B2ActivitySource,
-    b2_metadata_columns, build_b2_autostat_exports,
+    B2_AUTOSTAT_VERSION, B2_EMAIL_HEADERS, B2_PHONE_HEADERS, B2_PRIMARY_KEY_VERSION, B2ActivitySource,
+    b2_account_sheet, b2_metadata_columns, build_b2_autostat_exports,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
 from export_config import OUTPUT_FOLDER
@@ -95,7 +95,7 @@ def _render_autostat_uploads(*, b2: bool) -> None:
         if cache_key not in cache:
             cache[cache_key] = inspect_contact_source(data, extension, **kwargs)
         active_cache[cache_key] = cache[cache_key]
-        return cache[cache_key]
+        return [b2_account_sheet(sheet) for sheet in cache[cache_key]] if b2 else cache[cache_key]
 
     for file_index, upload in enumerate(uploads):
         if not b2 and autostat_source_excluded(upload.name):
@@ -106,6 +106,8 @@ def _render_autostat_uploads(*, b2: bool) -> None:
         extension = Path(upload.name).suffix.lower()
         digest = hashlib.sha256(data).hexdigest()
         prefix = f"{state_prefix}{AUTOSTAT_VERSION}_{file_index}_{digest}"
+        if b2:
+            prefix += f"_{B2_PRIMARY_KEY_VERSION}"
         configurations.append((upload.name, digest))
         try:
             sheets = inspect(data, extension)
@@ -136,11 +138,17 @@ def _render_autostat_uploads(*, b2: bool) -> None:
                         return "Choose a column" if index is None else f"{get_column_letter(index + 1)}: {headers[index] or '(blank header)'}"
 
                     account_options = [None, *columns]
+                    primary_key_account = (
+                        b2 and sheet.account_column is not None
+                        and normalize_header(sheet.headers[sheet.account_column]) == "primarykey"
+                    )
                     account = st.selectbox(
                         "Account number column", account_options,
                         index=account_options.index(sheet.account_column), format_func=label,
-                        key=f"{column_key}_account",
+                        key=f"{column_key}_account", disabled=primary_key_account,
                     )
+                    if primary_key_account:
+                        st.caption("primary_key supplies the account number in all three B2 logs.")
                     email_columns = st.multiselect(
                         "Email columns", columns, default=list(sheet.email_columns),
                         format_func=label, key=f"{column_key}_emails",

@@ -46,7 +46,7 @@ class B2AutostatTests(unittest.TestCase):
     def test_exact_layouts_and_channel_text_use_source_data_and_current_settings(self):
         selection = source(
             b"primary_key,cardnumber,FullName,email,phone,Collector\n"
-            b"INTERNAL-1,0005156041234567897.0,Sample Person,User@EXAMPLE.COM,+63 (917) 123-4567,COLLECTOR1\n"
+            b"0005156041234567897.0,DIFFERENT-CARD,Sample Person,User@EXAMPLE.COM,+63 (917) 123-4567,COLLECTOR1\n"
         )
         bundle = build_b2_autostat_exports([selection], timestamp=NOW)
         self.assertEqual([file.filename for file in bundle.files],
@@ -72,6 +72,34 @@ class B2AutostatTests(unittest.TestCase):
             self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
             for file in bundle.files:
                 self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_primary_key_controls_accounts_deduplication_and_missing_accounts_in_all_outputs(self):
+        selection = source(
+            b"cardnumber, PRIMARY_KEY ,email,phone\n"
+            b"SAME-CARD,000001,one@example.com,09171234567\n"
+            b"SAME-CARD,000002,two@example.com,09181234567\n"
+            b"OTHER-CARD,000001,duplicate@example.com,09191234567\n"
+            b"DO-NOT-SUBSTITUTE,,missing@example.com,09201234567\n"
+            b"5.15604E+15,000003,three@example.com,09211234567\n"
+        )
+        self.assertEqual(selection.source.sheet.account_column, 0)  # Generic detection prefers cardnumber.
+        bundle = build_b2_autostat_exports([selection], timestamp=None)
+        self.assertEqual([file.count for file in bundle.files], [3, 3, 3])
+        self.assertEqual(bundle.summary[0]["Missing account"], 1)
+        for file in bundle.files:
+            header = "Account No." if file.filename.endswith("Email.csv") else "Account number"
+            self.assertEqual([row[header] for row in rows(file)], ["000001", "000002", "000003"])
+        workbook = load_workbook(BytesIO(build_autostat_excel(bundle)))
+        for sheet in workbook:
+            column = "B" if sheet.title == "B2_Email" else "A"
+            self.assertEqual([cell.value for cell in sheet[column][1:]], ["000001", "000002", "000003"])
+            self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in sheet[column][1:]))
+        workbook.close()
+
+    def test_ambiguous_primary_key_headers_stop_instead_of_using_cardnumber(self):
+        selection = source(b"cardnumber,primary_key,Primary Key,email\nCARD,ACCOUNT1,ACCOUNT2,one@example.com\n")
+        with self.assertRaisesRegex(AutomationError, "more than one primary_key"):
+            build_b2_autostat_exports([selection], timestamp=None)
 
     def test_validation_deduplication_source_identity_metadata_and_ob_order(self):
         first = source(
@@ -150,6 +178,21 @@ class B2AutostatTests(unittest.TestCase):
 
 
 class B2AutostatPageTests(unittest.TestCase):
+    def test_b2_account_control_and_prepared_files_use_primary_key(self):
+        upload = Upload(b"cardnumber,primary_key,email,phone\nCARD-1,000001,one@example.com,09171234567\n")
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: [upload] if kw.get("key") == "autostat_b2_uploads" else []):
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            app.radio(key="autostat_upload_type").set_value("B2").run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            account = next(widget for widget in app.selectbox if widget.label == "Account number column")
+            self.assertEqual(account.value, 1)
+            self.assertTrue(account.disabled)
+            app.button(key="autostat_b2_prepare").click().run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            for file in app.session_state["autostat_b2_result"]["bundle"].files:
+                header = "Account No." if file.filename.endswith("Email.csv") else "Account number"
+                self.assertEqual(rows(file)[0][header], "000001")
+
     def test_b2_upload_prepare_download_save_invalidation_and_switching(self):
         uploads = [Upload(b"cardnumber,FullName,email,phone,Collector\n00001,Sample,one@example.com,09171234567,COLLECTOR\n")]
         def uploader(label, **kwargs):

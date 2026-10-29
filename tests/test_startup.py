@@ -402,13 +402,21 @@ class StartupTests(unittest.TestCase):
     def test_cached_b2_activity_templates_and_upload_page_refresh_together(self):
         self.run_isolated("""
             import b2_autostat, autostat_page
-            del b2_autostat.B2_AUTOSTAT_VERSION
+            del b2_autostat.B2_PRIMARY_KEY_VERSION
             del autostat_page.B2_UPLOAD_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'b2_autostat', 'autostat_page'} <= refreshed
             assert autostat_page.build_b2_autostat_exports is b2_autostat.build_b2_autostat_exports
             assert autostat_page.B2_UPLOAD_VERSION == 1
+            assert b2_autostat.B2_AUTOSTAT_VERSION == 2
+            data = b'cardnumber,primary_key,email,phone\\nCARD,000123,one@example.com,09171234567\\n'
+            import autostat
+            source = autostat.SourceSelection('B2.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
+            bundle = b2_autostat.build_b2_autostat_exports([b2_autostat.B2ActivitySource(source)], timestamp=None)
+            assert bundle.files[0].preview[0]['Account No.'] == '000123'
+            assert bundle.files[1].preview[0]['Account number'] == '000123'
+            assert bundle.files[2].preview[0]['Account number'] == '000123'
             assert refresh_application_modules() == set()
         """)
 

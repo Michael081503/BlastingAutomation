@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from automation import AutomationError, normalize_header, ob_sort_key, source_column_positions
 from autostat import (
-    AutostatBundle, ContactRows, SourceSelection, _account_precision_risk,
+    AutostatBundle, ContactRows, ContactSheet, SourceSelection, _account_precision_risk,
     _add_contact_row, _bundle, _contact_summary, _log_file, _read_rows,
     account_number_text, unique_account_contacts,
 )
 
 
-B2_AUTOSTAT_VERSION = 1
+B2_AUTOSTAT_VERSION = 2
+B2_PRIMARY_KEY_VERSION = 1
 B2_EMAIL_HEADERS = (
     "Name", "Account No.", "STATUS CODE", "REMARKS", "REMARKS BY", "REMARKS DATE", "Email", "Collector",
 )
@@ -28,6 +29,14 @@ class B2ActivitySource:
     source: SourceSelection
     name_column: int | None = None
     collector_column: int | None = None
+
+
+def b2_account_sheet(sheet: ContactSheet) -> ContactSheet:
+    """Use primary_key for B2 accounts whenever that source header is present."""
+    columns = [index for index, header in enumerate(sheet.headers) if normalize_header(header) == "primarykey"]
+    if len(columns) > 1:
+        raise AutomationError(f"{sheet.name}: more than one primary_key column was found. Keep one unambiguous primary_key header.")
+    return replace(sheet, account_column=columns[0]) if columns else sheet
 
 
 def b2_metadata_columns(headers: tuple[str, ...]) -> tuple[int | None, int | None]:
@@ -57,7 +66,7 @@ def build_b2_autostat_exports(
     seen = {"email": set(), "viber": set()}
     summaries = []
     for selection in sources:
-        source = selection.source
+        source = replace(selection.source, sheet=b2_account_sheet(selection.source.sheet))
         labels = [normalize_header(header) for header in source.sheet.headers]
         identity_column = next((labels.index(alias) for alias in ("indexoneuid", "oldic")
                                 if labels.count(alias) == 1), None)
