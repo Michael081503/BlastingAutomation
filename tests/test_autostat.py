@@ -80,6 +80,52 @@ class PhoneTests(unittest.TestCase):
 
 
 class AutostatTests(unittest.TestCase):
+    def test_whole_number_accounts_lose_only_zero_decimals_and_remain_exact_text_in_all_outputs(self):
+        cases = [
+            ("5156041234567897.0", "5156041234567897"),
+            ("000123.000", "000123"),
+            ("123456789012345678901234.00", "123456789012345678901234"),
+            ("5146000000000001", "5146000000000001"),
+            ("BEL-123.0", "BEL-123.0"),
+            ("123.45", "123.45"),
+            ("001.0", "001"),
+            ("+1234567890123456.0", "+1234567890123456"),
+            ("  002.00  ", "002"),
+            ("000123", "000123"),  # The cleaned duplicate keeps the first contact.
+        ]
+        rows = [["cardnumber", "email", "phone"], *[
+            [account, f"contact{index}@example.com", "09171234567"]
+            for index, (account, _) in enumerate(cases)
+        ]]
+        csv_output = StringIO(newline="")
+        csv.writer(csv_output).writerows(rows)
+        workbook = Workbook()
+        for row in rows:
+            workbook.active.append(row)
+        excel_output = BytesIO()
+        workbook.save(excel_output)
+        workbook.close()
+        expected = [account for _, account in cases[:-1]]
+        for extension, data in ((".csv", csv_output.getvalue().encode()), (".xlsx", excel_output.getvalue())):
+            with self.subTest(source=extension):
+                source = SourceSelection("accounts" + extension, data, inspect_contact_source(data, extension)[0])
+                bundle = build_autostat_exports([source], timestamp=None)
+                self.assertEqual(bundle.summary[0]["Account precision issues"], 0)
+                self.assertEqual(bundle.summary[0]["Duplicate Email rows removed"], 1)
+                self.assertEqual(bundle.summary[0]["Duplicate Viber rows removed"], 1)
+                with ZipFile(BytesIO(bundle.zip_data)) as archive:
+                    for file in bundle.files:
+                        self.assertEqual([row["Account No."] for row in exported_rows(file)], expected)
+                        self.assertEqual([row["Account No."] for row in file.preview], expected)
+                        self.assertEqual(archive.read(file.filename), file.data)
+                self.assertEqual(exported_rows(bundle.files[0])[1]["EMAIL/ NUMBER"], "contact1@example.com")
+                saved = load_workbook(BytesIO(build_autostat_excel(bundle)))
+                for sheet in saved:
+                    self.assertEqual([cell.value for cell in sheet["B"][1:]], expected)
+                    self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in sheet["B"][1:]))
+                saved.close()
+                self.assertEqual(source.data, data)
+
     def test_excel_download_preserves_full_identifiers_and_all_rows_as_literal_text(self):
         accounts = [
             "5156041234567897", "001234567890123456", "123456789012345678901234",
@@ -133,12 +179,21 @@ class AutostatTests(unittest.TestCase):
         self.assertEqual([cell.value for cell in workbook["Viber"][1]], list(VIBER_HEADERS))
         workbook.close()
 
-    def test_precision_warning_detects_scientific_and_numeric_sources_without_inventing_digits(self):
+    def test_abbreviated_scientific_accounts_stop_exports_and_numeric_sources_retain_supplied_digits(self):
         data = b"cardnumber,indexoneuid,email\n5.15604E+15,UID-1,first@example.com\n5156041234567897,UID-2,second@example.com\n"
         source = SourceSelection("source.csv", data, inspect_contact_source(data, ".csv")[0])
-        bundle = build_autostat_exports([source], timestamp=NOW)
-        self.assertEqual(bundle.summary[0]["Account precision issues"], 1)
-        self.assertEqual([row["Account No."] for row in exported_rows(bundle.files[0])], ["5.15604E+15", "5156041234567897"])
+        with self.assertRaisesRegex(AutomationError, "source.csv / CSV, row 2.*scientific notation"):
+            build_autostat_exports([source], timestamp=NOW)
+        workbook = Workbook()
+        workbook.active.append(["cardnumber", "email"])
+        workbook.active.append(["5.15604E+15", "first@example.com"])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        data = output.getvalue()
+        source = SourceSelection("source.xlsx", data, inspect_contact_source(data, ".xlsx")[0])
+        with self.assertRaisesRegex(AutomationError, "source.xlsx / Sheet, row 2.*scientific notation"):
+            build_autostat_exports([source], timestamp=NOW)
         workbook = Workbook()
         workbook.active.append(["cardnumber", "email"])
         workbook.active.append([5156040000000000, "first@example.com"])
@@ -525,7 +580,13 @@ class AutostatTests(unittest.TestCase):
 
 class AutostatAppTests(unittest.TestCase):
     def test_excel_download_is_generated_only_when_requested_and_precision_issues_are_visible(self):
-        upload = Upload("contacts.csv", b"cardnumber,email\n5.15604E+15,first@example.com\n")
+        source = Workbook()
+        source.active.append(["cardnumber", "email"])
+        source.active.append([5156041234567897, "first@example.com"])
+        output = BytesIO()
+        source.save(output)
+        source.close()
+        upload = Upload("contacts.xlsx", output.getvalue())
         with patch("streamlit.file_uploader", return_value=[upload]), \
                 patch("autostat_page.build_autostat_excel", wraps=build_autostat_excel) as build_excel, \
                 patch("streamlit.download_button") as download:
@@ -538,12 +599,62 @@ class AutostatAppTests(unittest.TestCase):
             build_excel.assert_not_called()
             excel_download = next(call for call in download.call_args_list if call.kwargs.get("key") == "autostat_excel")
             self.assertEqual(excel_download.args[2], "AUTOSTAT.xlsx")
+            self.assertEqual(excel_download.kwargs["type"], "primary")
+            self.assertEqual(app.selectbox(key="autostat_output_format").value, "Excel (.xlsx)")
             self.assertTrue(callable(excel_download.args[1]))
             workbook = load_workbook(BytesIO(excel_download.args[1]()))
-            self.assertEqual(workbook["Email"]["B2"].value, "5.15604E+15")
+            self.assertEqual(workbook["Email"]["B2"].value, "5156041234567897")
             self.assertEqual(workbook["Email"]["B2"].data_type, "s")
             workbook.close()
             build_excel.assert_called_once()
+
+    def test_default_individual_downloads_and_zip_contain_literal_text_excel_accounts(self):
+        upload = Upload("contacts.csv", b"cardnumber,email,phone\n5156041234567897.0,first@example.com,09171234567\n001234567890123456,second@example.com,09181234567\n")
+        with patch("streamlit.file_uploader", return_value=[upload]), patch("streamlit.download_button") as download:
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            expected = ["5156041234567897", "001234567890123456"]
+            calls = {call.kwargs.get("key"): call for call in download.call_args_list}
+            for index in (0, 1):
+                call = calls[f"autostat_download_{index}"]
+                self.assertTrue(call.args[2].endswith(".xlsx"))
+                self.assertTrue(callable(call.args[1]))
+                workbook = load_workbook(BytesIO(call.args[1]()))
+                self.assertEqual([cell.value for cell in workbook.active["B"][1:]], expected)
+                self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in workbook.active["B"][1:]))
+                workbook.close()
+            with ZipFile(BytesIO(calls["autostat_zip"].args[1]())) as archive:
+                self.assertEqual(archive.namelist(), ["AUTOSTAT_Email.xlsx", "AUTOSTAT_Viber.xlsx"])
+                for name in archive.namelist():
+                    workbook = load_workbook(BytesIO(archive.read(name)))
+                    self.assertEqual([cell.value for cell in workbook.active["B"][1:]], expected)
+                    self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in workbook.active["B"][1:]))
+                    workbook.close()
+            app.selectbox(key="autostat_output_format").select("CSV (.csv)").run(timeout=20)
+            self.assertNotIn("autostat_result", app.session_state)
+            download.reset_mock()
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            calls = {call.kwargs.get("key"): call for call in download.call_args_list}
+            self.assertTrue(calls["autostat_download_0"].args[2].endswith(".csv"))
+            with ZipFile(BytesIO(calls["autostat_zip"].args[1])) as archive:
+                self.assertEqual(archive.namelist(), ["AUTOSTAT_Email.csv", "AUTOSTAT_Viber.csv"])
+
+    def test_abbreviated_source_accounts_clear_previous_results_and_offer_no_download(self):
+        uploads = [Upload("contacts.csv", b"cardnumber,email\n5156041234567897,first@example.com\n")]
+        with patch("streamlit.file_uploader", side_effect=lambda *args, **kwargs: uploads):
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertIn("autostat_result", app.session_state)
+            uploads[0] = Upload("contacts.csv", b"cardnumber,email\n5.15604E+15,first@example.com\n")
+            app.run(timeout=20)
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn("autostat_result", app.session_state)
+            self.assertEqual(len(app.get("download_button")), 0)
+            self.assertIn("scientific notation", app.error[0].value)
+            self.assertIn("row 2", app.error[0].value)
 
     def test_excluded_uploads_are_skipped_before_reading_and_only_included_accounts_are_counted(self):
         included = Upload("GEO.csv", b"cardnumber,email,phone\n0001,first@example.com,09171234567\n")
@@ -611,6 +722,7 @@ class AutostatAppTests(unittest.TestCase):
         ]
         with patch('streamlit.file_uploader', return_value=uploads), TemporaryDirectory(prefix='autostat-bel-test-') as directory:
             app = AppTest.from_file(str(ROOT / 'pages' / 'AUTOSTAT.py')).run(timeout=20)
+            app.selectbox(key="autostat_output_format").select("CSV (.csv)").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertFalse(any(widget.label == 'Separate BEL and CARDS using primary_key' for widget in app.checkbox))
             app.button(key='autostat_prepare').click().run(timeout=20)
@@ -687,7 +799,13 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             saved = Path(app.session_state["autostat_result"]["saved_folder"])
-            self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in result["bundle"].files})
+            self.assertEqual({path.name for path in saved.iterdir()}, {Path(file.filename).with_suffix(".xlsx").name for file in result["bundle"].files})
+            for file in result["bundle"].files:
+                workbook = load_workbook(saved / Path(file.filename).with_suffix(".xlsx").name)
+                self.assertEqual([cell.value for cell in workbook.active["B"][1:]],
+                                 [row["Account No."] for row in exported_rows(file)])
+                self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in workbook.active["B"][1:]))
+                workbook.close()
             app.text_input(key="autostat_remark_by").set_value("USER2").run(timeout=20)
             self.assertNotIn("autostat_result", app.session_state)
             app.button(key="autostat_prepare").click().run(timeout=20)

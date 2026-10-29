@@ -15,17 +15,22 @@ from typing import Any
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.cell import WriteOnlyCell
 from openpyxl.utils.exceptions import InvalidFileException
 
-from automation import AutomationError, _encode_csv, _identifier, normalize_header
+from automation import (
+    AutomationError, _encode_csv, _identifier, normalize_header, ob_sort_key,
+    source_column_positions, write_text_csv_sheet,
+)
 from email_validation import validated_email
 from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 9
-ACCOUNT_TEXT_EXPORT_VERSION = 1
+AUTOSTAT_VERSION = 12
+ACCOUNT_TEXT_EXPORT_VERSION = 2
+ACCOUNT_NUMBER_NORMALIZATION_VERSION = 1
+ACCOUNT_INTEGRITY_VERSION = 1
+EXCEL_CHANNEL_OUTPUT_VERSION = 1
 ACCOUNT_DEDUP_VERSION = 2
 ACCOUNT_IDENTITY_VERSION = 1
 BLANK_TIMESTAMP_VERSION = 1
@@ -219,6 +224,8 @@ class ContactRows:
     duplicate_email_rows: int = 0
     duplicate_phone_rows: int = 0
     account_precision_issues: int = 0
+    email_ob_values: list[Any] = field(default_factory=list)
+    phone_ob_values: list[Any] = field(default_factory=list)
 
 
 def _validated_candidates(value: Any, validator) -> list[tuple[Any, str | None]]:
@@ -242,6 +249,15 @@ def _account_precision_risk(value: Any) -> bool:
     return isinstance(value, str) and re.fullmatch(
         r"[+-]?\d+(?:\.\d+)?[eE][+-]?\d+", value.strip(),
     ) is not None
+
+
+def account_number_text(value: Any) -> str | None:
+    """Remove only a zero decimal suffix without converting identifier digits to numbers."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    whole_number = re.fullmatch(r"([+-]?[0-9]+)\.0+", text)
+    return whole_number[1] if whole_number else text
 
 
 def _read_rows(
@@ -296,7 +312,7 @@ def _read_rows(
 
 
 def _add_contact_row(
-    result: ContactRows, sheet: ContactSheet, row: dict[int, Any], *, identity: Any = None,
+    result: ContactRows, sheet: ContactSheet, row: dict[int, Any], *, identity: Any = None, ob: Any = None,
 ) -> None:
     if all(_blank(value) for value in row.values()):
         result.blank_rows += 1
@@ -329,6 +345,8 @@ def _add_contact_row(
     account_key = (account.casefold(), "" if _blank(identity) else str(identity).strip().casefold())
     result.email_account_keys.extend(account_key for _ in emails)
     result.phone_account_keys.extend(account_key for _ in phones)
+    result.email_ob_values.extend(ob for _ in emails)
+    result.phone_ob_values.extend(ob for _ in phones)
 
 
 def extract_contacts(source: SourceSelection) -> ContactRows:
@@ -336,12 +354,23 @@ def extract_contacts(source: SourceSelection) -> ContactRows:
     labels = [normalize_header(header) for header in source.sheet.headers]
     identity_column = next((labels.index(alias) for alias in ("indexoneuid", "oldic")
                             if labels.count(alias) == 1), None)
+    ob_column = source_column_positions(source.sheet.headers).get("OB")
+    extra_columns = tuple(column for column in (identity_column, ob_column) if column is not None)
     result = ContactRows()
     account_issues = []
-    for row in _read_rows(
-        source, extra_columns=() if identity_column is None else (identity_column,), account_issues=account_issues,
-    ):
-        _add_contact_row(result, source.sheet, row, identity=row.get(identity_column))
+    for row_number, row in enumerate(_read_rows(
+        source, extra_columns=extra_columns, account_issues=account_issues,
+    ), source.sheet.header_row + 1):
+        account = row[source.sheet.account_column]
+        if isinstance(account, str) and _account_precision_risk(account):
+            raise AutomationError(
+                f"{source.name} / {source.sheet.name}, row {row_number}: the account number is already "
+                "abbreviated in scientific notation. Upload the original source with the full account "
+                "number stored as Text, or its original CSV without opening and resaving it in Excel. "
+                "Changing the cell format cannot recover missing digits. No AUTOSTAT files were prepared."
+            )
+        row[source.sheet.account_column] = account_number_text(row[source.sheet.account_column])
+        _add_contact_row(result, source.sheet, row, identity=row.get(identity_column), ob=row.get(ob_column))
     result.account_precision_issues = len(account_issues)
     return result
 
@@ -358,13 +387,15 @@ def unique_account_contacts(
         seen = {"email": set(), "viber": set()}
     unique = {}
     unique_keys = {}
+    unique_ob_values = {}
     removed = {}
-    for channel, pairs, account_keys in (
-        ("email", contacts.emails, contacts.email_account_keys),
-        ("viber", contacts.phones, contacts.phone_account_keys),
+    for channel, pairs, account_keys, ob_values in (
+        ("email", contacts.emails, contacts.email_account_keys, contacts.email_ob_values),
+        ("viber", contacts.phones, contacts.phone_account_keys, contacts.phone_ob_values),
     ):
         unique[channel] = []
         unique_keys[channel] = []
+        unique_ob_values[channel] = []
         removed[channel] = 0
         for index, (account, contact) in enumerate(pairs):
             key = account_keys[index] if account_keys else (account.strip().casefold(), "")
@@ -374,9 +405,11 @@ def unique_account_contacts(
                 seen[channel].add(key)
                 unique[channel].append((account, contact))
                 unique_keys[channel].append(key)
+                unique_ob_values[channel].append(ob_values[index] if ob_values else None)
     return replace(
         contacts, emails=unique["email"], phones=unique["viber"],
         email_account_keys=unique_keys["email"], phone_account_keys=unique_keys["viber"],
+        email_ob_values=unique_ob_values["email"], phone_ob_values=unique_ob_values["viber"],
         duplicate_email_rows=contacts.duplicate_email_rows + removed["email"],
         duplicate_phone_rows=contacts.duplicate_phone_rows + removed["viber"],
     )
@@ -491,22 +524,29 @@ def build_autostat_excel(bundle: AutostatBundle) -> bytes:
     """
     workbook = Workbook(write_only=True)
     for file in bundle.files:
-        sheet = workbook.create_sheet(Path(file.filename).stem.removeprefix("AUTOSTAT_"))
-        sheet.freeze_panes = "A2"
-        sheet.column_dimensions["B"].width = 24
-        encoding = "utf-8-sig" if file.data.startswith(b"\xef\xbb\xbf") else "cp1252"
-        for row in csv.reader(StringIO(file.data.decode(encoding), newline="")):
-            cells = []
-            for value in row:
-                cell = WriteOnlyCell(sheet, value=value)
-                # Explicit string types also keep formula-like source IDs literal.
-                cell.data_type = "s"
-                cell.number_format = "@"
-                cells.append(cell)
-            sheet.append(cells)
+        write_text_csv_sheet(workbook, file.data, Path(file.filename).stem.removeprefix("AUTOSTAT_"))
     output = BytesIO()
     workbook.save(output)
     workbook.close()
+    return output.getvalue()
+
+
+def build_autostat_channel_excel(file: AutostatFile) -> bytes:
+    """Create one complete channel workbook with literal text account cells."""
+    workbook = Workbook(write_only=True)
+    write_text_csv_sheet(workbook, file.data, Path(file.filename).stem.removeprefix("AUTOSTAT_"))
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
+def build_autostat_excel_zip(bundle: AutostatBundle) -> bytes:
+    """Package both Excel channel workbooks so the ZIP is safe to open in Excel."""
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        for file in bundle.files:
+            archive.writestr(Path(file.filename).with_suffix(".xlsx").name, build_autostat_channel_excel(file))
     return output.getvalue()
 
 
@@ -543,7 +583,7 @@ def build_autostat_exports(
     sources: list[SourceSelection], *, timestamp: datetime | None, remark_by: str = "MBURGOS",
     encoding: str = "cp1252",
 ) -> AutostatBundle:
-    """Compile included sources into one deduplicated file per channel."""
+    """Compile included sources into one deduplicated file per channel, highest OB first."""
     if not sources:
         raise AutomationError("Select at least one source sheet.")
     sources = [source for source in sources if not autostat_source_excluded(source.name)]
@@ -558,12 +598,17 @@ def build_autostat_exports(
     for source in sources:
         contacts = unique_account_contacts(extract_contacts(source), seen=seen)
         summaries.append(_contact_summary(source, contacts))
-        channels["Email"].extend(contacts.emails)
-        channels["Viber"].extend(contacts.phones)
+        channels["Email"].extend(zip(contacts.emails, contacts.email_ob_values))
+        channels["Viber"].extend(zip(contacts.phones, contacts.phone_ob_values))
+    for rows in channels.values():
+        rows.sort(key=lambda item: ob_sort_key(item[1]), reverse=True)
     files = [
         _log_file(
             f"AUTOSTAT_{channel}.csv", headers,
-            _activity_rows(channels[channel], channel=channel, headers=headers, time_text=time_text, remark_by=remark_by),
+            _activity_rows(
+                (pair for pair, _ in channels[channel]),
+                channel=channel, headers=headers, time_text=time_text, remark_by=remark_by,
+            ),
             encoding,
         )
         for channel, headers in (("Email", EMAIL_HEADERS), ("Viber", VIBER_HEADERS))

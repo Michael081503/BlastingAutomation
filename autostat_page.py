@@ -12,17 +12,18 @@ import pandas as pd
 import streamlit as st
 from openpyxl.utils import get_column_letter
 
-from automation import AutomationError, CSV_OUTPUT_ENCODINGS
+from automation import AutomationError, CSV_OUTPUT_ENCODINGS, OB_SORT_VERSION
 from autostat import (
     AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, VIBER_HEADERS, SourceSelection,
     autostat_source_excluded, build_autostat_excel, build_autostat_exports, inspect_contact_source,
+    build_autostat_channel_excel, build_autostat_excel_zip,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
 from export_config import OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 
-AUTOSTAT_PAGE_VERSION = 6
+AUTOSTAT_PAGE_VERSION = 8
 COMPACT_SUMMARY_VERSION = 1
 GROUPED_SOURCE_SETTINGS_VERSION = 1
 
@@ -31,9 +32,13 @@ def render_autostat() -> None:
     st.title("AUTOSTAT")
     with st.sidebar:
         output_format = st.selectbox(
+            "Output files", ("Excel (.xlsx)", "CSV (.csv)"), key="autostat_output_format",
+        )
+        csv_file_type = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="autostat_csv_file_type",
         )
-    encoding = CSV_OUTPUT_ENCODINGS[output_format]
+    encoding = CSV_OUTPUT_ENCODINGS[csv_file_type]
+    excel_output = output_format == "Excel (.xlsx)"
     uploads = st.file_uploader(
         "Source files", type=["xlsx", "csv"], accept_multiple_files=True, key="autostat_uploads",
     )
@@ -144,8 +149,9 @@ def render_autostat() -> None:
     if not sources:
         st.info("Select at least one sheet with an account number column and an email or phone column.")
     signature = (
-        AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, AUTOSTAT_PAGE_VERSION, EMAIL_VALIDATION_VERSION, tuple(configurations), remark_by,
-        blank_timestamp, current_time, fixed_timestamp, encoding, EMAIL_HEADERS, VIBER_HEADERS,
+        AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, AUTOSTAT_PAGE_VERSION, EMAIL_VALIDATION_VERSION, OB_SORT_VERSION,
+        tuple(configurations), remark_by,
+        blank_timestamp, current_time, fixed_timestamp, encoding, output_format, EMAIL_HEADERS, VIBER_HEADERS,
     )
     previous = st.session_state.get("autostat_result")
     if previous is not None and (previous["signature"] != signature or problems):
@@ -181,16 +187,24 @@ def render_autostat() -> None:
     st.download_button(
         "Download Excel (keeps card numbers as text)", partial(build_autostat_excel, bundle), "AUTOSTAT.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        on_click="ignore", key="autostat_excel",
+        on_click="ignore", key="autostat_excel", type="primary",
     )
-    st.caption("Use the Excel download when copying card numbers. In the destination, format the account column as Text before pasting.")
+    st.caption(
+        "Open AUTOSTAT.xlsx in Excel to keep account numbers as text. Whole-number accounts have no .0 suffix. "
+        "When copying elsewhere, format the destination account column as Text before pasting."
+    )
+    if not excel_output:
+        st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use the Excel download for viewing and editing.")
     st.download_button(
-        "Download all AUTOSTAT files (ZIP)", bundle.zip_data, "AUTOSTAT_FILES.zip",
+        "Download both Excel files (ZIP)" if excel_output else "Download both CSV files (ZIP)",
+        partial(build_autostat_excel_zip, bundle) if excel_output else bundle.zip_data, "AUTOSTAT_FILES.zip",
         mime="application/zip", on_click="ignore", key="autostat_zip",
     )
     for index, file in enumerate(bundle.files):
+        filename = Path(file.filename).with_suffix(".xlsx").name if excel_output else file.filename
         st.download_button(
-            f"Download {file.filename}", file.data, file.filename, mime="text/csv",
+            f"Download {filename}", partial(build_autostat_channel_excel, file) if excel_output else file.data,
+            filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if excel_output else "text/csv",
             key=f"autostat_download_{index}", on_click="ignore",
         )
     with st.expander("Save to a folder"):
@@ -198,7 +212,9 @@ def render_autostat() -> None:
         if st.button("Save AUTOSTAT files to folder", key="autostat_save"):
             try:
                 folder = save_files_to_folder(
-                    [(file.filename, file.data) for file in bundle.files], output_folder, batch_name="AUTOSTAT",
+                    [(Path(file.filename).with_suffix(".xlsx").name, build_autostat_channel_excel(file))
+                     if excel_output else (file.filename, file.data) for file in bundle.files],
+                    output_folder, batch_name="AUTOSTAT",
                 )
                 result["saved_folder"] = str(folder)
                 st.session_state["autostat_result"] = result

@@ -964,7 +964,7 @@ class FolderOutputTests(unittest.TestCase):
             parent = Path(directory).resolve() / "not_created"
             invalid_batches = [
                 [], [("../outside.csv", b"data")], [("bad:name.csv", b"data")],
-                [("same.csv", b"one"), ("SAME.csv", b"two")], [("not_csv.xlsx", b"data")],
+                [("same.csv", b"one"), ("SAME.csv", b"two")], [("not_supported.exe", b"data")],
             ]
             for files in invalid_batches:
                 with self.subTest(files=[name for name, _ in files]):
@@ -1332,7 +1332,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state["result"]["count"], 1)
-            self.assertEqual(len(app.get("download_button")), 4)
+            self.assertEqual(len(app.get("download_button")), 6)
             files = app.session_state["result"]["files"]
             self.assertTrue(all(file.filename.endswith(".csv") for file in files))
             rows = list(csv.DictReader(StringIO(files[0].data.decode("utf-8-sig"))))
@@ -1371,7 +1371,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual([file.count for file in app.session_state['result']['files']], [1, 0])
-            self.assertEqual(len(app.get("download_button")), 4)
+            self.assertEqual(len(app.get("download_button")), 6)
 
     def test_uploaded_excel_template_produces_csv_in_both_export_modes(self):
         upload = FakeUpload("source.xlsx", source_file([
@@ -1462,7 +1462,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(preview.loc[0, "Monthly"], "")
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
-            self.assertEqual(len(app.get("download_button")), 16)
+            self.assertEqual(len(app.get("download_button")), 18)
             app.main.selectbox[-1].select(OUTPUT_FILENAMES["blank_other_products"] + "_Email.csv").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["count"], 7)

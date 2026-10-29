@@ -8,12 +8,14 @@ import unicodedata
 from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import range_boundaries
@@ -48,6 +50,7 @@ SOURCE_ALIASES = {
 }
 MAPPING_VERSION = 6
 WORKBOOK_READER_VERSION = 1
+OB_SORT_VERSION = 1
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 DERIVED_TEMPLATE_HEADERS = ("doclass",)
 GEO_DOCLASS_BY_AREA = {
@@ -98,6 +101,21 @@ def normalize_header(value: Any) -> str:
     """Match headers despite capitalization, extra whitespace, and punctuation."""
     text = unicodedata.normalize("NFKC", str(value or "")).casefold()
     return "".join(character for character in text if character.isalnum())
+
+
+def ob_sort_key(value: Any) -> tuple[bool, Decimal]:
+    """Compare OB amounts numerically; reverse sorting puts missing amounts last."""
+    if value is not None and not isinstance(value, bool):
+        text = re.sub(r"^(?:PHP|₱)\s*", "", str(value).strip(), flags=re.IGNORECASE)
+        if text.startswith("(") and text.endswith(")"):
+            text = "-" + text[1:-1].strip()
+        try:
+            amount = Decimal(text.replace(",", ""))
+            if amount.is_finite():
+                return True, amount
+        except InvalidOperation:
+            pass
+    return False, Decimal(0)
 
 
 def geo_doclass(area: Any) -> str | None:
@@ -506,6 +524,24 @@ def _encode_csv(text: str, encoding: str) -> bytes:
             "Some characters cannot be saved in CSV (Comma delimited). "
             "Select CSV UTF-8 (Comma delimited) to keep the original text."
         ) from exc
+
+
+def write_text_csv_sheet(workbook: Workbook, data: bytes, title: str):
+    """Write literal text cells so Excel cannot round or evaluate exported values."""
+    sheet = workbook.create_sheet(title)
+    sheet.freeze_panes = "A2"
+    encoding = "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "cp1252"
+    for row_index, row in enumerate(csv.reader(StringIO(data.decode(encoding), newline=""))):
+        cells = []
+        for column, value in enumerate(row, 1):
+            if row_index == 0:
+                sheet.column_dimensions[get_column_letter(column)].width = 24
+            cell = WriteOnlyCell(sheet, value=value)
+            cell.data_type = "s"
+            cell.number_format = "@"
+            cells.append(cell)
+        sheet.append(cells)
+    return sheet
 
 
 def _csv_header(headers: list[Any] | tuple[str, ...], encoding: str = "utf-8-sig") -> bytes:

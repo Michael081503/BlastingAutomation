@@ -5,8 +5,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
+
+from openpyxl import Workbook
 
 from automation import (
     AutomationError,
@@ -17,6 +20,8 @@ from automation import (
     has_contact_details,
     has_contact_value,
     normalize_header,
+    ob_sort_key,
+    write_text_csv_sheet,
 )
 from export_config import (
     CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
@@ -40,6 +45,7 @@ REVIEW_GROUP_KEYS = frozenset({"qualified_review", "blank_review"})
 CHANNEL_LABELS = {"email": "Email", "viber": "Viber"}
 GEO_FILENAME_CONFIG_VERSION = 2
 GROUPED_SHEET_EXPORT_VERSION = 1
+EXCEL_EXPORT_VERSION = 1
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
     "qualified_cards": "QUALIFIED / CARDS",
@@ -80,6 +86,25 @@ class ExportBundle:
     zip_data: bytes
     zip_filename: str
     no_contact_rows_skipped: int
+
+
+def build_export_excel(file: ExportFile) -> bytes:
+    """Create the complete export with account numbers stored as actual text."""
+    workbook = Workbook(write_only=True)
+    write_text_csv_sheet(workbook, file.data, "Accounts")
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
+def build_excel_zip(files: list[ExportFile]) -> bytes:
+    """Keep campaign filenames and channel separation in text-preserving workbooks."""
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        for file in files:
+            archive.writestr(Path(file.filename).with_suffix(".xlsx").name, build_export_excel(file))
+    return output.getvalue()
 
 
 def _level(value: Any) -> str:
@@ -191,6 +216,7 @@ def _build_channel_files(
 ) -> list[ExportFile]:
     if not records:
         return []
+    records = sorted(records, key=lambda record: ob_sort_key(record.get("OB")), reverse=True)
     headers = csv_template_headers(template)
     files = []
     for channel, rows in separate_channels(records).items():

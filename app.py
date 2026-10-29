@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,7 @@ from export_config import (
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
     GROUPED_SHEET_EXPORT_VERSION,
+    EXCEL_EXPORT_VERSION, build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
 from folder_output import save_files_to_folder
@@ -34,9 +36,11 @@ from automation import (
     DERIVED_TEMPLATE_HEADERS,
     FIELD_MAPPING,
     MAPPING_VERSION,
+    OB_SORT_VERSION,
     WORKBOOK_READER_VERSION,
     OPTIONAL_FIELD_MAPPING,
     TARGET_HEADERS,
+    XLSX_MIME,
     AutomationError,
     create_default_csv_template,
     csv_template_headers,
@@ -354,7 +358,8 @@ def render_workbook_page() -> None:
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
-        "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION,
+        "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
+        EXCEL_EXPORT_VERSION,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
     previous_result = st.session_state.get("result")
@@ -463,24 +468,37 @@ def render_workbook_page() -> None:
                     "They are included in a separate review file."
                 )
     st.caption(
-        "To edit files from the ZIP, right-click the downloaded ZIP and choose Extract All, "
-        "then open the CSVs in the extracted folder. Individual CSV downloads also work."
+        "Use Excel files to open, edit, or upload accounts to AUTOSTAT. "
+        "Account numbers are stored as text to preserve every supplied digit. "
+        "Extract the Excel ZIP before opening its workbooks."
     )
     st.download_button(
-        "Download all files (ZIP)", result["zip_data"], result["zip_filename"],
-        mime="application/zip", type="primary", on_click="ignore",
+        "Download Excel files (ZIP, keeps account numbers as text)", partial(build_excel_zip, files),
+        Path(result["zip_filename"]).stem + "_Excel.zip",
+        mime="application/zip", type="primary", on_click="ignore", key="excel_zip",
     )
-    for file in files:
+    with st.expander("CSV files for system upload"):
+        st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use Excel files for viewing and editing.")
         st.download_button(
-            f"Download {file.filename}", file.data, file.filename,
-            mime="text/csv", key=f"download_{file.key}", on_click="ignore",
+            "Download all files (ZIP)", result["zip_data"], result["zip_filename"],
+            mime="application/zip", on_click="ignore",
         )
+        for file in files:
+            st.download_button(
+                f"Download {file.filename}", file.data, file.filename,
+                mime="text/csv", key=f"download_{file.key}", on_click="ignore",
+            )
     st.subheader("Preview an export")
     selected_file = st.selectbox(
         "File to preview", [file.filename for file in files],
         key=f"preview_file_{hash(signature)}",
     )
     file = next(file for file in files if file.filename == selected_file)
+    st.download_button(
+        "Download Excel for this export", partial(build_export_excel, file),
+        Path(file.filename).with_suffix(".xlsx").name, mime=XLSX_MIME,
+        key=f"excel_download_{file.key}", on_click="ignore",
+    )
     show_preview(file.preview, file.count, file.headers)
 
 

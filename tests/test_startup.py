@@ -52,6 +52,46 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_modules_refresh_for_ob_ordering(self):
+        self.run_isolated("""
+            import automation, autostat, autostat_page, exports
+            del automation.OB_SORT_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'automation', 'exports', 'autostat', 'autostat_page'} <= refreshed
+            data = b'cardnumber,email,OB\\n0001,low@example.com,9\\n0002,high@example.com,1000\\n'
+            source = autostat.SourceSelection('source.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
+            bundle = autostat_page.build_autostat_exports([source], timestamp=None)
+            assert [row['Account No.'] for row in bundle.files[0].preview] == ['0002', '0001']
+            records = [
+                {'primary_key': 'low', 'email': 'low@example.com', 'OB': '9'},
+                {'primary_key': 'high', 'email': 'high@example.com', 'OB': '1,000'},
+            ]
+            bundle = exports.build_sheet_exports(
+                automation.create_default_csv_template(), records, '', 1,
+                base_name='RECO', label='RECO', template_extension='.csv',
+            )
+            assert [row['primary_key'] for row in bundle.files[0].preview] == ['high', 'low']
+            assert refresh_application_modules() == set()
+        """)
+
+    def test_cached_autostat_refreshes_for_exact_whole_number_account_text(self):
+        self.run_isolated("""
+            import autostat, autostat_page
+            del autostat.ACCOUNT_NUMBER_NORMALIZATION_VERSION
+            autostat.AUTOSTAT_VERSION = 10
+            autostat.account_number_text = lambda value: value
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat', 'autostat_page'} <= refreshed
+            data = b'cardnumber,email\\n5156041234567897.0,first@example.com\\n000123.00,second@example.com\\n'
+            source = autostat.SourceSelection('accounts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
+            bundle = autostat_page.build_autostat_exports([source], timestamp=None)
+            assert [row['Account No.'] for row in bundle.files[0].preview] == ['5156041234567897', '000123']
+            assert autostat_page.AUTOSTAT_VERSION == 12
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_autostat_refreshes_for_bel_split_and_filenames(self):
         self.run_isolated("""
             from datetime import datetime
@@ -133,8 +173,8 @@ class StartupTests(unittest.TestCase):
             assert [file.filename for file in bundle.files] == ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv']
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
-            assert autostat.AUTOSTAT_VERSION == 9
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 6
+            assert autostat.AUTOSTAT_VERSION == 12
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 8
             assert refresh_application_modules() == set()
         """)
 
@@ -353,7 +393,7 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'autostat_page' in refreshed
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 6
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 8
             assert autostat_page.render_autostat.__name__ == 'render_autostat'
             assert refresh_application_modules() == set()
         """)
