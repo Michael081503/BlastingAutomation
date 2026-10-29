@@ -74,9 +74,14 @@ def refresh_application_modules() -> set[str]:
             "B2_UPLOAD_ROLES_VERSION", "is_sbc_database_sheet", "validate_b2_source",
         ), ("autostat", "automation", "export_config")),
         ("b2_page", ("render_b2_page",), ("b2_matching", "autostat", "automation", "folder_output", "export_config")),
+        ("b2_autostat", (
+            "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
+            "b2_metadata_columns", "build_b2_autostat_exports",
+        ), ("autostat", "automation")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
-        ), ("autostat", "automation", "folder_output", "export_config")),
+            "B2_UPLOAD_VERSION",
+        ), ("autostat", "b2_autostat", "automation", "folder_output", "export_config")),
     )
     refreshed = set()
     for name, required, dependencies in modules:

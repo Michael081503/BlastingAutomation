@@ -18,7 +18,7 @@ Use the sidebar to switch between three separate pages:
 
 - **GEO & RECO**: the original workbook-to-template workflow, with the existing Area, product, level, and Christmas Amnesty grouping and configured filenames.
 - **NEGATIVE B2**: DataGrid matching against the latest SBC database and the two B2 blasting files.
-- **AUTOSTAT**: all uploaded account lists compiled into one Email activity file and one Viber activity file.
+- **AUTOSTAT**: Standard uploads compile into Email and Viber activity files; B2 uploads use separate Email, SMS and Viber templates.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
@@ -52,6 +52,18 @@ AUTOSTAT keeps the first valid email and first valid phone per account. When `in
 All selected sources contribute to the same two files. After deduplication, each channel is sorted by **OB, highest to lowest**, across all uploaded files and selected sheets. OB is detected from `OB` or `OB (Masterlist)` headers, ignoring case and punctuation. Numeric amounts and comma-formatted amounts are compared numerically. Equal amounts retain upload, sheet, and row order; missing or invalid amounts go last. Sources without OB retain their relative order at the bottom. This order applies to previews, CSVs, the ZIP, folder saves, and the Excel download. BEL, CARDS, and other accounts are compiled together by channel. Duplicate filenames do not create additional output files. If a channel has no valid contacts, its file contains headers only. The Email output keeps all 11 supplied headers, including the extra reference header at the end; unused fields stay blank. The Viber output keeps its five headers. The Email remark formula is rendered as text with the validated address; the Viber `NUMBER` placeholder is replaced with the normalized phone. Template statuses are copied exactly, and Remark By and Time are filled from the page settings.
 
 Preparing these logs does not send emails or Viber messages. Source files are never modified. Changing source files, sheets, columns, header rows, remark author, timestamp settings, or CSV encoding clears the prepared result so it can be rebuilt from the new inputs.
+
+### B2 uploads in AUTOSTAT
+
+Select **Upload type → B2** and use **B2 source files** to upload one or more Excel or CSV account files, including the outputs from NEGATIVE B2. Click **Preview and prepare B2 AUTOSTAT files** to create **AUTOSTAT_B2_Email**, **AUTOSTAT_B2_SMS**, and **AUTOSTAT_B2_Viber**. Excel downloads, a combined **AUTOSTAT_B2.xlsx**, ZIP downloads, previews and folder saves are available. Choose CSV in the sidebar when required for system upload.
+
+The built-in layouts copy the headers, status codes and remark formats from **BUCKET 2 EMAIL AS 10212026.xlsx**, **FOR AS SMS BLASTING 10212026.xlsx**, and **FOR AS VIBER BLASTING 10212026.xlsx**. Email has `Name`, `Account No.`, `STATUS CODE`, `REMARKS`, `REMARKS BY`, `REMARKS DATE`, `Email`, and `Collector`. SMS and Viber have `Account number`, `Name`, `STATUS CODE`, `REMARKS`, `REMARKS BY`, `REMARKS DATE`, and `Mobile Number`; the unused trailing blank column in the Viber sample is omitted.
+
+Email remarks use `<email> | EMAIL SENT | <collector>`. SMS remarks use `<mobile> |  SMS SENT` (including the template's two spaces), and Viber remarks use `<mobile> | VIBER SENT`. Status codes are respectively `EMAIL BLAST SENT - WAITING FOR REPLY`, `SMS BLAST SENT - WAITING FOR REPLY`, and `VIBER BLAST SENT - WAITING FOR REPLY`. Mobile numbers use the template's local eleven-digit format (`09171234567`); both phone channels use the first valid mobile per account.
+
+**Remarks By** defaults to the template's `PBBALUYOT`. **REMARKS DATE** uses the current Manila timestamp in `YYYY-MM-DD HH:MM:SS` format; log settings also support a fixed timestamp or blank dates. Names and collectors come from the current upload, with optional column overrides under **Edit source columns**. Missing values stay blank; **Default collector** supplies a fallback when desired. Historical dates, customer rows, and collectors from the sample workbooks are never inserted into new uploads.
+
+B2 accepts the files explicitly uploaded in its own mode, including filenames marked B2. It uses the same contact validation, account text preservation, scientific-notation rejection, identity-based deduplication and descending OB order as Standard. Each valid email produces an Email row; each valid phone produces one SMS row and one Viber row. Standard retains its existing B2/B4/insurance exclusions and output templates. B2 uses its own upload and result state, and changing its inputs clears its previous downloads. Preparing files does not send messages.
 
 ## NEGATIVE B2: match DataGrid with the SBC database
 

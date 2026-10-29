@@ -174,7 +174,7 @@ class StartupTests(unittest.TestCase):
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
             assert autostat.AUTOSTAT_VERSION == 12
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 8
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 9
             assert refresh_application_modules() == set()
         """)
 
@@ -393,8 +393,22 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'autostat_page' in refreshed
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 8
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 9
             assert autostat_page.render_autostat.__name__ == 'render_autostat'
+            assert refresh_application_modules() == set()
+        """)
+
+
+    def test_cached_b2_activity_templates_and_upload_page_refresh_together(self):
+        self.run_isolated("""
+            import b2_autostat, autostat_page
+            del b2_autostat.B2_AUTOSTAT_VERSION
+            del autostat_page.B2_UPLOAD_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'b2_autostat', 'autostat_page'} <= refreshed
+            assert autostat_page.build_b2_autostat_exports is b2_autostat.build_b2_autostat_exports
+            assert autostat_page.B2_UPLOAD_VERSION == 1
             assert refresh_application_modules() == set()
         """)
 
