@@ -56,10 +56,10 @@
     position: relative;
     flex: 0 1 280px;
     min-width: 0;
-    padding: 0.7rem 0.9rem;
-    background: #f8fafc;
-    border: 1px solid rgb(255 255 255 / 30%);
-    border-radius: 12px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
 }
 
 .sbc-brand-logo {
@@ -140,10 +140,10 @@ h1 {
     width: 238px;
     max-width: 100%;
     height: auto;
-    padding: 0.8rem;
-    background: #f8fafc;
-    border: 1px solid rgb(255 255 255 / 15%);
-    border-radius: 12px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
 }
 
 [data-testid="stSidebarNav"] {
@@ -288,8 +288,6 @@ h1 {
 
     .sbc-bank-mark {
         flex-basis: 195px;
-        padding: 0.6rem;
-        border-radius: 9px;
     }
 
     .sbc-workspace-meta {
