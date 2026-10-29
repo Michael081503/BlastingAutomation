@@ -146,7 +146,6 @@ h1 {
 
 [data-testid="stSidebar"] {
     background:
-        var(--sbc-sidebar-art) center bottom 18px / 280px 215px no-repeat,
         radial-gradient(ellipse at 0% 0%, #292034, transparent 60%),
         #120e1a;
     border-right: 1px solid #3a2b43;
@@ -154,6 +153,15 @@ h1 {
 
 [data-testid="stSidebarContent"] {
     background: transparent;
+}
+
+[data-testid="stSidebarUserContent"]::after {
+    content: "";
+    display: block;
+    height: 215px;
+    margin: 1.5rem auto 0;
+    background: var(--sbc-sidebar-art) center bottom / contain no-repeat;
+    pointer-events: none;
 }
 
 [data-testid="stSidebarHeader"] {
@@ -295,8 +303,8 @@ h1 {
 }
 
 @media (max-height: 720px) {
-    [data-testid="stSidebar"] {
-        background-size: 200px 153px, auto, auto;
+    [data-testid="stSidebarUserContent"]::after {
+        height: 153px;
     }
 }
 

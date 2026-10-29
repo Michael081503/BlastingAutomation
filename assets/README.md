@@ -10,4 +10,6 @@ The current seasonal presentation uses a dark purple background and orange Hallo
 
 The sidebar ghost gently sways, floats and blinks using SVG/CSS animations. Its shadow follows the motion. All three animations stop when the browser requests reduced motion. No JavaScript, remote animation service or extra dependency is needed.
 
+The pumpkin and ghost scene sits in its own reserved space after the sidebar's controls, mapping table and captions. It scrolls with the sidebar content so it cannot overlap the text, and becomes smaller on short screens.
+
 `halloween-webs.svg` adds soft corner cobwebs and little silk highlights to the page background. `halloween-spiderman.svg` is a locally drawn, transparent vector decoration featuring a cute upside-down Spider-Man in the shared header. CSS gently sways him from the web thread and disables that animation when reduced motion is requested. Both decorations are bundled with the app, need no external requests, and cannot intercept clicks. The header rearranges for narrow screens so the artwork, bank logo and workspace name remain readable.
