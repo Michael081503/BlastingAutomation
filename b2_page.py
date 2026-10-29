@@ -86,7 +86,8 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None) -> None
             return
     st.caption(
         "Each output uses the 16-column blasting template, with one row per account. "
-        "The first valid email and first valid phone are kept per account. Phones use the rightmost 10 digits starting with 9."
+        "EMAIL (01) and Mobile 1 are checked first. Other contact fields are fallbacks when needed. "
+        "Phones use the rightmost 10 digits starting with 9."
     )
     signature = (tuple(signatures), encoding, B2_MATCHING_VERSION, B2_TEMPLATE_VERSION, B2_TEMPLATE_HEADERS,
                  AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION, tuple(AUTOSTAT_B2_FILENAMES.items()))

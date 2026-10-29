@@ -57,6 +57,7 @@ def refresh_application_modules() -> set[str]:
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
             "B2_TEMPLATE_VERSION", "B2_TEMPLATE_HEADERS",
+            "B2_CONTACT_PRIORITY_VERSION",
         ), ("autostat", "automation", "export_config")),
         ("b2_page", ("render_b2_page",), ("b2_matching", "autostat", "automation", "folder_output", "export_config")),
         ("autostat_page", (

@@ -17,8 +17,9 @@ from export_config import AUTOSTAT_B2_FILENAMES
 from exports import export_filename
 
 
-B2_MATCHING_VERSION = 2
+B2_MATCHING_VERSION = 3
 B2_TEMPLATE_VERSION = 1
+B2_CONTACT_PRIORITY_VERSION = 1
 # Exact header order from 1EMAIL_Blasting - Template.xlsx; no sample rows are used.
 B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
 DATAGRID_ROUTING_VERSION = 1
@@ -106,6 +107,11 @@ def _detail_columns(source: SourceSelection, fields: dict[str, tuple[str, ...]])
     return result
 
 
+def _preferred_contact_columns(sheet: ContactSheet, columns: tuple[int, ...], preferred: str) -> tuple[int, ...]:
+    preferred = normalize_header(preferred)
+    return tuple(sorted(columns, key=lambda index: normalize_header(sheet.headers[index]) != preferred))
+
+
 def _campaign_record(raw: dict, grid: dict, raw_columns: dict, raw_details: dict, grid_details: dict, group: str) -> dict:
     record = dict.fromkeys(B2_TEMPLATE_HEADERS, "")
     for target in set(raw_details) | set(grid_details):
@@ -189,7 +195,11 @@ def build_b2_exports(
     grid_columns = _columns(datagrid, database=False)
     raw_details = _detail_columns(database, RAW_DETAILS)
     grid_details = _detail_columns(datagrid, GRID_DETAILS)
-    contacts_sheet = replace(database.sheet, account_column=raw_columns["contract"])
+    contacts_sheet = replace(
+        database.sheet, account_column=raw_columns["contract"],
+        email_columns=_preferred_contact_columns(database.sheet, database.sheet.email_columns, "EMAIL (01)"),
+        phone_columns=_preferred_contact_columns(database.sheet, database.sheet.phone_columns, "Mobile 1"),
+    )
     selected_raw = (set(raw_columns.values()) | set(raw_details.values())
                     | set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns))
     raw_rows = list(_rows(

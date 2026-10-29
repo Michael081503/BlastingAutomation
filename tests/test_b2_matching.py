@@ -84,6 +84,32 @@ def csv_rows(file):
 
 
 class B2Tests(unittest.TestCase):
+    def test_email_01_and_mobile_1_take_priority_over_earlier_fields_with_valid_fallbacks(self):
+        headers = ['Account Key', 'Contract Number', 'Product Category Code', 'Bucket Code',
+                   'Phone (01)', 'Email (02)', 'Mobile 1', 'EMAIL (01)']
+        raw = workbook_data(headers, [
+            ['0001', '000001', 'MC', 2, '09171234567', 'old@example.com', '+63 918 123 4567', 'preferred@example.com'],
+            ['BEL-2', 'BEL-002', 'BEL', 2, '09191234567', 'fallback@example.com', None, None],
+            ['0003', '000003', 'MC', 2, '09201234567', 'other@example.com', '123', 'bad..email@example.com'],
+        ], sheet_name='SBC')
+        grid = workbook_data(GRID_HEADERS, [
+            [1, 'Account', None, '0001', None, '000001'],
+            [2, 'Account', None, 'BEL-2', None, 'BEL-002'],
+            [3, 'Account', None, '0003', None, '000003'],
+        ], sheet_name='Sheet')
+        database = selection('database.xlsx', raw, True)
+        result = build_b2_exports(database, selection('grid.xlsx', grid, False))
+        self.assertEqual([file.count for file in result.bundle.files], [2, 1])
+        rows = {row['cardnumber']: row for file in result.bundle.files for row in csv_rows(file)}
+        self.assertEqual((rows['000001']['email'], rows['000001']['phone']),
+                         ('preferred@example.com', '9181234567'))
+        self.assertEqual((rows['BEL-002']['email'], rows['BEL-002']['phone']),
+                         ('fallback@example.com', '9191234567'))
+        self.assertEqual((rows['000003']['email'], rows['000003']['phone']),
+                         ('other@example.com', '9201234567'))
+        self.assertEqual([database.sheet.headers[index] for index in database.sheet.email_columns], ['Email (02)', 'EMAIL (01)'])
+        self.assertEqual([database.sheet.headers[index] for index in database.sheet.phone_columns], ['Phone (01)', 'Mobile 1'])
+
     def test_datagrid_detection_uses_export_headers_without_routing_campaign_sources(self):
         self.assertTrue(is_datagrid_sheet(GRID_HEADERS))
         self.assertTrue(is_datagrid_sheet([' ACCOUNT NO. ', 'Financing/Card No.', 'Status Code', 'Email']))
