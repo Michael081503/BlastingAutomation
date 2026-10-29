@@ -325,11 +325,23 @@ class StartupTests(unittest.TestCase):
             b2_page.render_b2_page = lambda: None
             import app
             assert b2_matching.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
-            assert b2_matching.B2_MATCHING_VERSION == 3
+            assert b2_matching.B2_MATCHING_VERSION == 4
             assert len(b2_page.B2_TEMPLATE_HEADERS) == 16
             assert 'Time' not in b2_page.B2_TEMPLATE_HEADERS
             assert 'timestamp' not in inspect.signature(b2_matching.build_b2_exports).parameters
             from app_startup import refresh_application_modules
+            assert refresh_application_modules() == set()
+        """)
+
+    def test_cached_b2_modules_refresh_for_upload_role_detection(self):
+        self.run_isolated("""
+            import b2_matching, b2_page
+            del b2_matching.B2_UPLOAD_ROLES_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'b2_matching', 'b2_page'} <= refreshed
+            assert b2_page.is_sbc_database_sheet(['Account Key', 'Contract Number', 'Bucket Code', 'Product Category Code'])
+            assert b2_page.validate_b2_source is b2_matching.validate_b2_source
             assert refresh_application_modules() == set()
         """)
 

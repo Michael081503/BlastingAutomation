@@ -9,7 +9,10 @@ import streamlit as st
 
 from automation import AutomationError, CSV_OUTPUT_ENCODINGS, MAPPING_VERSION, WORKBOOK_READER_VERSION
 from autostat import AUTOSTAT_VERSION, SourceSelection, inspect_contact_source
-from b2_matching import B2_MATCHING_VERSION, B2_TEMPLATE_HEADERS, B2_TEMPLATE_VERSION, build_b2_exports, matching_sheet_score
+from b2_matching import (
+    B2_MATCHING_VERSION, B2_TEMPLATE_HEADERS, B2_TEMPLATE_VERSION, build_b2_exports,
+    is_datagrid_sheet, is_sbc_database_sheet, matching_sheet_score, validate_b2_source,
+)
 from export_config import AUTOSTAT_B2_FILENAMES, OUTPUT_FOLDER
 from folder_output import save_files_to_folder
 
@@ -40,31 +43,74 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None) -> None
         encoding = CSV_OUTPUT_ENCODINGS[output_format]
     left, right = st.columns(2)
     with left:
-        database_upload = st.file_uploader("1. Latest full SBC database", type=["xlsx"], key="b2_database_upload")
+        database_upload = st.file_uploader(
+            "1. Latest full SBC database", type=["xlsx"], key="b2_database_upload",
+            help="Use the database with Account Key, Contract Number, Bucket Code, EMAIL (01) and Mobile 1.",
+        )
     with right:
         if datagrid_upload is None:
-            grid_upload = st.file_uploader("2. DataGrid account list", type=["xlsx"], key="b2_grid_upload")
+            grid_upload = st.file_uploader(
+                "2. DataGrid account list", type=["xlsx"], key="b2_grid_upload",
+                help="Use your BP or CARDS AND BEL account list, with Account No. and Financing/Card No.",
+            )
         else:
             grid_upload = datagrid_upload
             st.write(f"DataGrid account list: {grid_upload.name}")
+    cache = st.session_state.setdefault("b2_source_info", {})
+
+    def inspect_upload(upload):
+        if upload is None:
+            return None
+        data = upload.getvalue()
+        digest = hashlib.sha256(data).hexdigest()
+        key = (digest, AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION)
+        if key not in cache:
+            cache[key] = inspect_contact_source(data, ".xlsx")
+        return data, digest, cache[key]
+
+    try:
+        database_info = inspect_upload(database_upload)
+        grid_info = inspect_upload(grid_upload)
+    except AutomationError as exc:
+        st.session_state.pop("b2_result", None)
+        st.error(str(exc))
+        return
+    if (database_info is not None and grid_info is not None
+            and not any(is_sbc_database_sheet(sheet.headers) for sheet in database_info[2])
+            and any(is_datagrid_sheet(sheet.headers) for sheet in database_info[2])
+            and any(is_sbc_database_sheet(sheet.headers) for sheet in grid_info[2])):
+        database_upload, grid_upload = grid_upload, database_upload
+        database_info, grid_info = grid_info, database_info
+        st.info(f"Detected the SBC database in {database_upload.name} and the account list in {grid_upload.name}.")
     if database_upload is None or grid_upload is None:
         st.session_state.pop("b2_result", None)
+        available = database_info or grid_info
+        if available is not None and any(is_sbc_database_sheet(sheet.headers) for sheet in available[2]):
+            st.info("The uploaded file is the SBC database. Upload the DataGrid account list in the empty box.")
+            return
+        if available is not None and any(is_datagrid_sheet(sheet.headers) for sheet in available[2]):
+            st.info("The uploaded file is the DataGrid account list. Upload the latest full SBC database in the empty box.")
+            return
         st.info(
             "Upload the latest full SBC database to prepare NEGATIVE B2 - CARDS.csv and NEGATIVE B2 - BEL.csv."
             if grid_upload is not None else
             "Upload both workbooks to prepare NEGATIVE B2 - CARDS.csv and NEGATIVE B2 - BEL.csv."
         )
         return
+    if all(not any(is_sbc_database_sheet(sheet.headers) for sheet in info[2])
+           and any(is_datagrid_sheet(sheet.headers) for sheet in info[2]) for info in (database_info, grid_info)):
+        st.session_state.pop("b2_result", None)
+        st.error(
+            f"{database_upload.name} and {grid_upload.name} are both DataGrid account lists. "
+            "Keep the account list you want to process and replace the other upload with the latest full SBC database, sheet SBC."
+        )
+        return
     sources, signatures = [], []
-    cache = st.session_state.setdefault("b2_source_info", {})
-    for upload, database, label in ((database_upload, True, "SBC database"), (grid_upload, False, "DataGrid accounts")):
-        data = upload.getvalue()
-        digest = hashlib.sha256(data).hexdigest()
+    for upload, info, database, label in (
+        (database_upload, database_info, True, "SBC database"), (grid_upload, grid_info, False, "DataGrid accounts"),
+    ):
+        data, digest, sheets = info
         try:
-            key = (digest, AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION)
-            if key not in cache:
-                cache[key] = inspect_contact_source(data, ".xlsx")
-            sheets = cache[key]
             best = max(sheets, key=lambda sheet: matching_sheet_score(sheet, database=database))
             names = [sheet.name for sheet in sheets]
             selected = st.selectbox(
@@ -78,7 +124,9 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None) -> None
             if header != sheet.header_row:
                 sheet = inspect_contact_source(data, ".xlsx", sheet_name=selected, header_row=header)[0]
             st.caption(f"{label}: {upload.name} — {len(sheet.headers)} source columns found.")
-            sources.append(SourceSelection(upload.name, data, sheet))
+            source = SourceSelection(upload.name, data, sheet)
+            validate_b2_source(source, database=database)
+            sources.append(source)
             signatures.append((upload.name, digest, selected, header))
         except AutomationError as exc:
             st.session_state.pop("b2_result", None)

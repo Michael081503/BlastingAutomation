@@ -227,6 +227,16 @@ class B2Tests(unittest.TestCase):
         with self.assertRaisesRegex(AutomationError, 'missing Bucket Code'):
             build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
 
+    def test_datagrid_used_as_database_explains_which_workbook_is_needed(self):
+        raw, grid = fixtures()
+        with self.assertRaisesRegex(AutomationError, 'this is the DataGrid account list.*full SBC database'):
+            build_b2_exports(selection('NEGATIVE B2 - BP.xlsx', grid, True), selection('database.xlsx', raw, False))
+
+    def test_full_database_cannot_replace_the_datagrid_account_population(self):
+        raw, _ = fixtures()
+        with self.assertRaisesRegex(AutomationError, 'this is the SBC database.*DataGrid account list'):
+            build_b2_exports(selection('database.xlsx', raw, True), selection('another database.xlsx', raw, False))
+
 
 class Upload(BytesIO):
     def __init__(self, name, data):
@@ -235,6 +245,103 @@ class Upload(BytesIO):
 
 
 class B2AppTests(unittest.TestCase):
+    def test_reversed_uploads_use_the_correct_roles_and_keep_the_same_exports(self):
+        raw, grid = fixtures()
+        expected = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
+        uploads = {'b2_database_upload': Upload('NEGATIVE B2 - BP.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
+            app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertTrue(any('DataGrid account list' in item.value and 'empty box' in item.value for item in app.info))
+            self.assertFalse(any(widget.key == 'b2_prepare' for widget in app.button))
+            uploads['b2_grid_upload'] = Upload('sbc cards-bel database as of October 29, 2026.xlsx', raw)
+            app.run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(next(widget.value for widget in app.selectbox if widget.label == 'SBC database sheet'), 'SBC')
+            self.assertEqual(next(widget.value for widget in app.selectbox if widget.label == 'DataGrid accounts sheet'), 'Sheet')
+            self.assertTrue(any('Detected the SBC database' in item.value for item in app.info))
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            actual = app.session_state['b2_result']['matched']
+            self.assertEqual(actual.stats, expected.stats)
+            self.assertEqual([file.data for file in actual.bundle.files], [file.data for file in expected.bundle.files])
+            # A new database in the other upload box must clear the old downloads.
+            uploads['b2_grid_upload'] = Upload('sbc cards-bel database as of October 29, 2026.xlsx', workbook_data(
+                RAW_HEADERS, [['00001', '0000000000000001', 'MC', 2, '09181234567', None, 'updated@example.com', None]],
+                sheet_name='SBC',
+            ))
+            app.run(timeout=20)
+            self.assertNotIn('b2_result', app.session_state)
+            self.assertEqual(len(app.get('download_button')), 0)
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertEqual(csv_rows(app.session_state['b2_result']['matched'].bundle.files[0])[0]['email'], 'updated@example.com')
+
+    def test_two_account_lists_clear_old_downloads_and_report_missing_database_before_matching(self):
+        raw, grid = fixtures()
+        uploads = {'b2_database_upload': Upload('database.xlsx', raw), 'b2_grid_upload': Upload('NEGATIVE B2 - BP.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
+            app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertIn('b2_result', app.session_state)
+            uploads['b2_database_upload'] = Upload('NEGATIVE B2 - CARDS AND BEL.xlsx', grid)
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 1)
+            self.assertIn('both DataGrid account lists', app.error[0].value)
+            self.assertIn('NEGATIVE B2 - CARDS AND BEL.xlsx', app.error[0].value)
+            self.assertIn('NEGATIVE B2 - BP.xlsx', app.error[0].value)
+            self.assertIn('full SBC database', app.error[0].value)
+            self.assertNotIn('b2_result', app.session_state)
+            self.assertEqual(len(app.get('download_button')), 0)
+            self.assertFalse(any(widget.key == 'b2_prepare' for widget in app.button))
+
+    def test_database_uploaded_alone_in_second_box_requests_the_account_list(self):
+        raw, grid = fixtures()
+        uploads = {'b2_grid_upload': Upload('database.xlsx', raw)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
+            app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertTrue(any('Upload the DataGrid account list in the empty box' in item.value for item in app.info))
+            uploads['b2_database_upload'] = Upload('NEGATIVE B2 - CARDS AND BEL.xlsx', grid)
+            app.run(timeout=20)
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual([file.count for file in app.session_state['b2_result']['matched'].bundle.files], [3, 1])
+
+    def test_selected_lite_sheet_is_validated_and_full_sheet_recovers_matching(self):
+        workbook = Workbook()
+        workbook.active.title = 'SBC'
+        workbook.active.append(RAW_HEADERS)
+        workbook.active.append(['00001', '0000000000000001', 'MC', 2, '09171234567', None, 'first@example.com', None])
+        lite = workbook.create_sheet('SBC Lite')
+        lite.append(['Account Key', 'Contract Number', 'Product Category Code'])
+        lite.append(['00001', '0000000000000001', 'MC'])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        _, grid = fixtures()
+        uploads = {'b2_database_upload': Upload('database.xlsx', output.getvalue()), 'b2_grid_upload': Upload('list.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
+            app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertIn('b2_result', app.session_state)
+            database_sheet = next(widget for widget in app.selectbox if widget.label == 'SBC database sheet')
+            database_sheet.set_value('SBC Lite').run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 1)
+            self.assertIn('missing Bucket Code', app.error[0].value)
+            self.assertNotIn('b2_result', app.session_state)
+            self.assertFalse(any(widget.key == 'b2_prepare' for widget in app.button))
+            database_sheet = next(widget for widget in app.selectbox if widget.label == 'SBC database sheet')
+            database_sheet.set_value('SBC').run(timeout=20)
+            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(app.session_state['b2_result']['matched'].bundle.files[0].count, 1)
+
     def test_dedicated_b2_page_refreshes_contacts_from_daily_database(self):
         raw, grid = fixtures()
         uploads = {'b2_grid_upload': Upload('Daily account list.xlsx', grid)}

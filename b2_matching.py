@@ -17,7 +17,8 @@ from export_config import AUTOSTAT_B2_FILENAMES
 from exports import export_filename
 
 
-B2_MATCHING_VERSION = 3
+B2_MATCHING_VERSION = 4
+B2_UPLOAD_ROLES_VERSION = 1
 B2_TEMPLATE_VERSION = 1
 B2_CONTACT_PRIORITY_VERSION = 1
 # Exact header order from 1EMAIL_Blasting - Template.xlsx; no sample rows are used.
@@ -74,7 +75,29 @@ def matching_sheet_score(sheet: ContactSheet, *, database: bool) -> int:
     return sum(bool(labels & {normalize_header(alias) for alias in aliases}) for aliases in groups.values())
 
 
+def is_sbc_database_sheet(headers: Sequence[str]) -> bool:
+    """Identify the full database schema without relying on daily filenames."""
+    labels = {normalize_header(header) for header in headers}
+    return all(any(normalize_header(alias) in labels for alias in aliases) for aliases in RAW_FIELDS.values())
+
+
+def validate_b2_source(source: SourceSelection, *, database: bool) -> None:
+    """Check the selected workbook role before enabling matching."""
+    _columns(source, database=database)
+
+
 def _columns(source: SourceSelection, *, database: bool) -> dict[str, int]:
+    if database and is_datagrid_sheet(source.sheet.headers) and not is_sbc_database_sheet(source.sheet.headers):
+        raise AutomationError(
+            f"{source.name} / {source.sheet.name}: this is the DataGrid account list. "
+            "Upload the latest full SBC database as the contact source; its full SBC sheet must contain "
+            "Account Key, Contract Number, Bucket Code and Product Category Code."
+        )
+    if not database and is_sbc_database_sheet(source.sheet.headers) and not is_datagrid_sheet(source.sheet.headers):
+        raise AutomationError(
+            f"{source.name} / {source.sheet.name}: this is the SBC database. "
+            "Upload the DataGrid account list with Account No. or Financing/Card No. as the accounts to match."
+        )
     labels = [normalize_header(header) for header in source.sheet.headers]
     result = {}
     for field, aliases in (RAW_FIELDS if database else GRID_FIELDS).items():
