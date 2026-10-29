@@ -90,6 +90,28 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_autostat_refreshes_for_text_formatted_excel_download(self):
+        self.run_isolated("""
+            from io import BytesIO
+            from openpyxl import load_workbook
+            import autostat, autostat_page
+            del autostat.ACCOUNT_TEXT_EXPORT_VERSION
+            del autostat.build_autostat_excel
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat', 'autostat_page'} <= refreshed
+            data = b'cardnumber,email\\n5156041234567897,first@example.com\\n'
+            sheet = autostat.inspect_contact_source(data, '.csv')[0]
+            bundle = autostat.build_autostat_exports(
+                [autostat.SourceSelection('source.csv', data, sheet)], timestamp=None,
+            )
+            workbook = load_workbook(BytesIO(autostat_page.build_autostat_excel(bundle)))
+            assert workbook['Email']['B2'].value == '5156041234567897'
+            assert workbook['Email']['B2'].data_type == 's'
+            workbook.close()
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_autostat_refreshes_to_two_compiled_channel_files(self):
         self.run_isolated("""
             from datetime import datetime
@@ -111,8 +133,8 @@ class StartupTests(unittest.TestCase):
             assert [file.filename for file in bundle.files] == ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv']
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
-            assert autostat.AUTOSTAT_VERSION == 8
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 5
+            assert autostat.AUTOSTAT_VERSION == 9
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 6
             assert refresh_application_modules() == set()
         """)
 
@@ -319,7 +341,7 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'autostat_page' in refreshed
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 5
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 6
             assert autostat_page.render_autostat.__name__ == 'render_autostat'
             assert refresh_application_modules() == set()
         """)

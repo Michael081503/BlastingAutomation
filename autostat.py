@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.utils.exceptions import InvalidFileException
 
 from automation import AutomationError, _encode_csv, _identifier, normalize_header
@@ -23,7 +24,8 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 8
+AUTOSTAT_VERSION = 9
+ACCOUNT_TEXT_EXPORT_VERSION = 1
 ACCOUNT_DEDUP_VERSION = 2
 ACCOUNT_IDENTITY_VERSION = 1
 BLANK_TIMESTAMP_VERSION = 1
@@ -216,6 +218,7 @@ class ContactRows:
     invalid_phones: int = 0
     duplicate_email_rows: int = 0
     duplicate_phone_rows: int = 0
+    account_precision_issues: int = 0
 
 
 def _validated_candidates(value: Any, validator) -> list[tuple[Any, str | None]]:
@@ -232,7 +235,19 @@ def _validated_candidates(value: Any, validator) -> list[tuple[Any, str | None]]
     return [(part, validator(part)) for part in parts]
 
 
-def _read_rows(source: SourceSelection, *, extra_columns: tuple[int, ...] = ()):
+def _account_precision_risk(value: Any) -> bool:
+    """Flag source representations that may have lost financial ID digits."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return abs(value) >= 10**15
+    return isinstance(value, str) and re.fullmatch(
+        r"[+-]?\d+(?:\.\d+)?[eE][+-]?\d+", value.strip(),
+    ) is not None
+
+
+def _read_rows(
+    source: SourceSelection, *, extra_columns: tuple[int, ...] = (),
+    account_issues: list[int] | None = None,
+):
     """Yield selected values; do not evaluate source formulas or follow links."""
     sheet = source.sheet
     columns = tuple(dict.fromkeys((sheet.account_column, *sheet.email_columns, *sheet.phone_columns, *extra_columns)))
@@ -245,6 +260,9 @@ def _read_rows(source: SourceSelection, *, extra_columns: tuple[int, ...] = ()):
     if Path(source.name).suffix.lower() == ".csv":
         for number, row in enumerate(_csv_rows(source.data), 1):
             if number > sheet.header_row:
+                if (account_issues is not None and sheet.account_column < len(row)
+                        and _account_precision_risk(row[sheet.account_column])):
+                    account_issues.append(number)
                 yield {index: (row[index] if index < len(row) else None) for index in columns}
         return
     original = _workbook(source.data)
@@ -265,6 +283,9 @@ def _read_rows(source: SourceSelection, *, extra_columns: tuple[int, ...] = ()):
                     )
                 if cell.data_type == "e":
                     raise AutomationError(f"{source.name} / {sheet.name}, row {number}: fix Excel error {cell.value}.")
+                if (account_issues is not None and index == sheet.account_column
+                        and _account_precision_risk(cell.value)):
+                    account_issues.append(number)
                 row[index] = (_identifier(cell.value, cell.number_format)
                               if index == sheet.account_column else cell.value)
             yield row
@@ -316,8 +337,12 @@ def extract_contacts(source: SourceSelection) -> ContactRows:
     identity_column = next((labels.index(alias) for alias in ("indexoneuid", "oldic")
                             if labels.count(alias) == 1), None)
     result = ContactRows()
-    for row in _read_rows(source, extra_columns=() if identity_column is None else (identity_column,)):
+    account_issues = []
+    for row in _read_rows(
+        source, extra_columns=() if identity_column is None else (identity_column,), account_issues=account_issues,
+    ):
         _add_contact_row(result, source.sheet, row, identity=row.get(identity_column))
+    result.account_precision_issues = len(account_issues)
     return result
 
 
@@ -419,6 +444,7 @@ def _contact_summary(source: SourceSelection, contacts: ContactRows) -> dict[str
         "Empty rows": contacts.blank_rows,
         "Duplicate Email rows removed": contacts.duplicate_email_rows,
         "Duplicate Viber rows removed": contacts.duplicate_phone_rows,
+        "Account precision issues": contacts.account_precision_issues,
     }
 
 
@@ -455,6 +481,33 @@ def _bundle(files: list[AutostatFile], summaries: list[dict[str, Any]]) -> Autos
         for file in files:
             archive.writestr(file.filename, file.data)
     return AutostatBundle(files, summaries, output.getvalue())
+
+
+def build_autostat_excel(bundle: AutostatBundle) -> bytes:
+    """Create copyable activity sheets whose identifiers are actual text cells.
+
+    CSV cannot specify a text column type. Do not use formulas or apostrophes
+    to force Excel to treat its contents as text: those change the CSV values.
+    """
+    workbook = Workbook(write_only=True)
+    for file in bundle.files:
+        sheet = workbook.create_sheet(Path(file.filename).stem.removeprefix("AUTOSTAT_"))
+        sheet.freeze_panes = "A2"
+        sheet.column_dimensions["B"].width = 24
+        encoding = "utf-8-sig" if file.data.startswith(b"\xef\xbb\xbf") else "cp1252"
+        for row in csv.reader(StringIO(file.data.decode(encoding), newline="")):
+            cells = []
+            for value in row:
+                cell = WriteOnlyCell(sheet, value=value)
+                # Explicit string types also keep formula-like source IDs literal.
+                cell.data_type = "s"
+                cell.number_format = "@"
+                cells.append(cell)
+            sheet.append(cells)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
 
 
 def build_bel_exports(

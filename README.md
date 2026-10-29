@@ -1,6 +1,6 @@
 # Blasting Automation
 
-A local Streamlit app that copies data from an Excel worksheet into your template's column layout. It starts with **NEGATIVE** and applies the same separation rules to every selected worksheet: Christmas Amnesty, product, and level, followed by **Email** and **Viber CSV files** for every group. GEO worksheets with an **Area** column first separate **Mindanao** and **R3**, combining all levels within each product. Outputs are always `.csv`, whether the template is Excel, CSV, or the built-in blank template.
+A local Streamlit app that copies data from an Excel worksheet into your template's column layout. It starts with **NEGATIVE** and applies the same separation rules to every selected worksheet: Christmas Amnesty, product, and level, followed by **Email** and **Viber CSV files** for every group. GEO worksheets with an **Area** column first separate **Mindanao** and **R3**, combining all levels within each product. Campaign outputs are `.csv`, whether the template is Excel, CSV, or the built-in blank template. AUTOSTAT also offers a text-formatted Excel workbook for copying account numbers.
 
 ## Run
 
@@ -24,14 +24,16 @@ Workbooks stay on the page you select. A DataGrid-looking sheet does not switch 
 
 ## AUTOSTAT
 
-AUTOSTAT checks account lists for valid email addresses and mobile numbers, then compiles every selected file and sheet into **`AUTOSTAT_Email.csv`** and **`AUTOSTAT_Viber.csv`** using the supplied `TEMPLATE_EMAIL.xlsx` and `TEMPLATE_VIBER.xlsx` layouts. Both layouts are built in; the sample account, email address, and old timestamp are not included. Outputs are CSV files, as in the existing workflow.
+AUTOSTAT checks account lists for valid email addresses and mobile numbers, then compiles every selected file and sheet into **`AUTOSTAT_Email.csv`** and **`AUTOSTAT_Viber.csv`** using the supplied `TEMPLATE_EMAIL.xlsx` and `TEMPLATE_VIBER.xlsx` layouts. Both layouts are built in; the sample account, email address, and old timestamp are not included. A separate **`AUTOSTAT.xlsx`** download contains the same full logs on **Email** and **Viber** sheets, with actual text cells to preserve financial/card numbers in Excel.
 
 1. Open **AUTOSTAT** in the sidebar and upload one or more `.xlsx` or `.csv` source files.
    `SBC INSURANCE` files and filenames containing a separate `B2` or `B4` label are excluded automatically from both channel totals and exports. Case, spaces, underscores and punctuation are supported. The collapsed **Excluded files** panel lists skipped uploads. This applies only to AUTOSTAT.
 2. Source columns are detected automatically. All file and sheet controls are hidden inside one collapsed **Edit source columns** panel. Open it only to change selected sheets, header rows, account columns, or contact columns. Several email or phone columns can be selected. Account numbers must use a separate column from contacts.
 3. Open **Log settings** to change **Remark By** (default `MBURGOS`) or the timestamp (default current Asia/Manila time). Select **Leave date and time blank** to leave the `Time` column empty in both Email and Viber files.
 4. Click **Preview and prepare AUTOSTAT files**. The results show just **Valid email accounts** and **Valid phone accounts**, counting each exported account once per channel.
-5. Download the two compiled CSVs or their ZIP. Optional **Save to a folder** and **Preview** panels stay collapsed until opened.
+5. Use **Download Excel (keeps card numbers as text)** when opening or copying accounts in Excel. The two CSVs and their ZIP are also available. Optional **Save to a folder** (CSV files) and **Preview** panels stay collapsed until opened.
+
+CSV cannot specify text column types. Opening a CSV directly in Excel can remove leading zeros or round identifiers longer than 15 digits. The Excel download writes identifiers as literal text, without adding apostrophes or formulas, and is generated only when clicked. Format the destination account column as Text before pasting. AUTOSTAT warns when uploaded account cells contain scientific notation or large numeric Excel values because the source may already have lost digits. It preserves the supplied values and never guesses missing digits; use the original unrounded source with financial/card numbers stored as text to correct those records. Formatting an already rounded number as text cannot restore it. See [Microsoft's explanation of Excel number precision](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers).
 
 Email validation uses the same local format checks as the existing workflow. For phones, AUTOSTAT removes spaces and common phone formatting, keeps the **rightmost 10 digits**, and accepts the result only when it **starts with 9**. For example, `09171234567`, `+63 (917) 123-4567`, and `9171234567` become `9171234567`. Short numbers, results beginning with another digit, and text containing letters are rejected. Numeric Excel phones and integral CSV numbers with `.0` or scientific notation are supported.
 
@@ -236,7 +238,7 @@ The built-in template uses your original 16-column layout: `email`, `primary_key
 
 - Source order is retained within each output group. Hidden and filtered source rows are included.
 - Rows with no values in any mapped field are skipped. Accounts with neither a valid email nor a phone are removed and counted separately. Invalid emails are removed and counted. Duplicates are retained. Accounts with only a valid email or only a phone go to that channel; accounts with both go to both channels.
-- All generated Email/Viber files are CSV, including individual downloads, files inside ZIP downloads, and folder saves. The blank template download is also CSV.
+- Campaign Email/Viber files are CSV, including individual downloads, files inside ZIP downloads, and folder saves. The blank template download is also CSV. AUTOSTAT additionally offers its text-formatted Excel download.
 - IDs, account numbers, card numbers, and phones retain existing text leading zeros and simple Excel zero masks such as `000000` in the CSV data. Digits already lost in the original Excel file cannot be recovered. CSV has no text column types: import identifier columns as text when opening it in Excel to preserve leading zeros.
 - Dates use ISO text and balances use their source values without currency formatting. The default **CSV (Comma delimited)** uses Windows-1252 without a BOM and Windows line endings. **CSV UTF-8 (Comma delimited)** uses UTF-8 with BOM. Characters unsupported by the standard format produce an actionable error; they are never silently replaced or dropped.
 - Excel templates supply the selected sheet's header labels and column order from the chosen header row. Their CSV outputs use commas. Content above the header, stale template rows, styles, and other worksheets are omitted. Extra template columns are blank. The original template is never changed.

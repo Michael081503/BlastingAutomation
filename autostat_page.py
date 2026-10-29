@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -14,14 +15,14 @@ from openpyxl.utils import get_column_letter
 from automation import AutomationError, CSV_OUTPUT_ENCODINGS
 from autostat import (
     AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, VIBER_HEADERS, SourceSelection,
-    autostat_source_excluded, build_autostat_exports, inspect_contact_source,
+    autostat_source_excluded, build_autostat_excel, build_autostat_exports, inspect_contact_source,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
 from export_config import OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 
-AUTOSTAT_PAGE_VERSION = 5
+AUTOSTAT_PAGE_VERSION = 6
 COMPACT_SUMMARY_VERSION = 1
 GROUPED_SOURCE_SETTINGS_VERSION = 1
 
@@ -172,6 +173,17 @@ def render_autostat() -> None:
     phone_column.metric("Valid phone accounts", f"{phone_count:,}")
     if not (email_count or phone_count):
         st.warning("No valid contacts with account numbers were found. The output files contain template headers only.")
+    if any(row["Account precision issues"] for row in bundle.summary):
+        st.warning(
+            "Some source account numbers are numeric or in scientific notation and may already be rounded. "
+            "Upload the original source with full card numbers stored as text; missing digits cannot be recovered."
+        )
+    st.download_button(
+        "Download Excel (keeps card numbers as text)", partial(build_autostat_excel, bundle), "AUTOSTAT.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        on_click="ignore", key="autostat_excel",
+    )
+    st.caption("Use the Excel download when copying card numbers. In the destination, format the account column as Text before pasting.")
     st.download_button(
         "Download all AUTOSTAT files (ZIP)", bundle.zip_data, "AUTOSTAT_FILES.zip",
         mime="application/zip", on_click="ignore", key="autostat_zip",

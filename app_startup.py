@@ -53,6 +53,7 @@ def refresh_application_modules() -> set[str]:
             "COMPILED_OUTPUT_VERSION", "BLANK_TIMESTAMP_VERSION",
             "AUTOSTAT_EXCLUSIONS_VERSION", "autostat_source_excluded",
             "CONTACT_VALIDATION_VERSION", "_validated_candidates",
+            "ACCOUNT_TEXT_EXPORT_VERSION", "build_autostat_excel",
         ), ("automation", "email_validation", "export_config", "exports")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",

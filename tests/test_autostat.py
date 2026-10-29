@@ -10,13 +10,13 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
 from automation import AutomationError
 from autostat import (
     EMAIL_HEADERS, REMARK_PREFIX, VIBER_HEADERS, SourceSelection,
-    autostat_source_excluded, build_autostat_exports, build_bel_exports, extract_contacts, has_bel_primary_keys,
+    autostat_source_excluded, build_autostat_excel, build_autostat_exports, build_bel_exports, extract_contacts, has_bel_primary_keys,
     inspect_contact_source, split_bel_contacts, unique_account_contacts, validated_phone,
 )
 from export_config import AUTOSTAT_BEL_FILENAMES
@@ -80,6 +80,79 @@ class PhoneTests(unittest.TestCase):
 
 
 class AutostatTests(unittest.TestCase):
+    def test_excel_download_preserves_full_identifiers_and_all_rows_as_literal_text(self):
+        accounts = [
+            "5156041234567897", "001234567890123456", "123456789012345678901234",
+            "=2+2", "+1234567890123456", "@BEL-1",
+            *[f"000000{number:012d}" for number in range(110)],
+        ]
+        rows = [["financing/Card no.", "email", "phone"], *[
+            [account, f"contact{index}@example.com", "09171234567"]
+            for index, account in enumerate(accounts)
+        ]]
+        csv_output = StringIO(newline="")
+        csv.writer(csv_output).writerows(rows)
+        workbook = Workbook()
+        for row in rows:
+            workbook.active.append(row)
+        # A literal formula-like identifier must not become a source formula.
+        workbook.active["A5"].data_type = "s"
+        workbook_output = BytesIO()
+        workbook.save(workbook_output)
+        workbook.close()
+        for extension, source_data in ((".csv", csv_output.getvalue().encode()), (".xlsx", workbook_output.getvalue())):
+            for encoding, author in (("cp1252", "Muñoz"), ("utf-8-sig", "李")):
+                with self.subTest(extension=extension, encoding=encoding):
+                    source = SourceSelection(
+                        "contacts" + extension, source_data, inspect_contact_source(source_data, extension)[0],
+                    )
+                    bundle = build_autostat_exports([source], timestamp=None, remark_by=author, encoding=encoding)
+                    self.assertEqual(bundle.summary[0]["Account precision issues"], 0)
+                    saved_csvs = [file.data for file in bundle.files]
+                    result = load_workbook(BytesIO(build_autostat_excel(bundle)))
+                    self.assertEqual(result.sheetnames, ["Email", "Viber"])
+                    for sheet, file in zip(result, bundle.files):
+                        self.assertEqual([cell.value for cell in sheet[1]], list(file.headers))
+                        self.assertEqual([cell.value for cell in sheet["B"][1:]], accounts)
+                        self.assertEqual(sheet.max_row, len(accounts) + 1)
+                        for row in sheet.iter_rows(min_row=2):
+                            self.assertEqual(row[1].data_type, "s")
+                            self.assertEqual(row[1].number_format, "@")
+                            self.assertEqual(row[4].value, author)
+                            self.assertIsNone(row[0].value)
+                        self.assertEqual([row["Account No."] for row in exported_rows(file)], accounts)
+                    result.close()
+                    self.assertEqual([file.data for file in bundle.files], saved_csvs)
+
+    def test_excel_download_keeps_headers_for_an_empty_channel(self):
+        data = b"cardnumber,email\n0001,first@example.com\n"
+        source = SourceSelection("source.csv", data, inspect_contact_source(data, ".csv")[0])
+        bundle = build_autostat_exports([source], timestamp=NOW)
+        workbook = load_workbook(BytesIO(build_autostat_excel(bundle)))
+        self.assertEqual(workbook["Viber"].max_row, 1)
+        self.assertEqual([cell.value for cell in workbook["Viber"][1]], list(VIBER_HEADERS))
+        workbook.close()
+
+    def test_precision_warning_detects_scientific_and_numeric_sources_without_inventing_digits(self):
+        data = b"cardnumber,indexoneuid,email\n5.15604E+15,UID-1,first@example.com\n5156041234567897,UID-2,second@example.com\n"
+        source = SourceSelection("source.csv", data, inspect_contact_source(data, ".csv")[0])
+        bundle = build_autostat_exports([source], timestamp=NOW)
+        self.assertEqual(bundle.summary[0]["Account precision issues"], 1)
+        self.assertEqual([row["Account No."] for row in exported_rows(bundle.files[0])], ["5.15604E+15", "5156041234567897"])
+        workbook = Workbook()
+        workbook.active.append(["cardnumber", "email"])
+        workbook.active.append([5156040000000000, "first@example.com"])
+        workbook.active.append(["001234567890123456", "second@example.com"])
+        workbook.active.append([123, "third@example.com"])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        source = SourceSelection("source.xlsx", output.getvalue(), inspect_contact_source(output.getvalue(), ".xlsx")[0])
+        bundle = build_autostat_exports([source], timestamp=NOW)
+        self.assertEqual(bundle.summary[0]["Account precision issues"], 1)
+        self.assertEqual([row["Account No."] for row in exported_rows(bundle.files[0])],
+                         ["5156040000000000", "001234567890123456", "123"])
+
     def test_each_single_email_is_validated_once_including_addresses_with_a_pipe(self):
         data = (
             'cardnumber,email\n'
@@ -451,6 +524,27 @@ class AutostatTests(unittest.TestCase):
 
 
 class AutostatAppTests(unittest.TestCase):
+    def test_excel_download_is_generated_only_when_requested_and_precision_issues_are_visible(self):
+        upload = Upload("contacts.csv", b"cardnumber,email\n5.15604E+15,first@example.com\n")
+        with patch("streamlit.file_uploader", return_value=[upload]), \
+                patch("autostat_page.build_autostat_excel", wraps=build_autostat_excel) as build_excel, \
+                patch("streamlit.download_button") as download:
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(len(app.warning), 1)
+            self.assertIn("missing digits cannot be recovered", app.warning[0].value)
+            build_excel.assert_not_called()
+            excel_download = next(call for call in download.call_args_list if call.kwargs.get("key") == "autostat_excel")
+            self.assertEqual(excel_download.args[2], "AUTOSTAT.xlsx")
+            self.assertTrue(callable(excel_download.args[1]))
+            workbook = load_workbook(BytesIO(excel_download.args[1]()))
+            self.assertEqual(workbook["Email"]["B2"].value, "5.15604E+15")
+            self.assertEqual(workbook["Email"]["B2"].data_type, "s")
+            workbook.close()
+            build_excel.assert_called_once()
+
     def test_excluded_uploads_are_skipped_before_reading_and_only_included_accounts_are_counted(self):
         included = Upload("GEO.csv", b"cardnumber,email,phone\n0001,first@example.com,09171234567\n")
         uploads = [included, *[Upload(name, b"not a valid source") for name in (
@@ -528,7 +622,7 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual({row['Account No.'] for row in exported_rows(result['bundle'].files[0])},
                              {'@BEL-1', '00001234', '00009999'})
             self.assertEqual([file.headers for file in result['bundle'].files], [EMAIL_HEADERS, VIBER_HEADERS])
-            self.assertEqual(len(app.get('download_button')), 3)
+            self.assertEqual(len(app.get('download_button')), 4)
             self.assertEqual(app.dataframe[-1].value.loc[0, 'Account No.'], '@BEL-1')
             app.text_input(key='autostat_output_folder').set_value(directory).run(timeout=20)
             app.button(key='autostat_save').click().run(timeout=20)
@@ -583,7 +677,7 @@ class AutostatAppTests(unittest.TestCase):
             ])
             self.assertEqual(len(app.dataframe), 1)
             self.assertEqual(len(result['bundle'].summary), 3)
-            self.assertEqual(len(app.get("download_button")), 3)
+            self.assertEqual(len(app.get("download_button")), 4)
             self.assertEqual(sum(row["Viber rows"] for row in result["bundle"].summary), 5)
             self.assertFalse(Path(directory).joinpath("AUTOSTAT").exists())
             app.run(timeout=20)
