@@ -20,6 +20,7 @@ from autostat import (
     inspect_contact_source, split_bel_contacts, unique_account_contacts, validated_phone,
 )
 from export_config import AUTOSTAT_BEL_FILENAMES
+from email_validation import validated_email
 from folder_output import MANILA_TIMEZONE
 
 
@@ -79,6 +80,22 @@ class PhoneTests(unittest.TestCase):
 
 
 class AutostatTests(unittest.TestCase):
+    def test_each_single_email_is_validated_once_including_addresses_with_a_pipe(self):
+        data = (
+            'cardnumber,email\n'
+            '0001,first+tag@example.com\n'
+            '0002,pipe|tag@example.com\n'
+            '0003,bad..email@example.com\n'
+        ).encode()
+        source = SourceSelection("contacts.csv", data, inspect_contact_source(data, ".csv")[0])
+        with patch("autostat.validated_email", wraps=validated_email) as email_checks:
+            contacts = extract_contacts(source)
+        self.assertEqual(email_checks.call_count, 3)
+        self.assertEqual(contacts.emails, [
+            ("0001", "first+tag@example.com"), ("0002", "pipe|tag@example.com"),
+        ])
+        self.assertEqual(contacts.invalid_emails, 1)
+
     def test_excluded_campaign_files_do_not_enter_counts_exports_or_duplicate_tracking(self):
         data = b"cardnumber,email,phone\n0001,first@example.com,09171234567\n"
         sheet = inspect_contact_source(data, ".csv")[0]

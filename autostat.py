@@ -29,6 +29,7 @@ ACCOUNT_IDENTITY_VERSION = 1
 BLANK_TIMESTAMP_VERSION = 1
 COMPILED_OUTPUT_VERSION = 1
 AUTOSTAT_EXCLUSIONS_VERSION = 1
+CONTACT_VALIDATION_VERSION = 1
 PREFERRED_ACCOUNT_HEADER = "cardnumber"
 REMARK_PREFIX = "SPMA | 08 With SMS / email / DL without response"
 # Column labels, statuses and remark text come from the supplied templates.
@@ -217,13 +218,18 @@ class ContactRows:
     duplicate_phone_rows: int = 0
 
 
-def _candidates(value: Any, validator) -> list[Any]:
+def _validated_candidates(value: Any, validator) -> list[tuple[Any, str | None]]:
+    """Reuse whole-cell validation instead of checking every contact twice."""
     if _blank(value):
         return []
-    if validator(value) is not None or not isinstance(value, str):
-        return [value]
+    contact = validator(value)
+    if contact is not None or not isinstance(value, str):
+        return [(value, contact)]
     delimiter = r"[;,|\r\n/]+" if validator is validated_phone else r"[;,|\r\n]+"
-    return [part.strip() for part in re.split(delimiter, value) if part.strip()]
+    parts = [part.strip() for part in re.split(delimiter, value) if part.strip()]
+    if len(parts) == 1 and parts[0] == value.strip():
+        return [(parts[0], None)]
+    return [(part, validator(part)) for part in parts]
 
 
 def _read_rows(source: SourceSelection, *, extra_columns: tuple[int, ...] = ()):
@@ -284,8 +290,7 @@ def _add_contact_row(
             # A shared EMAIL/NUMBER column may legitimately contain either kind.
             other_validator = validated_phone if validator is validated_email else validated_email
             mixed = column in sheet.email_columns and column in sheet.phone_columns
-            for value in _candidates(row[column], validator):
-                contact = validator(value)
+            for value, contact in _validated_candidates(row[column], validator):
                 if contact is not None:
                     if contact not in contacts:
                         contacts.append(contact)
