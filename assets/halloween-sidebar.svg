@@ -1,4 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="300" height="230" viewBox="0 0 300 230" fill="none">
+  <style>
+    .ghost-float {
+      transform-box: fill-box;
+      transform-origin: 50% 70%;
+      animation: ghost-sway 3.2s ease-in-out infinite;
+    }
+    .ghost-shadow {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: ghost-shadow 3.2s ease-in-out infinite;
+    }
+    .ghost-eyes {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: ghost-blink 6.4s linear infinite;
+    }
+    @keyframes ghost-sway {
+      0%, 100% { transform: translate(-3px, 2px) rotate(-5deg); }
+      50% { transform: translate(4px, -7px) rotate(5deg); }
+    }
+    @keyframes ghost-shadow {
+      0%, 100% { transform: scaleX(1); opacity: .3; }
+      50% { transform: scaleX(.75); opacity: .16; }
+    }
+    @keyframes ghost-blink {
+      0%, 45%, 49%, 100% { transform: scaleY(1); }
+      47% { transform: scaleY(.12); }
+    }
+  </style>
   <defs>
     <radialGradient id="glow">
       <stop stop-color="#F6923F" stop-opacity=".18"/>
@@ -11,6 +40,10 @@
     <linearGradient id="moon" x1="224" y1="30" x2="253" y2="86" gradientUnits="userSpaceOnUse">
       <stop stop-color="#DAC6EC"/>
       <stop offset="1" stop-color="#88729F"/>
+    </linearGradient>
+    <linearGradient id="ghost" x1="221" y1="126" x2="259" y2="198" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FCF9FF"/>
+      <stop offset="1" stop-color="#C7B8E3"/>
     </linearGradient>
   </defs>
   <ellipse cx="149" cy="179" rx="122" ry="66" fill="url(#glow)"/>
@@ -39,4 +72,18 @@
   <path d="M82 181C67 173 52 184 56 199C57 214 69 219 82 218C98 220 112 213 111 199C114 181 98 174 85 182Z" fill="#B96632" stroke="#DF9953" stroke-opacity=".3"/>
   <path d="M77 182Q63 198 78 217M87 182Q103 197 88 217" stroke="#713023" stroke-opacity=".65"/>
   <path d="M66 196L75 191L75 201ZM92 191L102 197L92 201ZM70 207L79 209L84 205L89 210L100 205Q86 219 70 207Z" fill="#FFCF79"/>
+  <ellipse class="ghost-shadow" cx="238" cy="213" rx="24" ry="4" fill="#050309"/>
+  <g class="ghost-float">
+    <path d="M217 151Q203 143 199 150Q196 158 215 164" fill="#DDD3EE"/>
+    <path d="M257 150Q271 138 276 145Q280 153 259 165" fill="#DDD3EE"/>
+    <path d="M213 143C213 114 261 114 261 143V195Q254 187 247 198Q239 187 231 199Q221 188 213 196Z" fill="url(#ghost)" stroke="#F5EDFF" stroke-opacity=".5"/>
+    <path d="M219 141Q219 127 229 126" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity=".65"/>
+    <g class="ghost-eyes" fill="#433452">
+      <ellipse cx="230" cy="149" rx="3.3" ry="4.7"/>
+      <ellipse cx="246" cy="149" rx="3.3" ry="4.7"/>
+    </g>
+    <ellipse cx="223" cy="158" rx="4.4" ry="2.5" fill="#EFA8B9" opacity=".75"/>
+    <ellipse cx="253" cy="158" rx="4.4" ry="2.5" fill="#EFA8B9" opacity=".75"/>
+    <path d="M233 160Q238 167 243 160" stroke="#655175" stroke-width="2" stroke-linecap="round"/>
+  </g>
 </svg>

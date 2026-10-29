@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from base64 import b64encode
 from functools import lru_cache
 from pathlib import Path
@@ -13,6 +14,7 @@ ASSETS_DIRECTORY = Path(__file__).resolve().parent / "assets"
 BANK_LOGO = ASSETS_DIRECTORY / "security-bank-logo.png"
 BANK_ICON = ASSETS_DIRECTORY / "security-bank-icon.png"
 HALLOWEEN_THEME_VERSION = 1
+HALLOWEEN_GHOST_VERSION = 1
 
 
 @lru_cache(maxsize=4)
@@ -20,10 +22,18 @@ def _asset_data(filename: str) -> str:
     return b64encode((ASSETS_DIRECTORY / filename).read_bytes()).decode("ascii")
 
 
+@lru_cache(maxsize=1)
+def _still_sidebar_data() -> str:
+    illustration = (ASSETS_DIRECTORY / "halloween-sidebar.svg").read_text(encoding="utf-8")
+    illustration = re.sub(r"<style\b[^>]*>.*?</style>", "", illustration, flags=re.DOTALL)
+    return b64encode(illustration.encode("utf-8")).decode("ascii")
+
+
 def render_bank_branding() -> None:
     st.logo(str(BANK_LOGO), size="large", icon_image=str(BANK_ICON))
     styles = (ASSETS_DIRECTORY / "security-bank.css").read_text(encoding="utf-8")
     styles = styles.replace("__HALLOWEEN_SIDEBAR__", _asset_data("halloween-sidebar.svg"))
+    styles = styles.replace("__HALLOWEEN_SIDEBAR_STILL__", _still_sidebar_data())
     st.html(f"<style>{styles}</style>")
     st.html(
         '<div class="sbc-brand-header">'

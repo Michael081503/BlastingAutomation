@@ -23,7 +23,7 @@ def refresh_application_modules() -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
-        ("branding", ("render_bank_branding", "BANK_ICON", "HALLOWEEN_THEME_VERSION"), ()),
+        ("branding", ("render_bank_branding", "BANK_ICON", "HALLOWEEN_THEME_VERSION", "HALLOWEEN_GHOST_VERSION"), ()),
         ("email_validation", ("EMAIL_VALIDATION_VERSION", "validated_email"), ()),
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",

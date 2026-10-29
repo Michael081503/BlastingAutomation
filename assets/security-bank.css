@@ -7,6 +7,7 @@
     --sbc-muted: #b8afc6;
     --sbc-border: #373043;
     --sbc-surface: #191420;
+    --sbc-sidebar-art: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR__");
 }
 
 [data-testid="stAppViewContainer"] {
@@ -120,7 +121,7 @@ h1 {
 
 [data-testid="stSidebar"] {
     background:
-        url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR__") center bottom 18px / 280px 215px no-repeat,
+        var(--sbc-sidebar-art) center bottom 18px / 280px 215px no-repeat,
         radial-gradient(ellipse at 0% 0%, #292034, transparent 60%),
         #120e1a;
     border-right: 1px solid #3a2b43;
@@ -312,6 +313,10 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    :root {
+        --sbc-sidebar-art: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR_STILL__");
+    }
+
     [data-testid="stSidebarNav"] a {
         transition: none;
     }
