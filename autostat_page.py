@@ -30,7 +30,7 @@ from upload_state import upload_widget_key
 
 AUTOSTAT_PAGE_VERSION = 9
 B2_UPLOAD_VERSION = 1
-GEO_B2_UPLOAD_VERSION = 1
+B2_ACTIVITY_PANEL_VERSION = 1
 COMPACT_SUMMARY_VERSION = 1
 GROUPED_SOURCE_SETTINGS_VERSION = 1
 
@@ -42,7 +42,7 @@ def render_autostat() -> None:
 
 
 def render_b2_autostat_uploads(*, encoding: str) -> None:
-    """Offer independent B2 uploads and activity downloads on GEO & RECO."""
+    """Offer independent B2 uploads and activity downloads on NEGATIVE B2."""
     uploads = st.file_uploader(
         "B2 source files", type=["xlsx", "csv"], accept_multiple_files=True, key=upload_widget_key("geo_b2_autostat_uploads"),
     )

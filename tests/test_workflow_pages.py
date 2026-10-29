@@ -79,9 +79,10 @@ class WorkflowPageTests(unittest.TestCase):
         self.assertFalse(any(button.key == "b2_prepare" for button in app.button))
         self.assertFalse(any(widget.label == "SBC database sheet" for widget in app.selectbox))
         self.assertFalse(any("match accounts and contacts" in heading.value for heading in app.subheader))
+        self.assertFalse(any(heading.value in ("B2 files", "B2 activity logs") for heading in app.subheader))
 
-    def test_geo_reco_b2_uploads_prepare_all_channels_and_keep_both_workflows_independent(self):
-        main = [None]
+    def test_negative_b2_activity_uploads_prepare_all_channels_independently_of_matching(self):
+        matching = {}
         csv_upload = Upload(
             b"cardnumber,primary_key,FullName,email,phone,Collector\n"
             b"CARD1,000000000000000001,CSV Person,csv@example.com,+639171234567,COL1\n"
@@ -99,10 +100,10 @@ class WorkflowPageTests(unittest.TestCase):
         b2 = [csv_upload, excel_upload]
 
         def uploader(label, **kwargs):
-            return main[0] if kwargs.get("key") == "source_upload" else b2 if kwargs.get("key") == "geo_b2_autostat_uploads" else None
+            return b2 if kwargs.get("key") == "geo_b2_autostat_uploads" else matching.get(kwargs.get("key"))
 
-        with patch("streamlit.file_uploader", side_effect=uploader), TemporaryDirectory(prefix="geo-b2-test-") as directory:
-            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+        with patch("streamlit.file_uploader", side_effect=uploader), TemporaryDirectory(prefix="negative-b2-test-") as directory:
+            app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertNotIn("result", app.session_state)
@@ -128,14 +129,24 @@ class WorkflowPageTests(unittest.TestCase):
                 self.assertTrue(all(cell.value.startswith("00000000000000000") and cell.data_type == "s"
                                     and cell.number_format == "@" for cell in book.active[account_column][1:]))
                 book.close()
-            main[0] = Upload(mixed_workbook())
+            for key, headers, row in (
+                ("b2_database_upload", ["Account Key", "Contract Number", "Bucket Code", "Product Category Code", "EMAIL (01)", "Mobile 1"],
+                 ["MATCH-1", "MATCH-CARD", 2, "MC", "matched@example.com", "09191234567"]),
+                ("b2_grid_upload", ["Account No.", "Financing/Card No."], ["MATCH-1", "MATCH-CARD"]),
+            ):
+                workbook = Workbook()
+                workbook.active.append(headers)
+                workbook.active.append(row)
+                output = BytesIO()
+                workbook.save(output)
+                workbook.close()
+                matching[key] = Upload(output.getvalue())
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["geo_b2_autostat_result"]["timestamp"], result["timestamp"])
-            geo_bundle = app.session_state["geo_autostat_result"]["bundle"]
-            self.assertEqual({row["Account No."] for file in geo_bundle.files for row in csv_rows(file)},
-                             {"RECO001", "RECO006", "RECOBEL", "RECOLOAN"})
-            next(widget for widget in app.selectbox if widget.label == "Source sheet").select("GEO").run(timeout=20)
+            app.button(key="b2_prepare").click().run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            self.assertIn("b2_result", app.session_state)
             self.assertEqual(app.session_state["geo_b2_autostat_result"]["timestamp"], result["timestamp"])
             replacement = Upload(b"cardnumber,primary_key,email,phone\nCARD9,000009,updated@example.com,09191234567\n")
             replacement.name = csv_upload.name
@@ -146,14 +157,15 @@ class WorkflowPageTests(unittest.TestCase):
             b2.clear()
             app.run(timeout=20)
             self.assertNotIn("geo_b2_autostat_result", app.session_state)
-            self.assertIn("bundle", app.session_state["geo_autostat_result"])
+            self.assertIn("b2_result", app.session_state)
 
     def test_mixed_workbook_keeps_geo_and_reco_grouped_exports_on_main_page(self):
         upload = Upload(mixed_workbook())
-        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None) as uploader:
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.title[0].value, "GEO & RECO")
+            self.assertEqual({call.kwargs["key"] for call in uploader.call_args_list}, {"source_upload", "template_upload"})
             source = next(widget for widget in app.selectbox if widget.label == "Source sheet")
             self.assertEqual(set(source.options), {"DataGrid", "NEGATIVE", "GEO"})
             self.assertEqual(source.value, "NEGATIVE")

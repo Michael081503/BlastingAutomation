@@ -82,7 +82,7 @@ def refresh_application_modules() -> set[str]:
         ), ("autostat", "automation")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
-            "B2_UPLOAD_VERSION", "GEO_B2_UPLOAD_VERSION", "render_b2_autostat_uploads", "upload_widget_key",
+            "B2_UPLOAD_VERSION", "B2_ACTIVITY_PANEL_VERSION", "render_b2_autostat_uploads", "upload_widget_key",
         ), ("autostat", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
     )
     refreshed = set()

@@ -54,13 +54,12 @@ class ClearUploadStateTests(unittest.TestCase):
 
 
 class ClearUploadPageTests(unittest.TestCase):
-    def test_geo_reco_clears_source_template_b2_and_hidden_page_results_without_resurrecting_uploads(self):
+    def test_geo_reco_clears_source_template_and_hidden_page_results_without_resurrecting_uploads(self):
         source = Upload("GEO-RECO.xlsx", workbook_bytes(
             ["primary_key", "cardnumber", "email", "phone"], ["00001", "CARD1", "one@example.com", "09171234567"],
         ))
-        b2 = Upload("NEGATIVE B2.csv", b"primary_key,email,phone\n00002,two@example.com,09181234567\n")
         template = Upload("template.csv", create_default_csv_template())
-        uploads = {"source_upload": source, "template_upload": template, "geo_b2_autostat_uploads": [b2]}
+        uploads = {"source_upload": source, "template_upload": template}
         seen = []
 
         def uploader(label, **kwargs):
@@ -72,10 +71,9 @@ class ClearUploadPageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
             self.assertEqual(len(app.error), 0)
-            for key in ("result", "geo_autostat_result", "geo_b2_autostat_result"):
+            for key in ("result", "geo_autostat_result"):
                 self.assertIn(key, app.session_state)
-            app.text_input(key="geo_b2_autostat_remark_by").set_value("CUSTOM").run(timeout=20)
-            for key in ("autostat_result", "autostat_b2_result", "b2_result"):
+            for key in ("autostat_result", "autostat_b2_result", "b2_result", "geo_b2_autostat_result"):
                 app.session_state[key] = {"previous": True}
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
@@ -86,14 +84,13 @@ class ClearUploadPageTests(unittest.TestCase):
             self.assertEqual(len(app.get("download_button")), 1)  # Built-in blank template only.
             app.run(timeout=20)
             self.assertNotIn("geo_b2_autostat_result", app.session_state)
-            uploads["geo_b2_autostat_uploads_clear_1"] = [b2]
+            uploads["source_upload_clear_1"] = source
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.text_input(key="geo_b2_autostat_remark_by").value, "CUSTOM")
-            self.assertIn("geo_b2_autostat_result", app.session_state)
+            self.assertIn("geo_autostat_result", app.session_state)
             app.button(key="clear_all_files").click().run(timeout=20)
-            self.assertNotIn("geo_b2_autostat_result", app.session_state)
-            self.assertIn("geo_b2_autostat_uploads_clear_2", seen)
+            self.assertNotIn("geo_autostat_result", app.session_state)
+            self.assertIn("source_upload_clear_2", seen)
 
     def test_autostat_clear_removes_every_file_in_standard_and_b2_modes(self):
         upload = Upload("contacts.csv", b"primary_key,email,phone\n00001,one@example.com,09171234567\n")
@@ -114,7 +111,7 @@ class ClearUploadPageTests(unittest.TestCase):
                 app.run(timeout=20)
                 self.assertNotIn(prefix + "result", app.session_state)
 
-    def test_negative_b2_clears_database_account_list_and_matching_results(self):
+    def test_negative_b2_clears_database_account_list_activity_uploads_and_all_results(self):
         database = Upload("SBC.xlsx", workbook_bytes(
             ["Account Key", "Contract Number", "Bucket Code", "Product Category Code", "EMAIL (01)", "Mobile 1"],
             ["00001", "CARD1", 2, "MC", "one@example.com", "09171234567"], "SBC",
@@ -122,7 +119,8 @@ class ClearUploadPageTests(unittest.TestCase):
         grid = Upload("DataGrid.xlsx", workbook_bytes(
             ["Account No.", "Financing/Card No.", "Name"], ["00001", "CARD1", "Person"], "DataGrid",
         ))
-        uploads = {"b2_database_upload": database, "b2_grid_upload": grid}
+        activity = Upload("NEGATIVE B2.csv", b"primary_key,email,phone\n00002,two@example.com,09181234567\n")
+        uploads = {"b2_database_upload": database, "b2_grid_upload": grid, "geo_b2_autostat_uploads": [activity]}
         seen = []
 
         def uploader(label, **kwargs):
@@ -133,14 +131,25 @@ class ClearUploadPageTests(unittest.TestCase):
             app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
             app.button(key="b2_prepare").click().run(timeout=20)
             self.assertIn("b2_result", app.session_state)
+            self.assertIn("geo_b2_autostat_result", app.session_state)
+            app.text_input(key="geo_b2_autostat_remark_by").set_value("CUSTOM").run(timeout=20)
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertNotIn("b2_result", app.session_state)
+            self.assertNotIn("geo_b2_autostat_result", app.session_state)
             self.assertEqual(app.session_state["b2_source_info"], {})
             self.assertTrue({name + "_clear_1" for name in uploads} <= set(seen))
             self.assertEqual(len(app.get("download_button")), 0)
             app.run(timeout=20)
             self.assertNotIn("b2_result", app.session_state)
+            uploads["geo_b2_autostat_uploads_clear_1"] = [activity]
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(app.text_input(key="geo_b2_autostat_remark_by").value, "CUSTOM")
+            self.assertIn("geo_b2_autostat_result", app.session_state)
+            app.button(key="clear_all_files").click().run(timeout=20)
+            self.assertNotIn("geo_b2_autostat_result", app.session_state)
+            self.assertIn("geo_b2_autostat_uploads_clear_2", seen)
 
 
 if __name__ == "__main__":

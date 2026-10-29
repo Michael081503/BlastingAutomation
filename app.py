@@ -30,7 +30,6 @@ from exports import (
 from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
 from geo_autostat import render_geo_autostat
-from autostat_page import render_b2_autostat_uploads
 from upload_state import upload_widget_key
 
 from automation import (
@@ -117,7 +116,7 @@ def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
     st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically using primary_key for account numbers.")
-    st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 matching has its own NEGATIVE B2 page.")
+    st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
     with st.sidebar:
         output_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
@@ -171,18 +170,10 @@ def render_workbook_page() -> None:
             help="Upload your template, or use the built-in template with all 16 campaign headers.",
         )
 
-    with st.container(border=True):
-        st.subheader("B2 files")
-        st.caption("Upload B2 Excel or CSV account files here for Email, SMS and Viber AUTOSTAT logs using primary_key.")
-        render_b2_autostat_uploads(encoding=encoding)
-
     if source_file is None:
         st.session_state.pop("result", None)
         st.session_state.pop("geo_autostat_result", None)
-        if st.session_state.get("geo_b2_autostat_result", {}).get("bundle") is not None:
-            st.info("B2 activity files are available above. Upload a GEO or RECO source workbook to prepare its campaign files.")
-        else:
-            st.info("Upload a source workbook to begin. NEGATIVE will be selected automatically if it exists.")
+        st.info("Upload a source workbook to begin. NEGATIVE will be selected automatically if it exists.")
         st.caption("Every worksheet uses the same separation rules. GEO worksheets separate Mindanao and R3 first.")
         return
 

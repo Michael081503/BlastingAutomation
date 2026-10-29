@@ -17,7 +17,7 @@ Open **http://localhost:8501**. If the dependencies are already installed, run `
 Use the sidebar to switch between three separate pages:
 
 - **GEO & RECO**: the original workbook-to-template workflow, with the existing Area, product, level, and Christmas Amnesty grouping and configured filenames.
-- **NEGATIVE B2**: DataGrid matching against the latest SBC database and the two B2 blasting files.
+- **NEGATIVE B2**: DataGrid matching against the latest SBC database, the two B2 blasting files, and a B2 upload panel for Email, SMS and Viber activity logs.
 - **AUTOSTAT**: Standard uploads compile into Email and Viber activity files; B2 uploads use separate Email, SMS and Viber templates.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
@@ -28,9 +28,7 @@ Use **Clear all files** in the sidebar on any page to empty every upload box at 
 
 Uploading a source workbook on **GEO & RECO** automatically prepares **Download AUTOSTAT.xlsx** for the selected worksheet, before you click **Preview and prepare files**. It contains the Email and Viber activity logs; no exported campaign files need to be uploaded again. The logs read the original source cells directly, use the selected source columns and header row, and map **primary_key to Account No.** when available. Account digits and leading zeros remain text, zero decimal suffixes are removed, accounts are deduplicated by source identity, and each channel is sorted by OB from highest to lowest. Blank primary keys are excluded without substituting cardnumber; when no primary_key column is mapped, cardnumber remains available as a fallback. Campaign exports retain primary_key and cardnumber in their own columns. The existing contact checks and scientific-notation rejection apply.
 
-The collapsed **AutoStat log settings** panel lets you change **Remark By** (default `MBURGOS`) or leave Time blank. Otherwise, Time uses the current Manila date and time when the logs are prepared and stays fixed on routine reruns. Changing the upload, selected worksheet, source mapping, header row, author, timestamp option, or CSV encoding automatically rebuilds the logs. Removing the upload clears them. SBC INSURANCE, B2, and B4 files or worksheets are excluded from this standard log; use the **B2 files** panel for B2 activity files. The separate AUTOSTAT page remains available for compiling several files and worksheets into one pair of logs.
-
-The **B2 files** panel on **GEO & RECO** accepts multiple B2 Excel or CSV account files, including NEGATIVE B2 campaign outputs. Uploading them automatically prepares the supplied Email, SMS and Viber activity layouts, with primary_key in each account column and the existing B2 mobile validation. Use the combined Excel workbook, individual channel downloads, ZIP, or folder save. B2 defaults to Excel; its CSV option uses the page's sidebar encoding. B2 log settings, mappings, uploads and results are independent of the GEO/RECO source workbook. Replacing a B2 upload, including one with the same filename, rebuilds its logs; removing all B2 uploads clears them. DataGrid matching against the SBC database remains on NEGATIVE B2.
+The collapsed **AutoStat log settings** panel lets you change **Remark By** (default `MBURGOS`) or leave Time blank. Otherwise, Time uses the current Manila date and time when the logs are prepared and stays fixed on routine reruns. Changing the upload, selected worksheet, source mapping, header row, author, timestamp option, or CSV encoding automatically rebuilds the logs. Removing the upload clears them. SBC INSURANCE, B2, and B4 files or worksheets are excluded from this standard log; use the **B2 files** panel on **NEGATIVE B2** for B2 activity files. The separate AUTOSTAT page remains available for compiling several files and worksheets into one pair of logs.
 
 ## AUTOSTAT
 
@@ -72,6 +70,8 @@ Email remarks use `<email> | EMAIL SENT | <collector>`. SMS remarks use `<mobile
 B2 accepts the files explicitly uploaded in its own mode, including filenames marked B2. It uses the same contact validation, account text preservation, scientific-notation rejection, identity-based deduplication and descending OB order as Standard. Each valid email produces an Email row; each valid phone produces one SMS row and one Viber row. Standard retains its existing B2/B4/insurance exclusions and output templates. B2 uses its own upload and result state, and changing its inputs clears its previous downloads. Preparing files does not send messages.
 
 ## NEGATIVE B2: match DataGrid with the SBC database
+
+The **B2 files** panel on this page accepts multiple B2 Excel or CSV account files, including NEGATIVE B2 campaign outputs. Uploading them automatically prepares the supplied Email, SMS and Viber activity layouts, with primary_key in each account column and the existing B2 mobile validation. Use the combined Excel workbook, individual channel downloads, ZIP, or folder save. B2 defaults to Excel; its CSV option shares the page's sidebar encoding with matching. The activity uploads work independently of the SBC database/DataGrid uploads. Replacing a B2 activity file, including one with the same filename, rebuilds its logs; removing all activity uploads clears those logs. **Clear all files** clears both activity uploads and matching uploads. GEO & RECO contains its own source and template uploads.
 
 Open **NEGATIVE B2** and upload the full SBC database and the DataGrid account list. The page selects the full `SBC` sheet by its required headers. DataGrid defines the account population; database accounts absent from DataGrid are excluded.
 
