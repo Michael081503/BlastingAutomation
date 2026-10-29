@@ -25,6 +25,7 @@ from b2_autostat import (
 from email_validation import EMAIL_VALIDATION_VERSION
 from export_config import OUTPUT_FOLDER
 from folder_output import MANILA_TIMEZONE, save_files_to_folder
+from upload_state import upload_widget_key
 
 
 AUTOSTAT_PAGE_VERSION = 9
@@ -43,7 +44,7 @@ def render_autostat() -> None:
 def render_b2_autostat_uploads(*, encoding: str) -> None:
     """Offer independent B2 uploads and activity downloads on GEO & RECO."""
     uploads = st.file_uploader(
-        "B2 source files", type=["xlsx", "csv"], accept_multiple_files=True, key="geo_b2_autostat_uploads",
+        "B2 source files", type=["xlsx", "csv"], accept_multiple_files=True, key=upload_widget_key("geo_b2_autostat_uploads"),
     )
     if not uploads:
         st.session_state.pop("geo_b2_autostat_result", None)
@@ -82,7 +83,7 @@ def _render_autostat_uploads(
     if uploads is None:
         uploads = st.file_uploader(
             "B2 source files" if b2 else "Source files", type=["xlsx", "csv"],
-            accept_multiple_files=True, key=f"{state_prefix}uploads",
+            accept_multiple_files=True, key=upload_widget_key(f"{state_prefix}uploads"),
         )
     fixed_timestamp = None
     default_collector = ""

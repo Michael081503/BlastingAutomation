@@ -436,6 +436,22 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_pages_refresh_for_the_shared_clear_all_files_action(self):
+        self.run_isolated("""
+            import branding, b2_page, autostat_page, upload_state
+            del upload_state.CLEAR_UPLOADS_VERSION
+            del branding.render_clear_all_files
+            del b2_page.upload_widget_key
+            del autostat_page.upload_widget_key
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'upload_state', 'branding', 'b2_page', 'autostat_page'} <= refreshed
+            assert branding.render_clear_all_files is upload_state.render_clear_all_files
+            assert b2_page.upload_widget_key is upload_state.upload_widget_key
+            assert autostat_page.upload_widget_key is upload_state.upload_widget_key
+            assert refresh_application_modules() == set()
+        """)
+
 
 if __name__ == "__main__":
     unittest.main()

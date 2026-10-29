@@ -22,6 +22,8 @@ Use the sidebar to switch between three separate pages:
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
+Use **Clear all files** in the sidebar on any page to empty every upload box at once, including GEO/RECO sources and templates, B2 activity uploads, both AUTOSTAT modes, and the SBC database/DataGrid uploads. It also clears prepared downloads, previews and source mappings across all pages. Log settings and output preferences are kept. Files already saved to a folder are kept. You can immediately upload a new batch after clearing.
+
 ## Automatic AUTOSTAT on GEO & RECO
 
 Uploading a source workbook on **GEO & RECO** automatically prepares **Download AUTOSTAT.xlsx** for the selected worksheet, before you click **Preview and prepare files**. It contains the Email and Viber activity logs; no exported campaign files need to be uploaded again. The logs read the original source cells directly, use the selected source columns and header row, and map **primary_key to Account No.** when available. Account digits and leading zeros remain text, zero decimal suffixes are removed, accounts are deduplicated by source identity, and each channel is sorted by OB from highest to lowest. Blank primary keys are excluded without substituting cardnumber; when no primary_key column is mapped, cardnumber remains available as a fallback. Campaign exports retain primary_key and cardnumber in their own columns. The existing contact checks and scientific-notation rejection apply.

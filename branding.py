@@ -9,6 +9,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from upload_state import render_clear_all_files
+
 
 ASSETS_DIRECTORY = Path(__file__).resolve().parent / "assets"
 BANK_LOGO = ASSETS_DIRECTORY / "security-bank-logo.png"
@@ -32,6 +34,7 @@ def _still_sidebar_data() -> str:
 
 def render_bank_branding() -> None:
     st.logo(str(BANK_LOGO), size="large", icon_image=str(BANK_ICON))
+    render_clear_all_files()
     styles = (ASSETS_DIRECTORY / "security-bank.css").read_text(encoding="utf-8")
     styles = styles.replace("__HALLOWEEN_SIDEBAR__", _asset_data("halloween-sidebar.svg"))
     styles = styles.replace("__HALLOWEEN_SIDEBAR_STILL__", _still_sidebar_data())

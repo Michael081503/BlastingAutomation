@@ -23,9 +23,11 @@ def refresh_application_modules() -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
+        ("upload_state", ("CLEAR_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "HALLOWEEN_THEME_VERSION", "HALLOWEEN_GHOST_VERSION", "HALLOWEEN_SPIDER_VERSION",
-        ), ()),
+            "render_clear_all_files",
+        ), ("upload_state",)),
         ("email_validation", ("EMAIL_VALIDATION_VERSION", "validated_email"), ()),
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",
@@ -73,15 +75,15 @@ def refresh_application_modules() -> set[str]:
             "B2_CONTACT_PRIORITY_VERSION",
             "B2_UPLOAD_ROLES_VERSION", "is_sbc_database_sheet", "validate_b2_source",
         ), ("autostat", "automation", "export_config")),
-        ("b2_page", ("render_b2_page",), ("b2_matching", "autostat", "automation", "folder_output", "export_config")),
+        ("b2_page", ("render_b2_page", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
         ("b2_autostat", (
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",
         ), ("autostat", "automation")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
-            "B2_UPLOAD_VERSION", "GEO_B2_UPLOAD_VERSION", "render_b2_autostat_uploads",
-        ), ("autostat", "b2_autostat", "automation", "folder_output", "export_config")),
+            "B2_UPLOAD_VERSION", "GEO_B2_UPLOAD_VERSION", "render_b2_autostat_uploads", "upload_widget_key",
+        ), ("autostat", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
     )
     refreshed = set()
     for name, required, dependencies in modules:

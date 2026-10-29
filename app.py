@@ -31,6 +31,7 @@ from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
 from geo_autostat import render_geo_autostat
 from autostat_page import render_b2_autostat_uploads
+from upload_state import upload_widget_key
 
 from automation import (
     CSV_OUTPUT_ENCODINGS,
@@ -152,7 +153,7 @@ def render_workbook_page() -> None:
 
     upload_left, upload_right = st.columns(2)
     with upload_left:
-        source_file = st.file_uploader("1. Source workbook", type=["xlsx"], key="source_upload")
+        source_file = st.file_uploader("1. Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
     if source_file is not None:
         source_bytes = source_file.getvalue()
         try:
@@ -166,7 +167,7 @@ def render_workbook_page() -> None:
         template_file = st.file_uploader(
             "2. Template (optional)",
             type=["xlsx", "csv"],
-            key="template_upload",
+            key=upload_widget_key("template_upload"),
             help="Upload your template, or use the built-in template with all 16 campaign headers.",
         )
 

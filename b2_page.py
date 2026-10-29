@@ -15,6 +15,7 @@ from b2_matching import (
 )
 from export_config import AUTOSTAT_B2_FILENAMES, OUTPUT_FOLDER
 from folder_output import save_files_to_folder
+from upload_state import upload_widget_key
 
 
 def render_b2_page(*, datagrid_upload=None, encoding: str | None = None) -> None:
@@ -44,13 +45,13 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None) -> None
     left, right = st.columns(2)
     with left:
         database_upload = st.file_uploader(
-            "1. Latest full SBC database", type=["xlsx"], key="b2_database_upload",
+            "1. Latest full SBC database", type=["xlsx"], key=upload_widget_key("b2_database_upload"),
             help="Use the database with Account Key, Contract Number, Bucket Code, EMAIL (01) and Mobile 1.",
         )
     with right:
         if datagrid_upload is None:
             grid_upload = st.file_uploader(
-                "2. DataGrid account list", type=["xlsx"], key="b2_grid_upload",
+                "2. DataGrid account list", type=["xlsx"], key=upload_widget_key("b2_grid_upload"),
                 help="Use your BP or CARDS AND BEL account list, with Account No. and Financing/Card No.",
             )
         else:
