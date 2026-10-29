@@ -987,7 +987,7 @@ class AppTests(unittest.TestCase):
         upload = FakeUpload('partial.xlsx', source_file(headers=headers))
         for template in (None, FakeUpload('template.xlsx', create_default_template())):
             with self.subTest(excel_template=template is not None), patch(
-                'streamlit.file_uploader', side_effect=lambda label, **kwargs: upload if kwargs.get('key') == 'source_upload' else template,
+                'streamlit.file_uploader', side_effect=lambda label, **kwargs: upload if kwargs.get('key') == 'source_upload' else template if kwargs.get('key') == 'template_upload' else None,
             ):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
@@ -1350,7 +1350,7 @@ class AppTests(unittest.TestCase):
         template = FakeUpload("template.csv", (";".join(headers) + "\n").encode())
 
         def uploader(label, **kwargs):
-            return upload if kwargs.get("key") == "source_upload" else template
+            return upload if kwargs.get("key") == "source_upload" else template if kwargs.get("key") == "template_upload" else None
 
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
@@ -1388,7 +1388,7 @@ class AppTests(unittest.TestCase):
         template = FakeUpload("template.xlsx", save(workbook))
 
         def uploader(label, **kwargs):
-            return upload if kwargs.get("key") == "source_upload" else template
+            return upload if kwargs.get("key") == "source_upload" else template if kwargs.get("key") == "template_upload" else None
 
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
@@ -1556,7 +1556,7 @@ class AppTests(unittest.TestCase):
         template = FakeUpload("template.csv", (",".join(TARGET_HEADERS) + "\n").encode())
 
         def uploader(label, **kwargs):
-            return upload if kwargs.get("key") == "source_upload" else template
+            return upload if kwargs.get("key") == "source_upload" else template if kwargs.get("key") == "template_upload" else None
 
         with TemporaryDirectory(prefix="blasting-app-folder-test-") as directory:
             with patch("streamlit.file_uploader", side_effect=uploader):

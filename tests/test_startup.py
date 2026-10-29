@@ -420,6 +420,22 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_geo_primary_key_mapping_and_b2_upload_panel_refresh(self):
+        self.run_isolated("""
+            import geo_autostat, autostat_page
+            del geo_autostat.GEO_PRIMARY_KEY_VERSION
+            del autostat_page.GEO_B2_UPLOAD_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'geo_autostat', 'autostat_page'} <= refreshed
+            assert callable(autostat_page.render_b2_autostat_uploads)
+            source = geo_autostat.mapped_contact_source('source.csv', b'', 'CSV', 1, 3,
+                {'primary_key': 0, 'cardnumber': 1, 'email': 2})
+            assert source.sheet.account_column == 0
+            assert geo_autostat.GEO_AUTOSTAT_VERSION == 2
+            assert refresh_application_modules() == set()
+        """)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,8 @@ from email_validation import EMAIL_VALIDATION_VERSION
 from folder_output import MANILA_TIMEZONE
 
 
-GEO_AUTOSTAT_VERSION = 1
+GEO_AUTOSTAT_VERSION = 2
+GEO_PRIMARY_KEY_VERSION = 1
 
 
 def mapped_contact_source(
@@ -36,7 +37,7 @@ def mapped_contact_source(
             headers[positions[target]] = target
     sheet = ContactSheet(
         sheet_name, header_row, tuple(headers),
-        positions.get("cardnumber", positions.get("primary_key")),
+        positions.get("primary_key", positions.get("cardnumber")),
         (positions["email"],) if "email" in positions else (),
         (positions["phone"],) if "phone" in positions else (),
     )
@@ -88,12 +89,13 @@ def render_geo_autostat(
         return
     st.caption(
         f"Ready from {sheet_name}: {email_count:,} Email accounts and {phone_count:,} Viber accounts. "
-        "No second upload is needed. Card numbers stay as text; each log is sorted by OB, highest first."
+        "No second upload is needed. primary_key supplies the account number when available. "
+        "Account numbers stay as text; each log is sorted by OB, highest first."
     )
     if any(row["Account precision issues"] for row in bundle.summary):
         st.warning(
             "Some source account cells are numeric and may already be rounded. "
-            "Use the original full card numbers stored as Text; missing digits cannot be recovered."
+            "Use the original full account numbers stored as Text; missing digits cannot be recovered."
         )
     st.download_button(
         "Download AUTOSTAT.xlsx", partial(build_autostat_excel, bundle), "AUTOSTAT.xlsx",

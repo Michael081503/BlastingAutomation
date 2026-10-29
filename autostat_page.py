@@ -29,6 +29,7 @@ from folder_output import MANILA_TIMEZONE, save_files_to_folder
 
 AUTOSTAT_PAGE_VERSION = 9
 B2_UPLOAD_VERSION = 1
+GEO_B2_UPLOAD_VERSION = 1
 COMPACT_SUMMARY_VERSION = 1
 GROUPED_SOURCE_SETTINGS_VERSION = 1
 
@@ -39,8 +40,23 @@ def render_autostat() -> None:
     _render_autostat_uploads(b2=upload_type == "B2")
 
 
-def _render_autostat_uploads(*, b2: bool) -> None:
-    state_prefix = "autostat_b2_" if b2 else "autostat_"
+def render_b2_autostat_uploads(*, encoding: str) -> None:
+    """Offer independent B2 uploads and activity downloads on GEO & RECO."""
+    uploads = st.file_uploader(
+        "B2 source files", type=["xlsx", "csv"], accept_multiple_files=True, key="geo_b2_autostat_uploads",
+    )
+    if not uploads:
+        st.session_state.pop("geo_b2_autostat_result", None)
+        return
+    _render_autostat_uploads(b2=True, encoding=encoding, state_prefix="geo_b2_autostat_",
+                             uploads=uploads, auto_prepare=True)
+
+
+def _render_autostat_uploads(
+    *, b2: bool, encoding: str | None = None, state_prefix: str | None = None,
+    uploads=None, auto_prepare: bool = False,
+) -> None:
+    state_prefix = state_prefix or ("autostat_b2_" if b2 else "autostat_")
     result_key = state_prefix + "result"
     workbook_name = "AUTOSTAT_B2" if b2 else "AUTOSTAT"
     if b2:
@@ -49,19 +65,25 @@ def _render_autostat_uploads(*, b2: bool) -> None:
             "Upload B2 account files to fill the Email, SMS and Viber templates. "
             "Names and collectors are copied from the source when available."
         )
-    with st.sidebar:
+    if encoding is None:
+        with st.sidebar:
+            output_format = st.selectbox(
+                "Output files", ("Excel (.xlsx)", "CSV (.csv)"), key=f"{state_prefix}output_format",
+            )
+            csv_file_type = st.selectbox(
+                "CSV file type", list(CSV_OUTPUT_ENCODINGS), key=f"{state_prefix}csv_file_type",
+            )
+        encoding = CSV_OUTPUT_ENCODINGS[csv_file_type]
+    else:
         output_format = st.selectbox(
-            "Output files", ("Excel (.xlsx)", "CSV (.csv)"), key=f"{state_prefix}output_format",
+            "B2 output files", ("Excel (.xlsx)", "CSV (.csv)"), key=f"{state_prefix}output_format",
         )
-        csv_file_type = st.selectbox(
-            "CSV file type", list(CSV_OUTPUT_ENCODINGS), key=f"{state_prefix}csv_file_type",
-        )
-    encoding = CSV_OUTPUT_ENCODINGS[csv_file_type]
     excel_output = output_format == "Excel (.xlsx)"
-    uploads = st.file_uploader(
-        "B2 source files" if b2 else "Source files", type=["xlsx", "csv"],
-        accept_multiple_files=True, key=f"{state_prefix}uploads",
-    )
+    if uploads is None:
+        uploads = st.file_uploader(
+            "B2 source files" if b2 else "Source files", type=["xlsx", "csv"],
+            accept_multiple_files=True, key=f"{state_prefix}uploads",
+        )
     fixed_timestamp = None
     default_collector = ""
     with st.expander("Log settings"):
@@ -208,8 +230,9 @@ def _render_autostat_uploads(*, b2: bool) -> None:
     if previous is not None and (previous["signature"] != signature or problems):
         st.session_state.pop(result_key, None)
 
-    if st.button("Preview and prepare B2 AUTOSTAT files" if b2 else "Preview and prepare AUTOSTAT files",
-                 type="primary", key=f"{state_prefix}prepare", disabled=bool(problems) or not sources):
+    prepare_requested = st.button("Preview and prepare B2 AUTOSTAT files" if b2 else "Preview and prepare AUTOSTAT files",
+                                  type="primary", key=f"{state_prefix}prepare", disabled=bool(problems) or not sources)
+    if prepare_requested or (auto_prepare and sources and not problems and st.session_state.get(result_key) is None):
         st.session_state.pop(result_key, None)
         try:
             with st.spinner("Checking contacts and preparing AUTOSTAT logs..."):

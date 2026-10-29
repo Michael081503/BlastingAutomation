@@ -65,7 +65,7 @@ def refresh_application_modules() -> set[str]:
             "ContactRows.__dataclass_fields__.email_ob_values", "ContactRows.__dataclass_fields__.phone_ob_values",
         ), ("automation", "email_validation", "export_config", "exports")),
         ("geo_autostat", (
-            "GEO_AUTOSTAT_VERSION", "mapped_contact_source", "render_geo_autostat",
+            "GEO_AUTOSTAT_VERSION", "GEO_PRIMARY_KEY_VERSION", "mapped_contact_source", "render_geo_autostat",
         ), ("autostat", "automation", "email_validation", "folder_output")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
@@ -80,7 +80,7 @@ def refresh_application_modules() -> set[str]:
         ), ("autostat", "automation")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
-            "B2_UPLOAD_VERSION",
+            "B2_UPLOAD_VERSION", "GEO_B2_UPLOAD_VERSION", "render_b2_autostat_uploads",
         ), ("autostat", "b2_autostat", "automation", "folder_output", "export_config")),
     )
     refreshed = set()

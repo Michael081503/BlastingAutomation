@@ -22,22 +22,22 @@ class Upload(BytesIO):
         self.name = name
 
 
-def workbook_data(first_card="12345678901234567.0"):
+def workbook_data(first_account="000000000000000001.0", first_card="12345678901234567.0"):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "NEGATIVE"
     headers = ["primary_key", "cardnumber", "indexoneuid", "email", "phone", "OB", "Product", "Level", "ChristmasAmnesty"]
     sheet.append(headers)
     for row in (
-        ["internal-a", first_card, "U1", "first@example.com", "09000000001", 9, "CARDS", 1, None],
-        ["internal-b", "000123456789012345", "U2", "second@example.com", "09000000002", 1000, "CARDS", 6, None],
-        ["internal-c", "000123456789012345", "U3", "third@example.com", "09000000003", 500, "CARDS", 1, None],
-        ["internal-a", first_card.removesuffix(".0"), "U1", "ignored@example.com", "09000000004", 99999, "CARDS", 1, None],
+        [first_account, first_card, "U1", "first@example.com", "09000000001", 9, "CARDS", 1, None],
+        ["000000000000000002", "000123456789012345", "U2", "second@example.com", "09000000002", 1000, "CARDS", 6, None],
+        ["000000000000000003", "000123456789012345", "U3", "third@example.com", "09000000003", 500, "CARDS", 1, None],
+        [first_account.removesuffix(".0"), first_card.removesuffix(".0"), "U1", "ignored@example.com", "09000000004", 99999, "CARDS", 1, None],
     ):
         sheet.append(row)
     sheet = workbook.create_sheet("GEO")
     sheet.append([*headers, "Area"])
-    sheet.append(["geo-a", "000000000000000019", "GEO-1", "geo@example.com", "09000000005", 100, "BEL", 1, "QUALIFIED", "Mindanao"])
+    sheet.append(["000000000000000019", "CARD-GEO", "GEO-1", "geo@example.com", "09000000005", 100, "BEL", 1, "QUALIFIED", "Mindanao"])
     output = BytesIO()
     workbook.save(output)
     workbook.close()
@@ -73,7 +73,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             self.assertEqual(workbook.sheetnames, ["Email", "Viber"])
             for sheet in workbook:
                 self.assertEqual([cell.value for cell in sheet["B"][1:]],
-                                 ["000123456789012345", "000123456789012345", "12345678901234567"])
+                                 ["000000000000000002", "000000000000000003", "000000000000000001"])
                 self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in sheet["B"][1:]))
             workbook.close()
             app.run(timeout=20)
@@ -111,6 +111,18 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
         bundle = build_autostat_exports([source], timestamp=None)
         self.assertEqual([row["EMAIL/ NUMBER"] for row in log_rows(bundle.files[0])], ["first@example.com", "second@example.com"])
         self.assertEqual(bundle.summary[0]["Duplicate Email rows removed"], 1)
+
+    def test_missing_primary_keys_are_excluded_without_substituting_valid_cardnumbers(self):
+        upload = Upload(workbook_data(first_account=""))
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            bundle = app.session_state["geo_autostat_result"]["bundle"]
+            self.assertEqual([file.count for file in bundle.files], [2, 2])
+            self.assertEqual(bundle.summary[0]["Missing account"], 2)
+            for file in bundle.files:
+                self.assertEqual([row["Account No."] for row in log_rows(file)],
+                                 ["000000000000000002", "000000000000000003"])
 
     def test_log_settings_rebuild_automatically_and_scientific_accounts_clear_downloads(self):
         uploads = [Upload(workbook_data())]
