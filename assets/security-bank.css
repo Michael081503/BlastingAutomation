@@ -7,7 +7,7 @@
     --sbc-muted: #b8afc6;
     --sbc-border: #373043;
     --sbc-surface: #191420;
-    --sbc-sidebar-art: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR__");
+    --sbc-halloween-scene: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR__");
     --sbc-web-art: url("data:image/svg+xml;base64,__HALLOWEEN_WEBS__");
 }
 
@@ -23,6 +23,10 @@
 [data-testid="stHeader"] {
     background: #0f0c16;
     border-bottom: 1px solid rgb(183 160 230 / 7%);
+}
+
+[data-testid="stMain"] {
+    background: var(--sbc-halloween-scene) left 16px bottom 24px / clamp(0px, calc((100% - 1280px) / 2 - 32px), 420px) auto no-repeat;
 }
 
 [data-testid="stMainBlockContainer"] {
@@ -153,15 +157,6 @@ h1 {
 
 [data-testid="stSidebarContent"] {
     background: transparent;
-}
-
-[data-testid="stSidebarUserContent"]::after {
-    content: "";
-    display: block;
-    height: 215px;
-    margin: 1.5rem auto 0;
-    background: var(--sbc-sidebar-art) center bottom / contain no-repeat;
-    pointer-events: none;
 }
 
 [data-testid="stSidebarHeader"] {
@@ -302,12 +297,6 @@ h1 {
     background: #34242e;
 }
 
-@media (max-height: 720px) {
-    [data-testid="stSidebarUserContent"]::after {
-        height: 153px;
-    }
-}
-
 @media (max-width: 1024px) {
     .sbc-brand-header {
         display: grid;
@@ -384,7 +373,7 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
     :root {
-        --sbc-sidebar-art: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR_STILL__");
+        --sbc-halloween-scene: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR_STILL__");
     }
 
     [data-testid="stSidebarNav"] a {
