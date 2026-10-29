@@ -1235,7 +1235,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.main.dataframe[-1].value.loc[0, "AREA"], "Region 3")
             self.assertEqual(app.main.dataframe[-1].value.loc[0, "doclass"], "SBC GEO R3")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            self.assertEqual(len(app.get("download_button")), 1)
+            self.assertEqual(len(app.get("download_button")), 2)
             app.button[0].click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -1261,7 +1261,7 @@ class AppTests(unittest.TestCase):
             ):
                 with self.subTest(output_format=output_format):
                     app.selectbox(key="csv_file_type").set_value(output_format).run(timeout=20)
-                    self.assertEqual(len(app.get("download_button")), 1)
+                    self.assertEqual(len(app.get("download_button")), 2)
                     app.button[0].click().run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     self.assertEqual(len(app.error), 0)
@@ -1332,7 +1332,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state["result"]["count"], 1)
-            self.assertEqual(len(app.get("download_button")), 6)
+            self.assertEqual(len(app.get("download_button")), 7)
             files = app.session_state["result"]["files"]
             self.assertTrue(all(file.filename.endswith(".csv") for file in files))
             rows = list(csv.DictReader(StringIO(files[0].data.decode("utf-8-sig"))))
@@ -1342,7 +1342,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.session_state["result"]["count"], 1)
             app.selectbox[0].select("NEXT").run(timeout=20)
             self.assertEqual(len(app.success), 0)
-            self.assertEqual(len(app.get("download_button")), 1)
+            self.assertEqual(len(app.get("download_button")), 2)
 
     def test_uploaded_csv_template_and_optional_missing_phone_header(self):
         upload = FakeUpload("source.xlsx", source_file())
@@ -1371,7 +1371,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual([file.count for file in app.session_state['result']['files']], [1, 0])
-            self.assertEqual(len(app.get("download_button")), 6)
+            self.assertEqual(len(app.get("download_button")), 7)
 
     def test_uploaded_excel_template_produces_csv_in_both_export_modes(self):
         upload = FakeUpload("source.xlsx", source_file([
@@ -1462,13 +1462,13 @@ class AppTests(unittest.TestCase):
             self.assertEqual(preview.loc[0, "Monthly"], "")
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
-            self.assertEqual(len(app.get("download_button")), 18)
+            self.assertEqual(len(app.get("download_button")), 19)
             app.main.selectbox[-1].select(OUTPUT_FILENAMES["blank_other_products"] + "_Email.csv").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["count"], 7)
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             self.assertEqual(len(app.success), 0)
-            self.assertEqual(len(app.get("download_button")), 1)
+            self.assertEqual(len(app.get("download_button")), 2)
 
     def test_default_headers_refresh_cached_template_and_remain_in_empty_channel(self):
         upload = FakeUpload("source.xlsx", source_file([

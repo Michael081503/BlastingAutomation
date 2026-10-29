@@ -29,6 +29,7 @@ from exports import (
 )
 from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
+from geo_autostat import render_geo_autostat
 
 from automation import (
     CSV_OUTPUT_ENCODINGS,
@@ -113,7 +114,7 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
 def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
-    st.write("Upload your GEO or RECO workbook, choose a sheet, and export the mapped values as CSV files.")
+    st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically alongside your campaign exports.")
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 matching has its own NEGATIVE B2 page.")
     with st.sidebar:
         output_format = st.selectbox(
@@ -157,6 +158,7 @@ def render_workbook_page() -> None:
             source_sheets = workbook_info(source_bytes)
         except AutomationError as exc:
             st.session_state.pop("result", None)
+            st.session_state.pop("geo_autostat_result", None)
             st.error(str(exc))
             return
     with upload_right:
@@ -169,6 +171,7 @@ def render_workbook_page() -> None:
 
     if source_file is None:
         st.session_state.pop("result", None)
+        st.session_state.pop("geo_autostat_result", None)
         st.info("Upload a source workbook to begin. NEGATIVE will be selected automatically if it exists.")
         st.caption("Every worksheet uses the same separation rules. GEO worksheets separate Mindanao and R3 first.")
         return
@@ -365,6 +368,11 @@ def render_workbook_page() -> None:
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result["signature"] != signature:
         st.session_state.pop("result", None)
+
+    render_geo_autostat(
+        source_file.name, source_bytes, source_sheet, source_header, len(source_info.headers),
+        source_columns if source_columns is not None else defaults, encoding=encoding,
+    )
 
     if st.button("Preview and prepare files", type="primary", disabled=not can_prepare):
         st.session_state.pop("result", None)

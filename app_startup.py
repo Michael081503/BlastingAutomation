@@ -64,6 +64,9 @@ def refresh_application_modules() -> set[str]:
             "build_autostat_channel_excel", "build_autostat_excel_zip",
             "ContactRows.__dataclass_fields__.email_ob_values", "ContactRows.__dataclass_fields__.phone_ob_values",
         ), ("automation", "email_validation", "export_config", "exports")),
+        ("geo_autostat", (
+            "GEO_AUTOSTAT_VERSION", "mapped_contact_source", "render_geo_autostat",
+        ), ("autostat", "automation", "email_validation", "folder_output")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
             "B2_TEMPLATE_VERSION", "B2_TEMPLATE_HEADERS",

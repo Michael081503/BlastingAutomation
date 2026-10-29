@@ -22,6 +22,12 @@ Use the sidebar to switch between three separate pages:
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
+## Automatic AUTOSTAT on GEO & RECO
+
+Uploading a source workbook on **GEO & RECO** automatically prepares **Download AUTOSTAT.xlsx** for the selected worksheet, before you click **Preview and prepare files**. It contains the Email and Viber activity logs; no exported campaign files need to be uploaded again. The logs read the original source cells directly, use the selected source columns and header row, prefer cardnumber, preserve account digits and leading zeros as text, remove zero decimal suffixes, deduplicate accounts by source identity, and sort each channel by OB from highest to lowest. The existing contact checks and scientific-notation rejection apply.
+
+The collapsed **AutoStat log settings** panel lets you change **Remark By** (default `MBURGOS`) or leave Time blank. Otherwise, Time uses the current Manila date and time when the logs are prepared and stays fixed on routine reruns. Changing the upload, selected worksheet, source mapping, header row, author, timestamp option, or CSV encoding automatically rebuilds the logs. Removing the upload clears them. SBC INSURANCE, B2, and B4 files or worksheets are excluded. The separate AUTOSTAT page remains available for compiling several files and worksheets into one pair of logs.
+
 ## AUTOSTAT
 
 AUTOSTAT checks account lists for valid email addresses and mobile numbers, then compiles every selected file and sheet into one Email and one Viber activity log using the supplied `TEMPLATE_EMAIL.xlsx` and `TEMPLATE_VIBER.xlsx` layouts. Both layouts are built in; the sample account, email address, and old timestamp are not included. **Excel (.xlsx)** is the default output: individual downloads are **`AUTOSTAT_Email.xlsx`** and **`AUTOSTAT_Viber.xlsx`**, the ZIP contains those same two workbooks, and folder saves write the two workbooks. Every account cell is literal text. A combined **`AUTOSTAT.xlsx`** download contains the full logs on **Email** and **Viber** sheets.
