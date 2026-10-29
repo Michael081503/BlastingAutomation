@@ -9,3 +9,5 @@ Assets were retrieved on October 29, 2026. The logo and bank name belong to Secu
 The current seasonal presentation uses a dark purple background and orange Halloween accents. `halloween-sidebar.svg` is an original decorative illustration; it does not alter the bank's logo.
 
 The sidebar ghost gently sways, floats and blinks using SVG/CSS animations. Its shadow follows the motion. All three animations stop when the browser requests reduced motion. No JavaScript, remote animation service or extra dependency is needed.
+
+`halloween-webs.svg` adds soft corner cobwebs and little silk highlights to the page background. `halloween-spiderman.svg` is a locally drawn, transparent vector decoration featuring a cute upside-down Spider-Man in the shared header. CSS gently sways him from the web thread and disables that animation when reduced motion is requested. Both decorations are bundled with the app, need no external requests, and cannot intercept clicks. The header rearranges for narrow screens so the artwork, bank logo and workspace name remain readable.

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" fill="none">
+  <defs>
+    <radialGradient id="silk-glow">
+      <stop stop-color="#BCA0E4" stop-opacity=".1"/>
+      <stop offset="1" stop-color="#BCA0E4" stop-opacity="0"/>
+    </radialGradient>
+    <g id="corner-web" stroke="#C0A9D6" stroke-width="1.2" stroke-linecap="round">
+      <path d="M0 0H490M0 0L473 127M0 0L424 245M0 0L346 346M0 0L245 424M0 0L127 473M0 0V490"/>
+      <path d="M64 0Q58 9 62 17Q53 23 55 32Q46 36 45 45Q36 46 32 55Q23 53 17 62Q9 58 0 64
+               M128 0Q116 18 124 33Q106 46 111 64Q91 73 91 91Q73 91 64 111Q46 106 33 124Q18 116 0 128
+               M202 0Q184 29 195 52Q168 73 175 101Q144 115 143 143Q115 144 101 175Q73 168 52 195Q29 184 0 202
+               M286 0Q260 41 276 74Q238 103 248 143Q203 163 202 202Q163 203 143 248Q103 238 74 276Q41 260 0 286
+               M382 0Q347 55 369 99Q318 138 331 191Q272 218 270 270Q218 272 191 331Q138 318 99 369Q55 347 0 382
+               M490 0Q445 70 473 127Q407 177 424 245Q349 279 346 346Q279 349 245 424Q177 407 127 473Q70 445 0 490"/>
+    </g>
+    <g id="twinkle" stroke="#FFCC91" stroke-linecap="round">
+      <path d="M0-5V5M-5 0H5"/>
+      <circle r="1.5" fill="#FFCC91" stroke="none"/>
+    </g>
+  </defs>
+  <ellipse cx="1500" cy="140" rx="480" ry="400" fill="url(#silk-glow)"/>
+  <ellipse cx="250" cy="850" rx="300" ry="260" fill="url(#silk-glow)"/>
+  <use href="#corner-web" transform="translate(1600 0) scale(-1 1)" opacity=".21"/>
+  <use href="#corner-web" transform="translate(0 0) scale(.62)" opacity=".13"/>
+  <use href="#corner-web" transform="translate(1600 1000) scale(-.57 -.57)" opacity=".14"/>
+  <use href="#corner-web" transform="translate(0 1000) scale(.74 -.74)" opacity=".12"/>
+  <g fill="#C0A9D6" opacity=".35">
+    <circle cx="1473" cy="473" r="2"/><circle cx="1224" cy="127" r="2"/>
+    <circle cx="187" cy="883" r="1.7"/><circle cx="1502" cy="808" r="1.8"/>
+    <circle cx="1392" cy="353" r="1.2"/><circle cx="1090" cy="81" r="1.5"/>
+  </g>
+  <g opacity=".34">
+    <use href="#twinkle" x="1510" y="555"/>
+    <use href="#twinkle" x="1252" y="55" transform="rotate(12 1252 55)"/>
+    <use href="#twinkle" x="110" y="768" transform="scale(.8)"/>
+    <use href="#twinkle" x="1380" y="908" transform="rotate(15 1380 908)"/>
+  </g>
+  <path d="M1515 205V290" stroke="#C0A9D6" stroke-opacity=".23"/>
+  <g stroke="#A28CB4" stroke-linecap="round" stroke-width="1.4" opacity=".42">
+    <path d="M1511 299L1504 295L1499 298M1511 303L1501 303L1497 308M1519 299L1526 295L1531 298M1519 303L1529 303L1533 308"/>
+    <ellipse cx="1515" cy="302" rx="5" ry="7" fill="#A28CB4" stroke="none"/>
+    <circle cx="1513" cy="301" r=".8" fill="#F6F1FC" stroke="none"/>
+    <circle cx="1517" cy="301" r=".8" fill="#F6F1FC" stroke="none"/>
+  </g>
+</svg>

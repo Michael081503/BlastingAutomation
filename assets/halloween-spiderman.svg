@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="260" viewBox="0 0 180 260" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="spidey-red" x1="51" y1="58" x2="123" y2="151" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF716B"/>
+      <stop offset=".48" stop-color="#EF4D54"/>
+      <stop offset="1" stop-color="#BA2E48"/>
+    </linearGradient>
+    <linearGradient id="spidey-blue" x1="63" y1="149" x2="119" y2="199" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#559DD8"/>
+      <stop offset="1" stop-color="#36589C"/>
+    </linearGradient>
+    <linearGradient id="spidey-eye" x1="62" y1="87" x2="79" y2="119" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCE6FB"/>
+    </linearGradient>
+    <clipPath id="spidey-mask-clip">
+      <ellipse cx="90" cy="102" rx="49" ry="46"/>
+    </clipPath>
+  </defs>
+
+  <path d="M90 0V65" stroke="#E5DCEC" stroke-width="1.7" stroke-linecap="round" opacity=".88"/>
+  <path d="M90 65C90 75 78 73 72 80M90 65C90 75 102 73 108 80" stroke="#D5C8E4" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M75 79Q90 87 105 79M75 83Q90 91 105 83" stroke="#D5C8E4" stroke-width="1.4" stroke-linecap="round" opacity=".78"/>
+
+  <g transform="rotate(180 90 145)" stroke="#301D3E" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <!-- Rounded bent legs and soft boots make the hanging pose readable. -->
+    <path d="M76 164C69 170 57 180 59 188C60 196 68 201 73 197L88 181" fill="url(#spidey-blue)"/>
+    <path d="M104 164C111 170 123 180 121 188C120 196 112 201 107 197L92 181" fill="url(#spidey-blue)"/>
+    <path d="M65 190Q62 197 65 207Q67 213 75 211L82 207Q85 204 81 200L75 190Z" fill="url(#spidey-red)"/>
+    <path d="M105 190L99 200Q95 204 98 207L105 211Q113 213 115 207Q118 197 115 190Z" fill="url(#spidey-red)"/>
+    <path d="M68 201L79 198M101 198L112 201" stroke="#7D2B45" stroke-width="1.4" opacity=".65"/>
+
+    <!-- One little hand waves while the other curls toward the body. -->
+    <path d="M69 143Q54 136 48 143L41 151Q38 155 42 160Q46 164 51 160L61 154L73 156" fill="url(#spidey-blue)"/>
+    <path d="M48 145L44 132Q42 126 38 127Q35 128 37 135L37 138L31 131Q28 128 25 131Q23 134 27 139L29 142Q23 140 22 144Q21 149 29 153L39 157Q45 155 48 145Z" fill="url(#spidey-red)"/>
+    <path d="M112 143Q127 140 135 151L142 164Q145 170 139 173Q134 175 131 169L121 157L110 158" fill="url(#spidey-blue)"/>
+    <path d="M133 162Q141 158 146 164L151 173Q154 180 148 183Q142 185 138 180L131 170Z" fill="url(#spidey-red)"/>
+    <path d="M140 168L147 175M28 143L34 147" stroke="#7D2B45" stroke-width="1.3" opacity=".6"/>
+
+    <path d="M74 139Q90 132 106 139L112 163Q111 176 101 180H79Q69 176 68 163Z" fill="url(#spidey-blue)"/>
+    <path d="M76 139Q90 134 104 139L102 169Q90 177 78 169Z" fill="url(#spidey-red)" stroke-width="2"/>
+    <path d="M79 143L101 166M101 143L79 166M90 139V173M77 153Q90 159 103 153" stroke="#7D2B45" stroke-width="1.2" opacity=".6"/>
+    <g fill="#301D3E" stroke-width="1.6">
+      <ellipse cx="90" cy="156" rx="2.6" ry="4.2" stroke="none"/>
+      <circle cx="90" cy="151" r="2" stroke="none"/>
+      <path d="M88 153L84 150L82 147M92 153L96 150L98 147M88 155L83 154L81 151M92 155L97 154L99 151M88 158L84 160L82 164M92 158L96 160L98 164M89 160L86 164L85 168M91 160L94 164L95 168" fill="none"/>
+    </g>
+
+    <!-- Big soft mask, curved web lines and oversized friendly eye lenses. -->
+    <ellipse cx="90" cy="102" rx="49" ry="46" fill="url(#spidey-red)"/>
+    <g clip-path="url(#spidey-mask-clip)" stroke="#7A2945" stroke-width="1.5" opacity=".65">
+      <path d="M90 55V149M41 102H139M48 72L132 133M48 133L132 72M62 59L118 145M118 59L62 145"/>
+      <path d="M52 68Q90 83 128 68M44 84Q90 94 136 84M43 120Q90 110 137 120M52 137Q90 122 128 137"/>
+      <path d="M65 61Q75 102 65 143M115 61Q105 102 115 143"/>
+    </g>
+    <path d="M51 88Q65 84 82 99Q82 116 71 119Q57 119 51 88Z" fill="url(#spidey-eye)" stroke-width="3.8"/>
+    <path d="M129 88Q115 84 98 99Q98 116 109 119Q123 119 129 88Z" fill="url(#spidey-eye)" stroke-width="3.8"/>
+    <path d="M58 93Q64 93 69 96M122 93Q116 93 111 96" stroke="#FFFFFF" stroke-width="2.2"/>
+    <path d="M55 75Q59 65 70 63" stroke="#FFB4A5" stroke-width="4" opacity=".65"/>
+    <path d="M78 135Q90 140 102 135" stroke="#FF9A95" stroke-width="2.5" opacity=".55"/>
+  </g>
+
+  <g stroke="#F8D5A6" stroke-linecap="round" opacity=".85">
+    <path d="M27 176V184M23 180H31M149 128V134M146 131H152" stroke-width="1.5"/>
+  </g>
+  <circle cx="141" cy="214" r="2" fill="#F6923F" opacity=".7"/>
+  <circle cx="32" cy="108" r="1.5" fill="#CDB6ED" opacity=".7"/>
+</svg>

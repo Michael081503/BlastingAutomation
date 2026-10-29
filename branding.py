@@ -15,9 +15,10 @@ BANK_LOGO = ASSETS_DIRECTORY / "security-bank-logo.png"
 BANK_ICON = ASSETS_DIRECTORY / "security-bank-icon.png"
 HALLOWEEN_THEME_VERSION = 1
 HALLOWEEN_GHOST_VERSION = 1
+HALLOWEEN_SPIDER_VERSION = 1
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def _asset_data(filename: str) -> str:
     return b64encode((ASSETS_DIRECTORY / filename).read_bytes()).decode("ascii")
 
@@ -34,6 +35,7 @@ def render_bank_branding() -> None:
     styles = (ASSETS_DIRECTORY / "security-bank.css").read_text(encoding="utf-8")
     styles = styles.replace("__HALLOWEEN_SIDEBAR__", _asset_data("halloween-sidebar.svg"))
     styles = styles.replace("__HALLOWEEN_SIDEBAR_STILL__", _still_sidebar_data())
+    styles = styles.replace("__HALLOWEEN_WEBS__", _asset_data("halloween-webs.svg"))
     st.html(f"<style>{styles}</style>")
     st.html(
         '<div class="sbc-brand-header">'
@@ -45,6 +47,9 @@ def render_bank_branding() -> None:
         '</g></svg>'
         '<div class="sbc-bank-mark">'
         f'<img src="data:image/png;base64,{_asset_data("security-bank-logo.png")}" alt="Security Bank" class="sbc-brand-logo">'
+        '</div>'
+        '<div class="sbc-header-mascot" aria-hidden="true">'
+        f'<img src="data:image/svg+xml;base64,{_asset_data("halloween-spiderman.svg")}" alt="" class="sbc-spiderman">'
         '</div><div class="sbc-workspace-meta">'
         '<span class="sbc-workspace-name">Blasting Automation</span>'
         '<span class="sbc-season-tag"><span aria-hidden="true">&#127875;</span> Halloween edition</span>'
