@@ -48,7 +48,8 @@ SOURCE_ALIASES = {
     "OB (Masterlist)": ("OB",),
     "phone_1": ("phone number", "phone no", "mobile", "mobile number", "mobile no", "contact number", "contact no", "cellphone", "cellphone number"),
 }
-MAPPING_VERSION = 6
+MAPPING_VERSION = 7
+PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 OB_SORT_VERSION = 1
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
@@ -101,6 +102,11 @@ def normalize_header(value: Any) -> str:
     """Match headers despite capitalization, extra whitespace, and punctuation."""
     text = unicodedata.normalize("NFKC", str(value or "")).casefold()
     return "".join(character for character in text if character.isalnum())
+
+
+def normalize_product(value: Any) -> Any:
+    """Convert the MC product code to CARDS before campaign routing."""
+    return "CARDS" if isinstance(value, str) and value.strip().casefold() == "mc" else value
 
 
 def ob_sort_key(value: Any) -> tuple[bool, Decimal]:
@@ -371,6 +377,8 @@ def read_source(
                     value = email
                 elif _is_blank(value):
                     value = None
+                if target == "product":
+                    value = normalize_product(value)
                 if target == "ChristmasAmnesty":
                     value = "QUALIFIED" if normalize_header(value) == "qualified" else None
                 record[target] = value

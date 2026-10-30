@@ -37,6 +37,7 @@ def refresh_application_modules() -> set[str]:
         ), ()),
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
+            "PRODUCT_NORMALIZATION_VERSION", "normalize_product",
             "create_default_csv_template",
             "DERIVED_TEMPLATE_HEADERS", "geo_doclass",
             "SheetInfo.available_fields", "inspect_source_sheet",

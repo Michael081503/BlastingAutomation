@@ -20,6 +20,7 @@ from automation import (
     has_contact_details,
     has_contact_value,
     normalize_header,
+    normalize_product,
     ob_sort_key,
     write_typed_template_sheet,
 )
@@ -124,6 +125,7 @@ def separate_negative(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
     """
     groups = {key: [] for key in GROUP_LABELS}
     for record in records:
+        record = {**record, "product": normalize_product(record.get("product"))}
         if not has_contact_details(record):
             continue
         qualified = normalize_header(record.get("ChristmasAmnesty")) == "qualified"
@@ -149,6 +151,7 @@ def separate_geo(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
     """Group each Area by Christmas Amnesty and product, combining all levels."""
     groups = {key: [] for key in GEO_GROUP_LABELS}
     for record in records:
+        record = {**record, "product": normalize_product(record.get("product"))}
         if not has_contact_details(record):
             continue
         area = normalize_header(record.get("AREA"))
@@ -188,7 +191,7 @@ def separate_channels(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
     """
     channels = {key: [] for key in CHANNEL_LABELS}
     for record in records:
-        record = {**record, "doclass": geo_doclass(record.get("AREA"))}
+        record = {**record, "product": normalize_product(record.get("product")), "doclass": geo_doclass(record.get("AREA"))}
         email = validated_email(record.get("email"))
         if email is not None:
             channels["email"].append({**record, "email": email, "phone": None})

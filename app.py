@@ -117,6 +117,7 @@ def render_workbook_page() -> None:
     st.title("GEO & RECO")
     st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically using Financing/Card No. (cardnumber) for Account No.")
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
+    st.caption("Product MC is converted to CARDS before grouping accounts into their designated files.")
     with st.sidebar:
         output_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",

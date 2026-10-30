@@ -183,6 +183,8 @@ Validation runs locally without DNS queries, sending messages, or contacting mai
 
 ## Worksheet separation
 
+**GEO and RECO normalize Product first:** `MC` becomes `CARDS` before any Area, Christmas Amnesty, product, level, or Email/Viber split. Matching ignores capitalization and surrounding spaces, so `mc` and ` MC ` also become `CARDS`. These accounts follow the existing CARDS destination rules, and the exported Product value is `CARDS` in previews, CSVs, Excel files, ZIPs, and folder saves, including all-accounts mode. Other products retain their values. Original uploaded workbooks are unchanged.
+
 The following rules apply to NEGATIVE and all other source sheets without an Area column. Select one worksheet at a time using **Source sheet**. NEGATIVE keeps its configured filenames. Other worksheets prefix the same configured group filenames and ZIP name with their worksheet name, so their exports are distinguishable. For example, a sheet called `POSITIVE` creates `POSITIVE - CS AMNESTY NEGA CARDS - L1_Email.csv` for that populated group. The configured base names remain editable in `export_config.py`. Templates, validation, review groups, previews, ZIP downloads, and folder saves work identically for all worksheets.
 
 | Christmas Amnesty | Product | Level | Base filename |

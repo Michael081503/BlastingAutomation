@@ -54,14 +54,14 @@ def mixed_workbook() -> bytes:
             sheet.append([record.get(header) for header in headers])
 
     add_accounts("NEGATIVE", [
-        ("RECO001", "CARDS", 1, None, None),
-        ("RECO006", "CARDS", 6, None, None),
+        ("RECO001", "MC", 1, None, None),
+        ("RECO006", " mc ", 6, None, None),
         ("RECOBEL", "BEL", 4, None, None),
         ("RECOLOAN", "PL", 3, None, None),
     ])
     add_accounts("GEO", [
-        ("GEOM001", "CARDS", 1, "QUALIFIED", "Mindanao"),
-        ("GEOM006", "CARDS", 6, "QUALIFIED", "Mindanao"),
+        ("GEOM001", "MC", 1, "QUALIFIED", "Mindanao"),
+        ("GEOM006", "mc", 6, "QUALIFIED", "Mindanao"),
         ("GEORBEL", "BEL", 3, None, "Region 3"),
     ], geo=True)
     output = BytesIO()
@@ -196,6 +196,7 @@ class WorkflowPageTests(unittest.TestCase):
                 self.assertEqual(tuple(rows[0]), DEFAULT_TEMPLATE_HEADERS)
                 self.assertTrue(all(row["primary_key"] in {"GEOM001", "GEOM006", "GEORBEL"} for row in rows))
                 self.assertTrue(all(row["cardnumber"] == "CARD-" + row["primary_key"] for row in rows))
+                self.assertTrue(all(row["Product"] == ("BEL" if row["primary_key"] == "GEORBEL" else "CARDS") for row in rows))
                 expected_class = "SBC GEO Mindanao" if file.group_key.startswith("mindanao_") else "SBC GEO R3"
                 self.assertTrue(all(row["doclass"] == expected_class for row in rows))
             self.assert_no_embedded_b2(app)
@@ -222,6 +223,8 @@ class WorkflowPageTests(unittest.TestCase):
                              {"RECO001", "RECO006", "RECOBEL", "RECOLOAN"})
             self.assertTrue(all(row["cardnumber"] == "CARD-" + row["primary_key"]
                                 for file in result["files"] for row in csv_rows(file)))
+            self.assertTrue(all(row["Product"] == "CARDS" for file in result["files"] for row in csv_rows(file)
+                                if row["primary_key"] in {"RECO001", "RECO006"}))
             with ZipFile(BytesIO(result["zip_data"])) as archive:
                 self.assertEqual(set(archive.namelist()), {file.filename for file in result["files"]})
                 for file in result["files"]:
