@@ -61,9 +61,9 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             channel_excel.assert_not_called()
             excel_zip.assert_not_called()
             for sheet_name, accounts, phones in (
-                ("NEGATIVE", ["000000000000000002", "000000000000000003", "000000000000000001"],
+                ("NEGATIVE", ["000123456789012345", "000123456789012345", "12345678901234567"],
                  ["9000000002", "9000000003", "9000000001"]),
-                ("GEO", ["000000000000000019"], ["9000000005"]),
+                ("GEO", ["CARD-GEO"], ["9000000005"]),
             ):
                 with self.subTest(sheet=sheet_name):
                     if sheet_name == "GEO":
@@ -93,10 +93,14 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
                     workbook = load_workbook(BytesIO(email.args[1]()))
                     self.assertEqual(workbook.sheetnames, ["Email"])
                     self.assertEqual(workbook.active.max_column, 11)
+                    self.assertEqual([cell.value for cell in workbook.active["B"][1:]], accounts)
                     workbook.close()
                     with ZipFile(BytesIO(calls["geo_autostat_zip"].args[1]())) as archive:
                         self.assertEqual(archive.namelist(), ["AUTOSTAT_Email.xlsx", "AUTOSTAT_Viber.xlsx"])
                         workbook = load_workbook(BytesIO(archive.read("AUTOSTAT_Viber.xlsx")))
+                        self.assertEqual([cell.value for cell in workbook.active["B"][1:]], accounts)
+                        workbook.close()
+                        workbook = load_workbook(BytesIO(archive.read("AUTOSTAT_Email.xlsx")))
                         self.assertEqual([cell.value for cell in workbook.active["B"][1:]], accounts)
                         workbook.close()
 
@@ -154,7 +158,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             self.assertEqual(workbook.sheetnames, ["Email", "Viber"])
             for sheet in workbook:
                 self.assertEqual([cell.value for cell in sheet["B"][1:]],
-                                 ["000000000000000002", "000000000000000003", "000000000000000001"])
+                                 ["000123456789012345", "000123456789012345", "12345678901234567"])
                 self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in sheet["B"][1:]))
             workbook.close()
             app.run(timeout=20)
@@ -163,8 +167,8 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             next(widget for widget in app.selectbox if widget.label == "Source sheet").select("GEO").run(timeout=20)
             self.assertEqual(prepare.call_count, 2)
             self.assertEqual([row["Account No."] for row in log_rows(app.session_state["geo_autostat_result"]["bundle"].files[0])],
-                             ["000000000000000019"])
-            uploads[0] = Upload(workbook_data("000000000000000025.0"))  # Same filename, different contents.
+                             ["CARD-GEO"])
+            uploads[0] = Upload(workbook_data(first_card="000000000000000025.0"))  # Same filename, different contents.
             app.run(timeout=20)
             self.assertEqual(prepare.call_count, 3)
             self.assertEqual(log_rows(app.session_state["geo_autostat_result"]["bundle"].files[0])[-1]["Account No."], "000000000000000025")
@@ -177,24 +181,26 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
     def test_manual_mapping_controls_identity_and_ob_instead_of_unselected_alias_columns(self):
         workbook = Workbook()
         workbook.active.title = "Custom"
-        workbook.active.append(["Ledger", "Inbox", "Handset", "Chosen ID", "Chosen OB", "OB", "Old I.C."])
+        workbook.active.append(["Ledger", "Inbox", "Handset", "Chosen ID", "Chosen OB", "OB", "Old I.C.", "Account"])
         for row in (
-            ["001", "first@example.com", "09000000001", "U1", 100, 1, "old-a"],
-            ["001", "second@example.com", "09000000002", "U2", 9, 500, "old-b"],
-            ["001", "ignored@example.com", "09000000003", "U1", 999, 999, "old-c"],
+            ["001", "first@example.com", "09000000001", "U1", 100, 1, "old-a", "PRIMARY-1"],
+            ["001", "second@example.com", "09000000002", "U2", 9, 500, "old-b", "PRIMARY-2"],
+            ["001", "ignored@example.com", "09000000003", "U1", 999, 999, "old-c", "PRIMARY-3"],
         ):
             workbook.active.append(row)
         output = BytesIO()
         workbook.save(output)
         workbook.close()
-        source = mapped_contact_source("custom.xlsx", output.getvalue(), "Custom", 1, 7,
-            {"primary_key": 0, "cardnumber": None, "email": 1, "phone": 2, "indexoneuid": 3, "OB": 4})
+        source = mapped_contact_source("custom.xlsx", output.getvalue(), "Custom", 1, 8,
+            {"primary_key": 7, "cardnumber": 0, "email": 1, "phone": 2, "indexoneuid": 3, "OB": 4})
         bundle = build_autostat_exports([source], timestamp=None)
         self.assertEqual([row["EMAIL/ NUMBER"] for row in log_rows(bundle.files[0])], ["first@example.com", "second@example.com"])
         self.assertEqual(bundle.summary[0]["Duplicate Email rows removed"], 1)
+        for file in bundle.files:
+            self.assertEqual([row["Account No."] for row in log_rows(file)], ["001", "001"])
 
-    def test_missing_primary_keys_are_excluded_without_substituting_valid_cardnumbers(self):
-        upload = Upload(workbook_data(first_account=""))
+    def test_missing_financing_card_numbers_are_excluded_without_substituting_primary_keys(self):
+        upload = Upload(workbook_data(first_card=""))
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
@@ -203,7 +209,20 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             self.assertEqual(bundle.summary[0]["Missing account"], 2)
             for file in bundle.files:
                 self.assertEqual([row["Account No."] for row in log_rows(file)],
-                                 ["000000000000000002", "000000000000000003"])
+                                 ["000123456789012345", "000123456789012345"])
+
+    def test_blank_or_scientific_primary_keys_do_not_override_valid_financing_card_numbers(self):
+        for primary_key in ("", "5.15604E+15"):
+            with self.subTest(primary_key=primary_key):
+                upload = Upload(workbook_data(first_account=primary_key))
+                with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
+                    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    result = app.session_state["geo_autostat_result"]
+                    self.assertNotIn("error", result)
+                    for file in result["bundle"].files:
+                        self.assertEqual([row["Account No."] for row in log_rows(file)],
+                                         ["000123456789012345", "000123456789012345", "12345678901234567"])
 
     def test_log_settings_rebuild_automatically_and_scientific_accounts_clear_downloads(self):
         uploads = [Upload(workbook_data())]
@@ -215,7 +234,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             result = app.session_state["geo_autostat_result"]
             self.assertIsNone(result["timestamp"])
             self.assertTrue(all(row["Time"] == "" and row["Remark By"] == "USER2" for file in result["bundle"].files for row in log_rows(file)))
-            uploads[0] = Upload(workbook_data("5.15604E+15"))
+            uploads[0] = Upload(workbook_data(first_card="5.15604E+15"))
             download.reset_mock()
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)

@@ -181,6 +181,9 @@ class WorkflowPageTests(unittest.TestCase):
             result = app.session_state["result"]
             self.assertTrue(result["geo"])
             self.assertTrue(result["grouped"])
+            for file in app.session_state["geo_autostat_result"]["bundle"].files:
+                self.assertEqual({row["Account No."] for row in csv_rows(file)},
+                                 {"CARD-GEOM001", "CARD-GEOM006", "CARD-GEORBEL"})
             self.assertEqual(result["group_counts"]["mindanao_qualified_cards"], 2)
             self.assertEqual(result["group_counts"]["r3_blank_bel"], 1)
             self.assertEqual({file.filename for file in result["files"]}, {
@@ -206,6 +209,9 @@ class WorkflowPageTests(unittest.TestCase):
             result = app.session_state["result"]
             self.assertFalse(result["geo"])
             self.assertTrue(result["grouped"])
+            for file in app.session_state["geo_autostat_result"]["bundle"].files:
+                self.assertEqual({row["Account No."] for row in csv_rows(file)},
+                                 {"CARD-RECO001", "CARD-RECO006", "CARD-RECOBEL", "CARD-RECOLOAN"})
             groups = ("blank_cards_level_1", "blank_cards_level_6", "blank_bel", "blank_other_products")
             self.assertTrue(all(result["group_counts"][group] == 1 for group in groups))
             self.assertEqual({file.filename for file in result["files"]}, {

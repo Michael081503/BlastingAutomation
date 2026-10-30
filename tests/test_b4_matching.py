@@ -7,11 +7,12 @@ from pathlib import Path
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
 from automation import AutomationError
-from autostat import SourceSelection, inspect_contact_source
+from autostat import SourceSelection, build_autostat_excel, inspect_contact_source
+from b2_autostat import B2ActivitySource, b2_metadata_columns, build_b2_autostat_exports
 from b2_matching import B2_TEMPLATE_HEADERS, build_b4_exports
 
 
@@ -94,6 +95,29 @@ class B4MatchingTests(unittest.TestCase):
             self.assertEqual(archive.namelist(), [file.filename for file in result.bundle.files])
             for file in result.bundle.files:
                 self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_b4_matched_files_use_primary_key_in_all_autostat_account_columns(self):
+        raw, grid = fixtures()
+        matched = build_b4_exports(selection("endorsement.xlsx", raw), selection("NEGATIVE B4 DB.xlsx", grid))
+        sources = []
+        for file in matched.bundle.files:
+            sheet = inspect_contact_source(file.data, ".csv")[0]
+            self.assertEqual(sheet.headers[sheet.account_column], "cardnumber")  # Generic detection.
+            sources.append(B2ActivitySource(SourceSelection(file.filename, file.data, sheet),
+                                           *b2_metadata_columns(sheet.headers)))
+        bundle = build_b2_autostat_exports(sources, timestamp=None)
+        for file, expected in zip(bundle.files, (
+            ["00001", "00003"], ["00001", "BEL-2"], ["00001", "BEL-2"],
+        )):
+            header = "Account No." if file.filename.endswith("Email.csv") else "Account number"
+            self.assertEqual([row[header] for row in rows(file)], expected)
+        workbook = load_workbook(BytesIO(build_autostat_excel(bundle)))
+        for sheet in workbook:
+            column = "B" if sheet.title.endswith("Email") else "A"
+            expected = ["00001", "00003"] if sheet.title.endswith("Email") else ["00001", "BEL-2"]
+            self.assertEqual([cell.value for cell in sheet[column][1:]], expected)
+            self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in sheet[column][1:]))
+        workbook.close()
 
     def test_b4_requires_unambiguous_email_01_and_phone_01(self):
         raw, grid = fixtures()

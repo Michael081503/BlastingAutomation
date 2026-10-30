@@ -69,7 +69,7 @@ def refresh_application_modules() -> set[str]:
             "ContactRows.__dataclass_fields__.email_ob_values", "ContactRows.__dataclass_fields__.phone_ob_values",
         ), ("automation", "email_validation", "export_config", "exports")),
         ("geo_autostat", (
-            "GEO_AUTOSTAT_VERSION", "GEO_PRIMARY_KEY_VERSION", "mapped_contact_source", "render_geo_autostat",
+            "GEO_AUTOSTAT_VERSION", "GEO_FINANCING_ACCOUNT_VERSION", "mapped_contact_source", "render_geo_autostat",
             "GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION",
         ), ("autostat", "automation", "email_validation", "folder_output")),
         ("b2_matching", (

@@ -17,8 +17,8 @@ from email_validation import EMAIL_VALIDATION_VERSION
 from folder_output import MANILA_TIMEZONE
 
 
-GEO_AUTOSTAT_VERSION = 3
-GEO_PRIMARY_KEY_VERSION = 1
+GEO_AUTOSTAT_VERSION = 4
+GEO_FINANCING_ACCOUNT_VERSION = 1
 GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION = 1
 
 
@@ -38,7 +38,7 @@ def mapped_contact_source(
             headers[positions[target]] = target
     sheet = ContactSheet(
         sheet_name, header_row, tuple(headers),
-        positions.get("primary_key", positions.get("cardnumber")),
+        positions.get("cardnumber", positions.get("primary_key")),
         (positions["email"],) if "email" in positions else (),
         (positions["phone"],) if "phone" in positions else (),
     )
@@ -90,7 +90,7 @@ def render_geo_autostat(
         return
     st.caption(
         f"Ready from {sheet_name}: {email_count:,} Email accounts and {phone_count:,} Viber accounts. "
-        "No second upload is needed. primary_key supplies the account number when available. "
+        "No second upload is needed. Financing/Card No. (cardnumber) supplies Account No. when available. "
         "Account numbers stay as text; each log is sorted by OB, highest first."
     )
     if any(row["Account precision issues"] for row in bundle.summary):

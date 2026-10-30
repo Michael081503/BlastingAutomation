@@ -422,10 +422,10 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
-    def test_cached_geo_primary_key_mapping_and_negative_b2_upload_panel_refresh(self):
+    def test_cached_geo_financing_mapping_and_negative_b2_upload_panel_refresh(self):
         self.run_isolated("""
             import geo_autostat, autostat_page
-            del geo_autostat.GEO_PRIMARY_KEY_VERSION
+            del geo_autostat.GEO_FINANCING_ACCOUNT_VERSION
             del autostat_page.B2_ACTIVITY_PANEL_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
@@ -433,8 +433,8 @@ class StartupTests(unittest.TestCase):
             assert callable(autostat_page.render_b2_autostat_uploads)
             source = geo_autostat.mapped_contact_source('source.csv', b'', 'CSV', 1, 3,
                 {'primary_key': 0, 'cardnumber': 1, 'email': 2})
-            assert source.sheet.account_column == 0
-            assert geo_autostat.GEO_AUTOSTAT_VERSION == 3
+            assert source.sheet.account_column == 1
+            assert geo_autostat.GEO_AUTOSTAT_VERSION == 4
             assert refresh_application_modules() == set()
         """)
 
@@ -510,7 +510,7 @@ class StartupTests(unittest.TestCase):
             assert 'geo_autostat' in refreshed
             assert geo_autostat.build_autostat_channel_excel is autostat.build_autostat_channel_excel
             assert geo_autostat.build_autostat_excel_zip is autostat.build_autostat_excel_zip
-            assert geo_autostat.GEO_AUTOSTAT_VERSION == 3
+            assert geo_autostat.GEO_AUTOSTAT_VERSION == 4
             assert refresh_application_modules() == set()
         """)
 
