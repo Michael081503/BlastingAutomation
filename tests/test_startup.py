@@ -475,5 +475,31 @@ class StartupTests(unittest.TestCase):
         """)
 
 
+    def test_cached_geo_reco_exports_refresh_for_native_excel_types(self):
+        self.run_isolated("""
+            import automation, exports
+            del automation.write_typed_template_sheet
+            del exports.TYPED_EXCEL_EXPORT_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'automation', 'exports'} <= refreshed
+            assert exports.EXCEL_EXPORT_VERSION == 2
+            assert 'records' in exports.ExportFile.__dataclass_fields__
+            from io import BytesIO
+            from openpyxl import load_workbook
+            bundle = exports.build_sheet_exports(automation.create_default_csv_template(),
+                [{'primary_key': '000123', 'email': 'one@example.com', 'OB': 123.5}], '', 1,
+                base_name='RECO', label='RECO', template_extension='.csv')
+            workbook = load_workbook(BytesIO(exports.build_export_excel(bundle.files[0])))
+            assert workbook.active['B2'].value == '000123'
+            assert workbook.active['B2'].number_format == '@'
+            assert workbook.active['G2'].value == 123.5
+            assert workbook.active['G2'].data_type == 'n'
+            assert workbook.active['G2'].number_format == 'General'
+            workbook.close()
+            assert refresh_application_modules() == set()
+        """)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import unittest
+from datetime import date, datetime
+from decimal import Decimal
 from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -10,9 +12,9 @@ from zipfile import ZipFile
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
-from automation import create_default_csv_template
+from automation import DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
 from autostat import SourceSelection, build_autostat_exports, inspect_contact_source
-from exports import build_excel_zip, build_export_excel, build_sheet_exports
+from exports import build_excel_zip, build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
 
 
 class ExcelExportTests(unittest.TestCase):
@@ -37,7 +39,11 @@ class ExcelExportTests(unittest.TestCase):
                         workbook = load_workbook(BytesIO(excel_data))
                         sheet = workbook.active
                         raw_rows = list(csv.reader(StringIO(file.data.decode(encoding))))
-                        self.assertEqual(list(sheet.values), [tuple(value or None for value in row) for row in raw_rows])
+                        expected = [tuple(raw_rows[0])]
+                        ob_column = file.headers.index("OB")
+                        expected.extend(tuple(int(value) if column == ob_column else value or None
+                                              for column, value in enumerate(row)) for row in raw_rows[1:])
+                        self.assertEqual(list(sheet.values), expected)
                         self.assertEqual(sheet.max_row, len(accounts) + 1)
                         for row in sheet.iter_rows(min_row=2):
                             for column in ("primary_key", "cardnumber", "indexoneuid"):
@@ -53,11 +59,75 @@ class ExcelExportTests(unittest.TestCase):
                         self.assertEqual(sum(row["Account precision issues"] for row in logs.summary), 0)
                 self.assertEqual([file.data for file in bundle.files], original_csvs)
 
+    def test_geo_reco_excel_keeps_numeric_and_date_types_and_general_text_with_reordered_headers(self):
+        headers = [*reversed(DEFAULT_TEMPLATE_HEADERS), "Unused column"]
+        template_output = StringIO(newline="")
+        csv.writer(template_output).writerow(headers)
+        template = template_output.getvalue().encode()
+        records = [
+            {"primary_key": "0005156041234567897", "cardnumber": "000001234567890123",
+             "indexoneuid": "000045", "email": "first@example.com", "phone": "09171234567",
+             "FullName": "=literal text", "OB": 1234.5, "level": 1, "product": "CARDS",
+             "endodate": datetime(2026, 10, 30, 13, 14, 15), "AREA": "Mindanao", "ChristmasAmnesty": "QUALIFIED"},
+            {"primary_key": "000002", "cardnumber": "000000000000000002", "indexoneuid": "000046",
+             "email": "second@example.com", "phone": "09181234567", "FullName": "Second Person",
+             "OB": Decimal("-2.25"), "level": 1, "product": "CARDS", "endodate": date(2026, 10, 29),
+             "AREA": "Mindanao", "ChristmasAmnesty": "QUALIFIED"},
+        ]
+        for builder in (build_geo_exports, build_negative_exports):
+            with self.subTest(workflow=builder.__name__):
+                bundle = builder(template, records, "", 1, template_extension=".csv")
+                original_csvs = [file.data for file in bundle.files]
+                with ZipFile(BytesIO(build_excel_zip(bundle.files))) as archive:
+                    for file in bundle.files:
+                        workbook = load_workbook(BytesIO(archive.read(Path(file.filename).with_suffix(".xlsx").name)))
+                        sheet = workbook.active
+                        self.assertEqual([cell.value for cell in sheet[1]], headers)
+                        self.assertTrue(all(cell.number_format == "General" for cell in sheet[1]))
+                        first = dict(zip(headers, sheet[2]))
+                        second = dict(zip(headers, sheet[3]))
+                        for header in ("primary_key", "cardnumber", "indexoneuid"):
+                            self.assertEqual(first[header].value, records[0][header])
+                            self.assertEqual((first[header].data_type, first[header].number_format), ("s", "@"))
+                        self.assertEqual((first["OB"].value, first["OB"].data_type, first["OB"].number_format),
+                                         (1234.5, "n", "General"))
+                        self.assertEqual((second["OB"].value, second["OB"].data_type), (-2.25, "n"))
+                        self.assertEqual((first["Level"].value, first["Level"].data_type, first["Level"].number_format),
+                                         (1, "n", "General"))
+                        self.assertEqual((first["EndoDate"].value, first["EndoDate"].data_type),
+                                         (datetime(2026, 10, 30, 13, 14, 15), "d"))
+                        self.assertEqual(second["EndoDate"].value, datetime(2026, 10, 29))
+                        self.assertEqual(first["FullName"].value, "=literal text")
+                        self.assertEqual(first["FullName"].data_type, "s")
+                        for header in ("FullName", "Product", "AREA", "doclass", "email"):
+                            self.assertEqual(first[header].number_format, "General")
+                        self.assertEqual(first["doclass"].value, "SBC GEO Mindanao")
+                        if file.channel == "viber":
+                            self.assertEqual((first["phone"].value, first["phone"].data_type, first["phone"].number_format),
+                                             ("09171234567", "s", "@"))
+                            self.assertIsNone(first["email"].value)
+                        else:
+                            self.assertIsNone(first["phone"].value)
+                        self.assertIsNone(first["Unused column"].value)
+                        workbook.close()
+                self.assertEqual([file.data for file in bundle.files], original_csvs)
+
+    def test_empty_excel_channel_keeps_headers_with_general_format(self):
+        bundle = build_sheet_exports(create_default_csv_template(),
+            [{"primary_key": "0001", "email": "one@example.com", "OB": 100}], "", 1,
+            base_name="RECO", label="RECO", template_extension=".csv")
+        file = next(file for file in bundle.files if file.channel == "viber")
+        workbook = load_workbook(BytesIO(build_export_excel(file)))
+        self.assertEqual(workbook.active.max_row, 1)
+        self.assertEqual([cell.value for cell in workbook.active[1]], list(DEFAULT_TEMPLATE_HEADERS))
+        self.assertTrue(all(cell.number_format == "General" for cell in workbook.active[1]))
+        workbook.close()
+
     def test_main_page_offers_excel_zip_and_individual_workbooks_without_building_them_on_rerun(self):
         # A real source workbook exercises the page's normal preparation flow.
         workbook = Workbook()
-        workbook.active.append(["cardnumber", "email", "OB"])
-        workbook.active.append(["5156041234567897", "first@example.com", 1000])
+        workbook.active.append(["cardnumber", "email", "OB", "level", "endo date"])
+        workbook.active.append(["5156041234567897", "first@example.com", 1000, 1, datetime(2026, 10, 30, 13, 14, 15)])
         output = BytesIO()
         workbook.save(output)
         workbook.close()
@@ -88,6 +158,11 @@ class ExcelExportTests(unittest.TestCase):
             self.assertEqual(cell.value, "5156041234567897")
             self.assertEqual(cell.data_type, "s")
             self.assertEqual(cell.number_format, "@")
+            for header, value, cell_type in (("OB", 1000, "n"), ("Level", 1, "n"),
+                                            ("EndoDate", datetime(2026, 10, 30, 13, 14, 15), "d")):
+                cell = workbook.active.cell(2, headers.index(header) + 1)
+                self.assertEqual((cell.value, cell.data_type), (value, cell_type))
+                self.assertNotEqual(cell.number_format, "@")
             workbook.close()
 
 

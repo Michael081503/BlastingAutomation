@@ -544,6 +544,34 @@ def write_text_csv_sheet(workbook: Workbook, data: bytes, title: str):
     return sheet
 
 
+def write_typed_template_sheet(
+    workbook: Workbook, records: list[dict[str, Any]], headers: list[str], title: str,
+):
+    """Keep source cell types and apply Text format only to identifiers and phones."""
+    positions = _column_lookup(headers, template=True)
+    sheet = workbook.create_sheet(title)
+    sheet.freeze_panes = "A2"
+    header_cells = []
+    for column, header in enumerate(headers, 1):
+        sheet.column_dimensions[get_column_letter(column)].width = 24
+        cell = WriteOnlyCell(sheet)
+        _write_excel_value(cell, header)
+        header_cells.append(cell)
+    sheet.append(header_cells)
+    for record in records:
+        cells = [WriteOnlyCell(sheet) for _ in headers]
+        for target, position in positions.items():
+            value = geo_doclass(record.get("AREA")) if target == "doclass" else record.get(target)
+            if target in IDENTIFIER_FIELDS:
+                value = _identifier(value, "General")
+            cell = cells[position]
+            _write_excel_value(cell, value, target)
+            if isinstance(value, datetime):
+                cell.number_format = "yyyy-mm-dd hh:mm:ss"
+        sheet.append(cells)
+    return sheet
+
+
 def _csv_header(headers: list[Any] | tuple[str, ...], encoding: str = "utf-8-sig") -> bytes:
     output = StringIO(newline="")
     csv.writer(output).writerow(headers)

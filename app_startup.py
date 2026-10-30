@@ -44,6 +44,7 @@ def refresh_application_modules() -> set[str]:
             "WORKBOOK_READER_VERSION",
             "OB_SORT_VERSION", "ob_sort_key",
             "write_text_csv_sheet",
+            "write_typed_template_sheet",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
         ), ("email_validation",)),
         ("exports", (
@@ -51,6 +52,7 @@ def refresh_application_modules() -> set[str]:
             "GEO_FILENAME_CONFIG_VERSION",
             "GROUPED_SHEET_EXPORT_VERSION",
             "EXCEL_EXPORT_VERSION", "build_export_excel", "build_excel_zip",
+            "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",
         ), ("email_validation", "export_config", "automation")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("autostat", (

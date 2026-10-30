@@ -478,7 +478,7 @@ def render_workbook_page() -> None:
                 )
     st.caption(
         "Use Excel files to open, edit, or upload accounts to AUTOSTAT. "
-        "Account numbers are stored as text to preserve every supplied digit. "
+        "Numbers and dates retain their source types. Account identifiers and phone numbers use Text to preserve their digits. "
         "Extract the Excel ZIP before opening its workbooks."
     )
     st.download_button(
