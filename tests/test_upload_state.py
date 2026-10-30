@@ -101,7 +101,7 @@ class ClearUploadPageTests(unittest.TestCase):
                 if mode == "B2":
                     app.radio(key="autostat_upload_type").set_value(mode).run(timeout=20)
                 app.text_input(key=prefix + "remark_by").set_value("CUSTOM").run(timeout=20)
-                app.button(key=prefix + "prepare").click().run(timeout=20)
+                self.assertFalse(any(button.key == prefix + "prepare" for button in app.button))
                 self.assertIn(prefix + "result", app.session_state)
                 app.button(key="clear_all_files").click().run(timeout=20)
                 self.assertEqual(len(app.exception), 0)

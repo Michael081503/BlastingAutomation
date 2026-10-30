@@ -82,10 +82,12 @@ def refresh_application_modules() -> set[str]:
             "build_autostat_channel_excel", "build_autostat_excel_zip",
             "ContactRows.__dataclass_fields__.email_ob_values", "ContactRows.__dataclass_fields__.phone_ob_values",
         ), ("automation", "email_validation", "export_config", "exports")),
+        ("autostat_downloads", ("AUTOSTAT_DOWNLOADS_VERSION", "render_autostat_downloads"), ("autostat", "automation")),
         ("geo_autostat", (
             "GEO_AUTOSTAT_VERSION", "GEO_FINANCING_ACCOUNT_VERSION", "mapped_contact_source", "render_geo_autostat",
             "GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION",
-        ), ("autostat", "automation", "email_validation", "folder_output")),
+            "GEO_AUTOSTAT_SHARED_DOWNLOADS_VERSION", "render_autostat_downloads",
+        ), ("autostat", "autostat_downloads", "automation", "email_validation", "folder_output")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
             "B2_TEMPLATE_VERSION", "B2_TEMPLATE_HEADERS",
@@ -106,7 +108,8 @@ def refresh_application_modules() -> set[str]:
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
             "B2_UPLOAD_VERSION", "B2_ACTIVITY_PANEL_VERSION", "render_b2_autostat_uploads", "upload_widget_key",
             "B4_ACTIVITY_PANEL_VERSION", "render_b4_autostat_uploads",
-        ), ("autostat", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
+            "AUTOSTAT_AUTOMATIC_UPLOADS_VERSION",
+        ), ("autostat", "autostat_downloads", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
     )
     refreshed = set()
     for name, required, dependencies in modules:

@@ -13,7 +13,7 @@ from zipfile import ZipFile
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
-from automation import AutomationError
+from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
 from autostat import (
     EMAIL_HEADERS, REMARK_PREFIX, VIBER_HEADERS, SourceSelection,
     autostat_source_excluded, build_autostat_excel, build_autostat_exports, build_bel_exports, extract_contacts, has_bel_primary_keys,
@@ -22,6 +22,8 @@ from autostat import (
 from export_config import AUTOSTAT_BEL_FILENAMES
 from email_validation import validated_email
 from folder_output import MANILA_TIMEZONE
+from exports import build_export_csv, build_export_excel, build_geo_exports, build_negative_exports
+from geo_autostat import mapped_contact_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -620,6 +622,91 @@ class AutostatTests(unittest.TestCase):
 
 
 class AutostatAppTests(unittest.TestCase):
+    def test_generated_campaign_files_match_geo_reco_logs_without_the_original_upload(self):
+        records = [
+            dict(primary_key=f"KEY-{index}", cardnumber=card, indexoneuid=f"UID-{index}",
+                 email=email, phone=phone, OB=balance, product="CARDS", level=1,
+                 AREA="Mindanao", ChristmasAmnesty="QUALIFIED")
+            for index, (card, email, phone, balance) in enumerate((
+                ("001234567890123456", "one@example.com", "09171234567", 9),
+                ("001234567890123456", "two@example.com", "09181234567", 1000),
+                ("5156041234567897.0", "bad..email@example.com", "09191234567", 100),
+                ("", "missing-card@example.com", "09201234567", 2000),
+            ))
+        ]
+        source_csv = StringIO(newline="")
+        csv.writer(source_csv).writerows([
+            DEFAULT_TEMPLATE_HEADERS,
+            *[[record.get(header, record.get(header.lower(), "")) for header in DEFAULT_TEMPLATE_HEADERS]
+              for record in records],
+        ])
+        positions = {header: DEFAULT_TEMPLATE_HEADERS.index(header)
+                     for header in ("primary_key", "cardnumber", "indexoneuid", "email", "phone", "OB")}
+        original = mapped_contact_source(
+            "original.csv", source_csv.getvalue().encode(), "CSV", 1, len(DEFAULT_TEMPLATE_HEADERS), positions,
+        )
+        expected = build_autostat_exports([original], timestamp=None)
+        self.assertEqual([file.count for file in expected.files], [2, 3])
+        for builder in (build_geo_exports, build_negative_exports):
+            campaign = builder(create_default_csv_template(), records, "", 1, ".csv")
+            for excel in (False, True):
+                with self.subTest(workflow=builder.__name__, excel=excel):
+                    uploads = [Upload(
+                        Path(file.filename).with_suffix(".xlsx").name if excel else file.filename,
+                        build_export_excel(file) if excel else build_export_csv(file, protect_identifiers=True),
+                    ) for file in campaign.files]
+                    with patch("streamlit.file_uploader", return_value=uploads), patch("streamlit.download_button") as download:
+                        app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+                        app.checkbox(key="autostat_blank_time").set_value(True).run(timeout=20)
+                        self.assertEqual(len(app.exception), 0)
+                        self.assertEqual(len(app.error), 0)
+                        self.assertFalse(any(button.key == "autostat_prepare" for button in app.button))
+                        actual = app.session_state["autostat_result"]["bundle"]
+                        self.assertEqual([file.data for file in actual.files], [file.data for file in expected.files])
+                        calls = {call.kwargs.get("key"): call for call in download.call_args_list}
+                        self.assertEqual(calls["autostat_download_0"].kwargs["type"], "primary")
+                        self.assertEqual(calls["autostat_download_1"].kwargs["type"], "primary")
+
+    def test_automatic_logs_reuse_the_timestamp_and_hide_downloads_after_invalid_inputs(self):
+        uploads = [Upload("campaign.csv", b"cardnumber,email,phone\n0001,one@example.com,09171234567\n")]
+        with patch("streamlit.file_uploader", side_effect=lambda *args, **kwargs: uploads), \
+                patch("autostat_page.build_autostat_exports", wraps=build_autostat_exports) as prepare:
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            result = app.session_state["autostat_result"]
+            self.assertEqual(prepare.call_count, 1)
+            app.run(timeout=20)
+            self.assertEqual(prepare.call_count, 1)
+            self.assertEqual(app.session_state["autostat_result"]["timestamp"], result["timestamp"])
+            account = next(widget for widget in app.selectbox if widget.label == "Account number column")
+            account.select(1).run(timeout=20)
+            self.assertNotIn("autostat_result", app.session_state)
+            self.assertEqual(len(app.get("download_button")), 0)
+            self.assertEqual(prepare.call_count, 1)
+            uploads[0] = Upload("campaign.csv", b"cardnumber,email,phone\n0002,bad-email,123\n")
+            app.run(timeout=20)
+            self.assertEqual([file.count for file in app.session_state["autostat_result"]["bundle"].files], [0, 0])
+            self.assertEqual(len(app.get("download_button")), 0)
+            self.assertTrue(any("No valid email or mobile" in item.value for item in app.info))
+            self.assertEqual(len(app.exception), 0)
+
+    def test_standard_excludes_bucket_and_insurance_worksheets_like_geo_reco(self):
+        workbook = Workbook()
+        workbook.remove(workbook.active)
+        for index, name in enumerate(("GEO", "B2", "B4", "SBC INSURANCE")):
+            sheet = workbook.create_sheet(name)
+            sheet.append(["cardnumber", "email", "phone"])
+            sheet.append([f"000{index}", f"person{index}@example.com", "09171234567"])
+        data = BytesIO()
+        workbook.save(data)
+        workbook.close()
+        with patch("streamlit.file_uploader", return_value=[Upload("campaign.xlsx", data.getvalue())]):
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            result = app.session_state["autostat_result"]
+            self.assertEqual([row["Sheet"] for row in result["bundle"].summary], ["GEO"])
+            self.assertEqual([file.count for file in result["bundle"].files], [1, 1])
+            self.assertEqual(app.multiselect[0].options, ["GEO"])
+
     def test_excel_download_is_generated_only_when_requested_and_precision_issues_are_visible(self):
         source = Workbook()
         source.active.append(["cardnumber", "email"])
@@ -629,18 +716,16 @@ class AutostatAppTests(unittest.TestCase):
         source.close()
         upload = Upload("contacts.xlsx", output.getvalue())
         with patch("streamlit.file_uploader", return_value=[upload]), \
-                patch("autostat_page.build_autostat_excel", wraps=build_autostat_excel) as build_excel, \
+                patch("autostat_downloads.build_autostat_excel", wraps=build_autostat_excel) as build_excel, \
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
-            self.assertEqual(len(app.warning), 1)
-            self.assertIn("missing digits cannot be recovered", app.warning[0].value)
+            self.assertTrue(any("missing digits cannot be recovered" in warning.value for warning in app.warning))
             build_excel.assert_not_called()
             excel_download = next(call for call in download.call_args_list if call.kwargs.get("key") == "autostat_excel")
             self.assertEqual(excel_download.args[2], "AUTOSTAT.xlsx")
-            self.assertEqual(excel_download.kwargs["type"], "primary")
+            self.assertEqual(excel_download.kwargs["type"], "secondary")
             self.assertEqual(app.selectbox(key="autostat_output_format").value, "Excel (.xlsx)")
             self.assertTrue(callable(excel_download.args[1]))
             workbook = load_workbook(BytesIO(excel_download.args[1]()))
@@ -653,7 +738,6 @@ class AutostatAppTests(unittest.TestCase):
         upload = Upload("contacts.csv", b"cardnumber,email,phone\n5156041234567897.0,first@example.com,09171234567\n001234567890123456,second@example.com,09181234567\n")
         with patch("streamlit.file_uploader", return_value=[upload]), patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             expected = ["5156041234567897", "001234567890123456"]
@@ -674,9 +758,7 @@ class AutostatAppTests(unittest.TestCase):
                     self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in workbook.active["B"][1:]))
                     workbook.close()
             app.selectbox(key="autostat_output_format").select("CSV (.csv)").run(timeout=20)
-            self.assertNotIn("autostat_result", app.session_state)
-            download.reset_mock()
-            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertIn("autostat_result", app.session_state)
             calls = {call.kwargs.get("key"): call for call in download.call_args_list}
             self.assertTrue(calls["autostat_download_0"].args[2].endswith(".csv"))
             with ZipFile(BytesIO(calls["autostat_zip"].args[1])) as archive:
@@ -686,12 +768,10 @@ class AutostatAppTests(unittest.TestCase):
         uploads = [Upload("contacts.csv", b"cardnumber,email\n5156041234567897,first@example.com\n")]
         with patch("streamlit.file_uploader", side_effect=lambda *args, **kwargs: uploads):
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertIn("autostat_result", app.session_state)
             uploads[0] = Upload("contacts.csv", b"cardnumber,email\n5.15604E+15,first@example.com\n000002,second@example.com\n")
             app.run(timeout=20)
-            self.assertNotIn("autostat_result", app.session_state)
-            app.button(key="autostat_prepare").click().run(timeout=20)
+            self.assertIn("autostat_result", app.session_state)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(exported_rows(app.session_state["autostat_result"]["bundle"].files[0])[0]["Account No."], "000002")
@@ -708,7 +788,6 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.multiselect), 3)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual([(metric.label, metric.value) for metric in app.metric], [
                 ("Valid email accounts", "1"), ("Valid phone accounts", "1"),
             ])
@@ -716,24 +795,22 @@ class AutostatAppTests(unittest.TestCase):
             uploads.pop(0)
             app.run(timeout=20)
             self.assertNotIn("autostat_result", app.session_state)
-            self.assertTrue(app.button(key="autostat_prepare").disabled)
+            self.assertFalse(any(button.key == "autostat_prepare" for button in app.button))
             self.assertEqual(len(app.get("download_button")), 0)
 
     def test_blank_time_exports_empty_cells_and_changing_time_settings_rebuilds_results(self):
         upload = Upload("contacts.csv", b"cardnumber,email,phone\n0001,first@example.com,09171234567\n")
         with patch("streamlit.file_uploader", return_value=[upload]):
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             timestamp = app.session_state["autostat_result"]["timestamp"]
             self.assertEqual(timestamp.tzinfo, MANILA_TIMEZONE)
             for file in app.session_state["autostat_result"]["bundle"].files:
                 self.assertEqual(exported_rows(file)[0]["Time"], timestamp.strftime("%Y-%m-%d %I:%M:%S %p"))
 
             app.checkbox(key="autostat_blank_time").set_value(True).run(timeout=20)
-            self.assertNotIn("autostat_result", app.session_state)
+            self.assertIsNone(app.session_state["autostat_result"]["timestamp"])
             self.assertTrue(app.checkbox(key="autostat_current_time").disabled)
             self.assertEqual(len(app.date_input), 0)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["autostat_result"]
@@ -745,12 +822,11 @@ class AutostatAppTests(unittest.TestCase):
                 self.assertEqual(file.preview[0]["Time"], "")
 
             app.checkbox(key="autostat_blank_time").set_value(False).run(timeout=20)
-            self.assertNotIn("autostat_result", app.session_state)
+            self.assertIsNotNone(app.session_state["autostat_result"]["timestamp"])
             app.checkbox(key="autostat_current_time").set_value(False).run(timeout=20)
             manual_timestamp = NOW.replace(second=0, microsecond=0)
             app.date_input(key="autostat_date").set_value(manual_timestamp.date()).run(timeout=20)
             app.time_input(key="autostat_time").set_value(manual_timestamp.time()).run(timeout=20)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             for file in app.session_state["autostat_result"]["bundle"].files:
@@ -767,7 +843,6 @@ class AutostatAppTests(unittest.TestCase):
             app.selectbox(key="autostat_output_format").select("CSV (.csv)").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertFalse(any(widget.label == 'Separate BEL and CARDS using primary_key' for widget in app.checkbox))
-            app.button(key='autostat_prepare').click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state['autostat_result']
@@ -795,7 +870,6 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             account = next(widget for widget in app.selectbox if widget.label == "Account number column")
             self.assertEqual(account.value, 2)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             for file in app.session_state["autostat_result"]["bundle"].files:
@@ -816,11 +890,10 @@ class AutostatAppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader), TemporaryDirectory(prefix="autostat-test-") as directory:
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual([panel.label for panel in app.expander], ["Log settings", "Edit source columns"])
+            self.assertEqual([panel.label for panel in app.expander], ["Log settings", "Edit source columns", "Save to a folder", "Preview"])
             source_panel = app.expander[1]
             self.assertFalse(source_panel.proto.expanded)
             self.assertEqual(len(source_panel.multiselect), 8)
-            app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["autostat_result"]
@@ -855,7 +928,7 @@ class AutostatAppTests(unittest.TestCase):
             self.assertTrue(all(file.preview[0]["Remark By"] == "MBURGOS" for file in app.session_state["autostat_result"]["bundle"].files if file.count))
             uploads.pop()
             app.run(timeout=20)
-            self.assertNotIn("autostat_result", app.session_state)
+            self.assertEqual([file.count for file in app.session_state["autostat_result"]["bundle"].files], [3, 4])
 
 
 if __name__ == "__main__":

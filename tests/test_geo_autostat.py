@@ -53,8 +53,8 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
     def test_separate_email_viber_and_zip_downloads_follow_template_on_geo_and_reco(self):
         upload = Upload(workbook_data())
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
-                patch("geo_autostat.build_autostat_channel_excel", wraps=build_autostat_channel_excel) as channel_excel, \
-                patch("geo_autostat.build_autostat_excel_zip", wraps=build_autostat_excel_zip) as excel_zip, \
+                patch("autostat_downloads.build_autostat_channel_excel", wraps=build_autostat_channel_excel) as channel_excel, \
+                patch("autostat_downloads.build_autostat_excel_zip", wraps=build_autostat_excel_zip) as excel_zip, \
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
@@ -139,7 +139,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
         uploader = lambda label, **kw: uploads[0] if kw.get("key") == "source_upload" else None
         with patch("streamlit.file_uploader", side_effect=uploader), \
                 patch("geo_autostat.build_autostat_exports", wraps=build_autostat_exports) as prepare, \
-                patch("geo_autostat.build_autostat_excel", wraps=build_autostat_excel) as excel, \
+                patch("autostat_downloads.build_autostat_excel", wraps=build_autostat_excel) as excel, \
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)

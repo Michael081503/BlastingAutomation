@@ -223,7 +223,7 @@ class StartupTests(unittest.TestCase):
         self.run_isolated("""
             from io import BytesIO
             from openpyxl import load_workbook
-            import autostat, autostat_page
+            import autostat, autostat_page, autostat_downloads
             del autostat.ACCOUNT_TEXT_EXPORT_VERSION
             del autostat.build_autostat_excel
             from app_startup import refresh_application_modules
@@ -234,7 +234,7 @@ class StartupTests(unittest.TestCase):
             bundle = autostat.build_autostat_exports(
                 [autostat.SourceSelection('source.csv', data, sheet)], timestamp=None,
             )
-            workbook = load_workbook(BytesIO(autostat_page.build_autostat_excel(bundle)))
+            workbook = load_workbook(BytesIO(autostat_downloads.build_autostat_excel(bundle)))
             assert workbook['Email']['B2'].value == '5156041234567897'
             assert workbook['Email']['B2'].data_type == 's'
             workbook.close()
@@ -263,7 +263,7 @@ class StartupTests(unittest.TestCase):
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
             assert autostat.AUTOSTAT_VERSION == 14
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 11
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 12
             assert refresh_application_modules() == set()
         """)
 
@@ -482,7 +482,7 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'autostat_page' in refreshed
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 11
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 12
             assert autostat_page.render_autostat.__name__ == 'render_autostat'
             assert refresh_application_modules() == set()
         """)
@@ -612,13 +612,13 @@ class StartupTests(unittest.TestCase):
 
     def test_cached_geo_autostat_refreshes_for_separate_email_and_viber_downloads(self):
         self.run_isolated("""
-            import geo_autostat, autostat
+            import geo_autostat, autostat, autostat_downloads
             del geo_autostat.GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'geo_autostat' in refreshed
-            assert geo_autostat.build_autostat_channel_excel is autostat.build_autostat_channel_excel
-            assert geo_autostat.build_autostat_excel_zip is autostat.build_autostat_excel_zip
+            assert geo_autostat.render_autostat_downloads is autostat_downloads.render_autostat_downloads
+            assert autostat_downloads.build_autostat_excel_zip is autostat.build_autostat_excel_zip
             assert geo_autostat.GEO_AUTOSTAT_VERSION == 5
             assert refresh_application_modules() == set()
         """)
@@ -680,7 +680,25 @@ class StartupTests(unittest.TestCase):
             assert callable(autostat_page.render_b4_autostat_uploads)
             assert {'autostat_b4_uploads', 'b4_autostat_uploads'} <= set(upload_state.UPLOAD_KEYS)
             assert {'autostat_b4_result', 'b4_autostat_result'} <= upload_state.FILE_STATE_KEYS
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 11
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 12
+            assert refresh_application_modules() == set()
+        """)
+
+
+    def test_cached_autostat_pages_refresh_for_shared_downloads_and_automatic_uploads(self):
+        self.run_isolated("""
+            import autostat_downloads, autostat_page, geo_autostat
+            del autostat_page.AUTOSTAT_AUTOMATIC_UPLOADS_VERSION
+            del geo_autostat.GEO_AUTOSTAT_SHARED_DOWNLOADS_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat_page', 'geo_autostat'} <= refreshed
+            assert autostat_page.render_autostat_downloads is autostat_downloads.render_autostat_downloads
+            assert geo_autostat.render_autostat_downloads is autostat_downloads.render_autostat_downloads
+            del autostat_downloads.AUTOSTAT_DOWNLOADS_VERSION
+            refreshed = refresh_application_modules()
+            assert {'autostat_downloads', 'autostat_page', 'geo_autostat'} <= refreshed
+            assert autostat_page.render_autostat_downloads is geo_autostat.render_autostat_downloads
             assert refresh_application_modules() == set()
         """)
 

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
-from functools import partial
 
 import streamlit as st
 
-from automation import AutomationError, OB_SORT_VERSION, XLSX_MIME
+from automation import AutomationError, OB_SORT_VERSION
 from autostat import (
     AUTOSTAT_VERSION, AUTOSTAT_REMARK_BY, ContactSheet, SourceSelection, autostat_source_excluded,
-    build_autostat_channel_excel, build_autostat_excel, build_autostat_excel_zip, build_autostat_exports,
+    build_autostat_exports,
 )
+from autostat_downloads import render_autostat_downloads
 from email_validation import EMAIL_VALIDATION_VERSION
 from folder_output import MANILA_TIMEZONE
 
@@ -20,6 +20,7 @@ from folder_output import MANILA_TIMEZONE
 GEO_AUTOSTAT_VERSION = 5
 GEO_FINANCING_ACCOUNT_VERSION = 1
 GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION = 1
+GEO_AUTOSTAT_SHARED_DOWNLOADS_VERSION = 1
 
 
 def mapped_contact_source(
@@ -116,18 +117,7 @@ def render_geo_autostat(
             "No valid mobile numbers with account numbers were found for Viber. Check the selected phone column. "
             "Mobile numbers must normalize to 10 digits starting with 9."
         )
-    for column, channel, file in zip(st.columns(2), ("Email", "Viber"), bundle.files):
-        with column:
-            st.caption(f"{channel}: {file.count:,} valid accounts")
-            st.download_button(
-                f"Download AUTOSTAT_{channel}.xlsx", partial(build_autostat_channel_excel, file), f"AUTOSTAT_{channel}.xlsx",
-                mime=XLSX_MIME, on_click="ignore", key=f"geo_autostat_{channel.lower()}_excel", type="primary",
-            )
-    st.download_button(
-        "Download both AUTOSTAT files (ZIP)", partial(build_autostat_excel_zip, bundle), "AUTOSTAT_FILES.zip",
-        mime="application/zip", on_click="ignore", key="geo_autostat_zip",
-    )
-    st.download_button(
-        "Download AUTOSTAT.xlsx (Email + Viber sheets)", partial(build_autostat_excel, bundle), "AUTOSTAT.xlsx",
-        mime=XLSX_MIME, on_click="ignore", key="geo_autostat_excel",
+    render_autostat_downloads(
+        bundle, state_prefix="geo_autostat_",
+        channel_keys=("geo_autostat_email_excel", "geo_autostat_viber_excel"),
     )
