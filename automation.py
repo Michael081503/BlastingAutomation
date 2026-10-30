@@ -48,12 +48,13 @@ SOURCE_ALIASES = {
     "OB (Masterlist)": ("OB",),
     "phone_1": ("phone number", "phone no", "mobile", "mobile number", "mobile no", "contact number", "contact no", "cellphone", "cellphone number"),
 }
-MAPPING_VERSION = 7
+MAPPING_VERSION = 8
 PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 OB_SORT_VERSION = 1
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 DERIVED_TEMPLATE_HEADERS = ("doclass",)
+ASSIGNMENT_TEMPLATE_HEADERS = ("Monthly", "Terms")
 GEO_DOCLASS_BY_AREA = {
     "mindanao": "SBC GEO Mindanao",
     "r3": "SBC GEO R3",
@@ -262,7 +263,7 @@ def _column_lookup(
     missing = []
     fields = {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}
     if template:
-        fields.update((header, header) for header in DERIVED_TEMPLATE_HEADERS)
+        fields.update((header, header) for header in (*DERIVED_TEMPLATE_HEADERS, *ASSIGNMENT_TEMPLATE_HEADERS))
     elif source_columns is not None and set(source_columns) - set(fields.values()):
         raise AutomationError("The source-column mapping contains an unknown template field.")
     for source, target in fields.items():

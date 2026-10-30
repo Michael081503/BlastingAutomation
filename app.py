@@ -31,9 +31,11 @@ from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
 from geo_autostat import render_geo_autostat
 from upload_state import upload_widget_key
+from agent_cycle_page import render_agent_cycle
 
 from automation import (
     CSV_OUTPUT_ENCODINGS,
+    ASSIGNMENT_TEMPLATE_HEADERS,
     DEFAULT_TEMPLATE_HEADERS,
     DERIVED_TEMPLATE_HEADERS,
     FIELD_MAPPING,
@@ -72,7 +74,7 @@ def workbook_info(data: bytes, *, template: bool = False):
 def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
     targets = {
         normalize_header(target): target
-        for target in (*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values(), *DERIVED_TEMPLATE_HEADERS)
+        for target in (*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values(), *DERIVED_TEMPLATE_HEADERS, *ASSIGNMENT_TEMPLATE_HEADERS)
     }
     columns = [targets.get(normalize_header(header)) for header in headers]
     preview = pd.DataFrame(
@@ -118,6 +120,11 @@ def render_workbook_page() -> None:
     st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically using Financing/Card No. (cardnumber) for Account No.")
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
     st.caption("Product MC is converted to CARDS before grouping accounts into their designated files.")
+    agent_plan = render_agent_cycle()
+    if agent_plan is None:
+        st.session_state.pop("result", None)
+        return
+    assignment_date, agents = agent_plan
     with st.sidebar:
         output_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
@@ -366,6 +373,7 @@ def render_workbook_page() -> None:
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
         "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
+        assignment_date.isoformat(), agents,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
     previous_result = st.session_state.get("result")
@@ -390,13 +398,13 @@ def render_workbook_page() -> None:
                         builder = build_geo_exports if geo else build_negative_exports
                         bundle = builder(
                             template_bytes, mapped.records, template_sheet,
-                            template_header, template_extension, encoding=encoding, source_sheet=source_sheet,
+                            template_header, template_extension, encoding=encoding, source_sheet=source_sheet, agents=agents,
                         )
                     else:
                         bundle = build_sheet_exports(
                             template_bytes, mapped.records, template_sheet, template_header,
                             base_name=output_filename(source_file.name, source_sheet),
-                            label=source_sheet, template_extension=template_extension, encoding=encoding,
+                            label=source_sheet, template_extension=template_extension, encoding=encoding, agents=agents,
                         )
                     export_result = {
                         "files": bundle.files,

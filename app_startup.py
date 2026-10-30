@@ -34,6 +34,7 @@ def refresh_application_modules() -> set[str]:
             "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME", "AUTOSTAT_BEL_FILENAMES",
             "GEO_LOANS_FILENAMES_VERSION",
             "AUTOSTAT_B2_FILENAMES", "AUTOSTAT_B4_FILENAMES", "COLLECTION_AGENTS",
+            "GEO_RECO_AGENTS", "GEO_RECO_CYCLE_START",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (
@@ -41,6 +42,7 @@ def refresh_application_modules() -> set[str]:
             "PRODUCT_NORMALIZATION_VERSION", "normalize_product",
             "create_default_csv_template",
             "DERIVED_TEMPLATE_HEADERS", "geo_doclass",
+            "ASSIGNMENT_TEMPLATE_HEADERS",
             "SheetInfo.available_fields", "inspect_source_sheet",
             "SheetInfo.headers", "source_column_positions", "preview_source_rows",
             "WORKBOOK_READER_VERSION",
@@ -49,6 +51,9 @@ def refresh_application_modules() -> set[str]:
             "write_typed_template_sheet",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
         ), ("email_validation",)),
+        ("agent_cycle", (
+            "AGENT_CYCLE_VERSION", "AgentCycle", "load_cycle", "save_cycle", "cycle_agents", "assign_agents_to_accounts",
+        ), ("automation", "export_config")),
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
             "GEO_FILENAME_CONFIG_VERSION",
@@ -56,8 +61,10 @@ def refresh_application_modules() -> set[str]:
             "GROUPED_SHEET_EXPORT_VERSION",
             "EXCEL_EXPORT_VERSION", "build_export_excel", "build_excel_zip",
             "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",
-        ), ("email_validation", "export_config", "automation")),
+            "AGENT_ASSIGNMENT_EXPORT_VERSION",
+        ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
+        ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "render_agent_cycle"), ("agent_cycle", "folder_output")),
         ("autostat", (
             "AUTOSTAT_VERSION", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "build_bel_exports", "has_bel_primary_keys",

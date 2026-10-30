@@ -183,6 +183,22 @@ Validation runs locally without DNS queries, sending messages, or contacting mai
 
 ## Worksheet separation
 
+### Daily GEO & RECO agent cycle
+
+The **GEO & RECO agent cycle** panel shows the assignment date, agent names for `Monthly`, codes for `Terms`, and the upcoming three-day order. Starting **30 October 2026**, the saved default order is:
+
+| Monthly | Terms |
+| --- | --- |
+| Andrea Mamaril | APMAMARIL |
+| Rosalie Vinoya | ROSVINOYA |
+| Jenayrine Bataller | JBATALLER |
+
+The first agent moves to the end each calendar day in **Asia/Manila**: 30 October starts with APMAMARIL, 31 October with ROSVINOYA, and 1 November with JBATALLER, then the cycle repeats. The assignment date defaults to the current Manila date each day; select another date to preview or generate its assignments.
+
+Open **Change GEO & RECO agent cycle** in the sidebar to change the start date or reorder the three agents, then click **Save agent cycle**. Each agent must appear exactly once, and names and codes stay paired. The saved cycle is shared by GEO and RECO and survives **Clear all files** and new browser sessions. Settings are stored in `settings/geo_reco_agent_cycle.json` on the app's computer/server, separately from Git; back up this file when moving or replacing the server's storage. The defaults remain in `export_config.py`.
+
+Each separated product/Area/status group distributes distinct accounts evenly across the day's order after sorting by OB, highest first. Counts differ by at most one account per agent. Email and Viber retain the same agent for the same account, and duplicate source rows within a group keep the assignment. Individual channel counts can differ because some accounts have only one contact method. This also applies to all-accounts mode, previews, CSVs, Excel files, ZIPs and folder saves. Changing the date or saved order clears previous campaign downloads. Missing `Monthly` or `Terms` headers are appended to uploaded templates. B2/B4 retain their separate two-agent assignments.
+
 **GEO and RECO normalize Product first:** `MC` becomes `CARDS` before any Area, Christmas Amnesty, product, level, or Email/Viber split. Matching ignores capitalization and surrounding spaces, so `mc` and ` MC ` also become `CARDS`. These accounts follow the existing CARDS destination rules, and the exported Product value is `CARDS` in previews, CSVs, Excel files, ZIPs, and folder saves, including all-accounts mode. Other products retain their values. Original uploaded workbooks are unchanged.
 
 The following rules apply to NEGATIVE and all other source sheets without an Area column. Select one worksheet at a time using **Source sheet**. NEGATIVE keeps its configured filenames. Other worksheets prefix the same configured group filenames and ZIP name with their worksheet name, so their exports are distinguishable. For example, a sheet called `POSITIVE` creates `POSITIVE - CS AMNESTY NEGA CARDS - L1_Email.csv` for that populated group. The configured base names remain editable in `export_config.py`. Templates, validation, review groups, previews, ZIP downloads, and folder saves work identically for all worksheets.
@@ -281,7 +297,7 @@ Header matching ignores capitalization, whitespace, and punctuation. Source file
 
 Source files need an account identifier column (`Account no.` / `primary_key` or `financing/Card no.` / `cardnumber`) and at least one email or phone column. Other missing source fields stay blank in the template, and the app lists them before export. It never copies one identifier into a different identifier field or invents missing values. **Source columns** shows the actual headers and sample values. Select **Map source columns manually** to map differently named columns or resolve ambiguous headers; the controls open automatically when account/contact columns are not recognized. Mapping changes clear previous downloads. Account identifiers and contacts must use separate columns. Standard grouping requires Christmas Amnesty, product, and level; GEO grouping requires Area, Christmas Amnesty, and product. When grouping columns are missing, the app prepares a single Email file and a single Viber file with the available values. Uploaded templates still require the eleven mapped destination headers. Header detection scans the first 50 rows; change the header row manually when headers appear later. A usable account/contact sheet is preferred over summary sheets when choosing the default.
 
-The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. The three columns without mapping rules (`Monthly`, `Terms`, and `NewEndo`) are retained and left blank. AREA is filled when present in the source and otherwise stays blank. `doclass` is calculated from Area for Mindanao and R3; other or missing Areas leave it blank. No source doclass column is required. Uploaded templates keep their own header labels and order; when they include a doclass header, it is filled by the same rule. Export previews show all file headers, including columns with blank values and channels with no rows.
+The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. `Monthly` and `Terms` come from the daily GEO/RECO agent cycle; `NewEndo` remains blank. AREA is filled when present in the source and otherwise stays blank. `doclass` is calculated from Area for Mindanao and R3; other or missing Areas leave it blank. No source doclass column is required. Uploaded templates keep their own header labels and order; missing Monthly/Terms columns are appended for agent assignment. When they include a doclass header, it is filled by the same rule. Export previews show all file headers, including columns with blank values and channels with no rows.
 
 ## Output behavior
 

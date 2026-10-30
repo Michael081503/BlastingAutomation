@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+import csv
 from dataclasses import dataclass
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -29,6 +30,7 @@ from export_config import (
     OUTPUT_FILENAMES, ZIP_FILENAME,
 )
 from email_validation import validated_email
+from agent_cycle import assign_agents_to_accounts
 
 
 GROUP_LABELS = {
@@ -50,6 +52,7 @@ GEO_LOAN_PRODUCTS = frozenset({"csl", "pl", "sla"})
 GROUPED_SHEET_EXPORT_VERSION = 1
 EXCEL_EXPORT_VERSION = 2
 TYPED_EXCEL_EXPORT_VERSION = 1
+AGENT_ASSIGNMENT_EXPORT_VERSION = 1
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
     "qualified_cards": "QUALIFIED / CARDS",
@@ -224,10 +227,19 @@ def _build_channel_files(
     group_key: str,
     group_label: str,
     encoding: str,
+    agents: tuple[tuple[str, str], ...] | None = None,
 ) -> list[ExportFile]:
     if not records:
         return []
     records = sorted(records, key=lambda record: ob_sort_key(record.get("OB")), reverse=True)
+    if agents is not None:
+        records = assign_agents_to_accounts(records, agents)
+        headers = csv_template_headers(template)
+        missing = [header for header in ("Monthly", "Terms") if normalize_header(header) not in {normalize_header(value) for value in headers}]
+        if missing:
+            output = StringIO(newline="")
+            csv.writer(output).writerow([*headers, *missing])
+            template = output.getvalue().encode("utf-8-sig")
     headers = csv_template_headers(template)
     files = []
     for channel, rows in separate_channels(records).items():
@@ -282,13 +294,14 @@ def build_sheet_exports(
     label: str,
     template_extension: str = ".xlsx",
     encoding: str = "cp1252",
+    agents: tuple[tuple[str, str], ...] | None = None,
 ) -> ExportBundle:
     """Export CSV channels using an Excel or CSV template's headers."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     contactable = [record for record in records if has_contact_details(record)]
     files = _build_channel_files(
         template, contactable, base_name=base_name,
-        group_key="all", group_label=label, encoding=encoding,
+        group_key="all", group_label=label, encoding=encoding, agents=agents,
     )
     return _bundle(
         files, {"all": len(contactable)}, export_filename(base_name, ".zip"),
@@ -305,12 +318,13 @@ def build_negative_exports(
     *,
     encoding: str = "cp1252",
     source_sheet: str = "NEGATIVE",
+    agents: tuple[tuple[str, str], ...] | None = None,
 ) -> ExportBundle:
     """Apply the NEGATIVE grouping rules to any source sheet."""
     return _build_grouped_exports(
         template, records, sheet_name, header_row, template_extension,
         groups=separate_negative(records), labels=GROUP_LABELS, names=OUTPUT_FILENAMES,
-        zip_name=ZIP_FILENAME, encoding=encoding, source_sheet=source_sheet,
+        zip_name=ZIP_FILENAME, encoding=encoding, source_sheet=source_sheet, agents=agents,
     )
 
 
@@ -323,6 +337,7 @@ def build_geo_exports(
     *,
     encoding: str = "cp1252",
     source_sheet: str = "NEGATIVE",
+    agents: tuple[tuple[str, str], ...] | None = None,
 ) -> ExportBundle:
     """Create CSV files by Area, Christmas Amnesty, product, and channel."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
@@ -331,7 +346,7 @@ def build_geo_exports(
     return _build_grouped_exports(
         template, records, "", 1, ".csv", groups=separate_geo(records),
         labels=GEO_GROUP_LABELS, names=GEO_OUTPUT_FILENAMES, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
-        source_sheet=source_sheet,
+        source_sheet=source_sheet, agents=agents,
     )
 
 
@@ -340,6 +355,7 @@ def _build_grouped_exports(
     template_extension: str, *, groups: dict[str, list[dict[str, Any]]],
     labels: dict[str, str], names: dict[str, str], zip_name: str, encoding: str,
     source_sheet: str = "NEGATIVE",
+    agents: tuple[tuple[str, str], ...] | None = None,
 ) -> ExportBundle:
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     counts = {key: len(rows) for key, rows in groups.items()}
@@ -359,7 +375,7 @@ def _build_grouped_exports(
             continue
         files.extend(_build_channel_files(
             template, rows, base_name=filenames[key],
-            group_key=key, group_label=labels[key], encoding=encoding,
+            group_key=key, group_label=labels[key], encoding=encoding, agents=agents,
         ))
     return _bundle(
         files, counts, zip_name,

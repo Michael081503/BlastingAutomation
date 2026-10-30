@@ -70,7 +70,7 @@ class StartupTests(unittest.TestCase):
             geo = exports.build_geo_exports(template, records, '', 1, '.csv')
             assert geo.counts['mindanao_blank_cards'] == 1
             assert all(file.preview[0]['product'] == 'CARDS' for bundle in (reco, geo) for file in bundle.files)
-            assert automation.MAPPING_VERSION == 7
+            assert automation.MAPPING_VERSION == 8
             assert refresh_application_modules() == set()
         """)
 
@@ -344,7 +344,7 @@ class StartupTests(unittest.TestCase):
             del automation.geo_doclass
             del automation.DERIVED_TEMPLATE_HEADERS
             import app
-            assert app.MAPPING_VERSION == 7
+            assert app.MAPPING_VERSION == 8
             assert 'doclass' in app.DERIVED_TEMPLATE_HEADERS
             assert exports.geo_doclass is automation.geo_doclass
             assert folder_output.AutomationError is automation.AutomationError
@@ -389,7 +389,7 @@ class StartupTests(unittest.TestCase):
             del automation.SheetInfo.available_fields
             del automation.inspect_source_sheet
             import app
-            assert app.MAPPING_VERSION == 7
+            assert app.MAPPING_VERSION == 8
             assert exports.AutomationError is automation.AutomationError
             workbook = Workbook()
             workbook.active.append(['primary_key', 'email', 'PHONE'])
@@ -414,7 +414,7 @@ class StartupTests(unittest.TestCase):
             del export_config.AUTOSTAT_B2_FILENAMES
             del b2_matching.build_b2_exports
             import app
-            assert app.MAPPING_VERSION == 7
+            assert app.MAPPING_VERSION == 8
             assert automation.WORKBOOK_READER_VERSION == 1
             assert b2_page.build_b2_exports is b2_matching.build_b2_exports
             assert export_config.AUTOSTAT_B2_FILENAMES['CARDS'] == 'NEGATIVE B2 - CARDS'
@@ -578,6 +578,27 @@ class StartupTests(unittest.TestCase):
             assert geo_autostat.build_autostat_channel_excel is autostat.build_autostat_channel_excel
             assert geo_autostat.build_autostat_excel_zip is autostat.build_autostat_excel_zip
             assert geo_autostat.GEO_AUTOSTAT_VERSION == 4
+            assert refresh_application_modules() == set()
+        """)
+
+
+    def test_cached_modules_refresh_for_geo_reco_agent_assignment_fields(self):
+        self.run_isolated("""
+            from datetime import date
+            import automation, agent_cycle, exports, agent_cycle_page
+            del automation.ASSIGNMENT_TEMPLATE_HEADERS
+            del exports.AGENT_ASSIGNMENT_EXPORT_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'automation', 'agent_cycle', 'exports', 'agent_cycle_page'} <= refreshed
+            agents = agent_cycle.cycle_agents(agent_cycle.default_cycle(), date(2026, 10, 31))
+            assert agents[0] == ('Rosalie Vinoya', 'ROSVINOYA')
+            bundle = exports.build_negative_exports(automation.create_default_csv_template(),
+                [{'primary_key': '0001', 'email': 'one@example.com', 'product': 'CARDS', 'level': 1}],
+                '', 1, '.csv', agents=agents)
+            assert bundle.files[0].preview[0]['Monthly'] == 'Rosalie Vinoya'
+            assert bundle.files[0].preview[0]['Terms'] == 'ROSVINOYA'
+            assert b'Rosalie Vinoya,ROSVINOYA' in bundle.files[0].data
             assert refresh_application_modules() == set()
         """)
 

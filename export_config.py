@@ -94,3 +94,11 @@ COLLECTION_AGENTS = (
     ("Almera Ranceli", "AMRANCELI"),
     ("Kyarill Palima", "KPALIMA"),
 )
+
+# GEO/RECO daily cycle. The first agent moves to the end every calendar day.
+GEO_RECO_AGENTS = (
+    ("Andrea Mamaril", "APMAMARIL"),
+    ("Rosalie Vinoya", "ROSVINOYA"),
+    ("Jenayrine Bataller", "JBATALLER"),
+)
+GEO_RECO_CYCLE_START = "2026-10-30"

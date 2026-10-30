@@ -1368,7 +1368,7 @@ class AppTests(unittest.TestCase):
                 "source_NEGATIVE_filled_Email.csv", "source_NEGATIVE_filled_Viber.csv",
             ])
             preview = app.main.dataframe[-1].value
-            self.assertEqual(list(preview.columns), headers)
+            self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms"])
             self.assertEqual(preview.loc[0, "Custom Field"], "")
             self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
             upload = FakeUpload("bad.xlsx", source_file(headers=[header for header in FIELD_MAPPING if header != "phone_1"]))
@@ -1409,7 +1409,7 @@ class AppTests(unittest.TestCase):
                     result = app.session_state["result"]
                     self.assertEqual(len(result["files"]), 2)
                     preview = app.main.dataframe[-1].value
-                    self.assertEqual(list(preview.columns), headers)
+                    self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms"])
                     self.assertEqual(preview.loc[0, "Extra"], "")
                     self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
                     self.assertEqual(preview.loc[0, "endodate"], "2026-10-26 00:00:00")
@@ -1419,7 +1419,7 @@ class AppTests(unittest.TestCase):
                             self.assertTrue(file.filename.endswith(".csv"))
                             self.assertEqual(archive.read(file.filename), file.data)
                             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
-                            self.assertEqual(rows[0], headers)
+                            self.assertEqual(rows[0], [*headers, "Monthly", "Terms"])
                             self.assertEqual(len(rows), 2)
                             values = dict(zip(headers, rows[1]))
                             self.assertEqual(values["Extra"], "")
@@ -1460,13 +1460,15 @@ class AppTests(unittest.TestCase):
                 self.assertEqual(csv_template_headers(file.data), list(DEFAULT_TEMPLATE_HEADERS))
                 rows = list(csv.DictReader(StringIO(file.data.decode("utf-8-sig"))))
                 for row in rows:
-                    for header in ("Monthly", "Terms", "doclass", "AREA", "NewEndo"):
+                    for header in ("doclass", "AREA", "NewEndo"):
                         self.assertEqual(row[header], "")
+                    self.assertEqual((row["Monthly"], row["Terms"]),
+                                     tuple(app.table[0].value.loc[0, ["Monthly", "Terms"]]))
             preview = app.main.dataframe[-1].value
             self.assertEqual(list(preview.columns), list(DEFAULT_TEMPLATE_HEADERS))
             self.assertEqual(preview.loc[0, "Level"], "Level 1")
             self.assertEqual(preview.loc[0, "Product"], "CARDS")
-            self.assertEqual(preview.loc[0, "Monthly"], "")
+            self.assertEqual(preview.loc[0, "Monthly"], app.table[0].value.loc[0, "Monthly"])
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
             self.assertEqual(len(app.get("download_button")), 22)

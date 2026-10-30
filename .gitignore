@@ -14,3 +14,4 @@ output/
 *.csv
 *.zip
 *.log
+settings/geo_reco_agent_cycle.json
