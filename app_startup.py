@@ -69,7 +69,7 @@ def refresh_application_modules() -> set[str]:
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "render_agent_cycle"), ("agent_cycle", "folder_output")),
         ("autostat", (
-            "AUTOSTAT_VERSION", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
+            "AUTOSTAT_VERSION", "AUTOSTAT_REMARK_BY", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "build_bel_exports", "has_bel_primary_keys",
             "ACCOUNT_DEDUP_VERSION", "ACCOUNT_IDENTITY_VERSION", "unique_account_contacts",
             "COMPILED_OUTPUT_VERSION", "BLANK_TIMESTAMP_VERSION",

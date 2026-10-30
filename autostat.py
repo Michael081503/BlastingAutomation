@@ -26,7 +26,8 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 13
+AUTOSTAT_VERSION = 14
+AUTOSTAT_REMARK_BY = "MBURGOS"
 ACCOUNT_TEXT_EXPORT_VERSION = 2
 ACCOUNT_NUMBER_NORMALIZATION_VERSION = 1
 ACCOUNT_INTEGRITY_VERSION = 1
@@ -561,14 +562,14 @@ def build_autostat_excel_zip(bundle: AutostatBundle) -> bytes:
 
 
 def build_bel_exports(
-    sources: list[SourceSelection], *, timestamp: datetime, remark_by: str = "MBURGOS",
+    sources: list[SourceSelection], *, timestamp: datetime, remark_by: str = AUTOSTAT_REMARK_BY,
     encoding: str = "cp1252",
 ) -> AutostatBundle:
     """Create exactly two group logs, retaining Email and Viber status/remark text."""
+    # Keep the parameter compatible with existing callers; the author is fixed.
+    remark_by = AUTOSTAT_REMARK_BY
     if not sources:
         raise AutomationError("Select at least one source sheet.")
-    if not remark_by.strip():
-        raise AutomationError("Enter Remark By before preparing the files.")
     if set(AUTOSTAT_BEL_FILENAMES) != {"BEL", "Other"}:
         raise AutomationError("Set both BEL and Other filenames in export_config.py.")
     names = {group: export_filename(name, ".csv") for group, name in AUTOSTAT_BEL_FILENAMES.items()}
@@ -590,17 +591,16 @@ def build_bel_exports(
 
 
 def build_autostat_exports(
-    sources: list[SourceSelection], *, timestamp: datetime | None, remark_by: str = "MBURGOS",
+    sources: list[SourceSelection], *, timestamp: datetime | None, remark_by: str = AUTOSTAT_REMARK_BY,
     encoding: str = "cp1252",
 ) -> AutostatBundle:
     """Compile included sources into one deduplicated file per channel, highest OB first."""
+    remark_by = AUTOSTAT_REMARK_BY
     if not sources:
         raise AutomationError("Select at least one source sheet.")
     sources = [source for source in sources if not autostat_source_excluded(source.name)]
     if not sources:
         raise AutomationError("All selected files are excluded from AUTOSTAT: SBC INSURANCE, B2 and B4.")
-    if not remark_by.strip():
-        raise AutomationError("Enter Remark By before preparing the files.")
     time_text = "" if timestamp is None else timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
     summaries = []
     channels = {"Email": [], "Viber": []}

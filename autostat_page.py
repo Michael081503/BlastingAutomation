@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 
 from automation import AutomationError, CSV_OUTPUT_ENCODINGS, OB_SORT_VERSION, normalize_header
 from autostat import (
-    AUTOSTAT_VERSION, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, VIBER_HEADERS, SourceSelection,
+    AUTOSTAT_VERSION, AUTOSTAT_REMARK_BY, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, VIBER_HEADERS, SourceSelection,
     autostat_source_excluded, build_autostat_excel, build_autostat_exports, inspect_contact_source,
     build_autostat_channel_excel, build_autostat_excel_zip,
 )
@@ -28,7 +28,7 @@ from folder_output import MANILA_TIMEZONE, save_files_to_folder
 from upload_state import upload_widget_key
 
 
-AUTOSTAT_PAGE_VERSION = 10
+AUTOSTAT_PAGE_VERSION = 11
 B4_ACTIVITY_PANEL_VERSION = 1
 B2_UPLOAD_VERSION = 1
 B2_ACTIVITY_PANEL_VERSION = 1
@@ -107,8 +107,9 @@ def _render_autostat_uploads(
     fixed_timestamp = None
     default_collector = ""
     with options if compact else st.expander("Log settings"):
-        remark_by = st.text_input("Remarks By" if b2 else "Remark By", value="PBBALUYOT" if b2 else "MBURGOS",
-                                  key=f"{state_prefix}remark_by")
+        st.session_state[f"{state_prefix}remark_by"] = AUTOSTAT_REMARK_BY
+        st.text_input("Remarks By" if b2 else "Remark By", key=f"{state_prefix}remark_by", disabled=True)
+        remark_by = AUTOSTAT_REMARK_BY
         if b2:
             default_collector = st.text_input(
                 "Default collector (when missing in the source)", key=f"{state_prefix}collector",

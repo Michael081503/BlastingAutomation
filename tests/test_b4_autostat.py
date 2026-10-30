@@ -45,7 +45,7 @@ class Upload(BytesIO):
 class B4AutostatTests(unittest.TestCase):
     def test_same_b2_template_values_with_b4_filenames_primary_keys_and_terms(self):
         b2 = build_b2_autostat_exports([source()], timestamp=NOW)
-        b4 = build_b4_autostat_exports([source()], timestamp=NOW)
+        b4 = build_b4_autostat_exports([source()], timestamp=NOW, remark_by="PBBALUYOT")
         self.assertEqual([file.filename for file in b4.files],
                          ["AUTOSTAT_B4_Email.csv", "AUTOSTAT_B4_SMS.csv", "AUTOSTAT_B4_Viber.csv"])
         self.assertEqual([file.headers for file in b4.files], [file.headers for file in b2.files])
@@ -55,6 +55,7 @@ class B4AutostatTests(unittest.TestCase):
             header = "Account No." if file.filename.endswith("Email.csv") else "Account number"
             self.assertEqual([row[header] for row in rows(file)], ["000000000000000002", "000000000000000001"])
             self.assertTrue(all(row["REMARKS DATE"] == "10/30/2026 14:00:00" for row in rows(file)))
+            self.assertTrue(all(row["REMARKS BY"] == "MBURGOS" for row in rows(file)))
         self.assertEqual([row["Collector"] for row in rows(b4.files[0])], ["KPALIMA", "AMRANCELI"])
         self.assertEqual(rows(b4.files[0])[0]["REMARKS"], "two@example.com | EMAIL SENT | KPALIMA")
         self.assertEqual(rows(b4.files[1])[0]["Mobile Number"], "09181234567")
@@ -68,6 +69,7 @@ class B4AutostatTests(unittest.TestCase):
             self.assertEqual([cell.value for cell in sheet[column][1:]], ["000000000000000002", "000000000000000001"])
             self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in sheet[column][1:]))
             self.assertEqual(sheet["F2"].value, "10/30/2026 14:00:00")
+            self.assertEqual(sheet["E2"].value, "MBURGOS")
         workbook.close()
         with ZipFile(BytesIO(build_autostat_excel_zip(bundle))) as archive:
             self.assertEqual(archive.namelist(), ["AUTOSTAT_B4_Email.xlsx", "AUTOSTAT_B4_SMS.xlsx", "AUTOSTAT_B4_Viber.xlsx"])
@@ -131,7 +133,8 @@ class B4AutostatPageTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertIn("NEW-B4-ACCOUNT", {row["Account No."] for row in rows(app.session_state["b4_autostat_result"]["bundle"].files[0])})
             self.assertEqual(app.session_state["geo_b2_autostat_result"]["timestamp"], b2["timestamp"])
-            app.text_input(key="b4_autostat_remark_by").set_value("B4USER").run(timeout=20)
+            app.session_state["b4_autostat_remark_by"] = "B4USER"
+            app.run(timeout=20)
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertNotIn("b4_autostat_result", app.session_state)
@@ -139,7 +142,8 @@ class B4AutostatPageTests(unittest.TestCase):
             self.assertEqual(len(app.get("download_button")), 0)
             uploads["b4_autostat_uploads_clear_1"] = [Upload()]
             app.run(timeout=20)
-            self.assertEqual(app.text_input(key="b4_autostat_remark_by").value, "B4USER")
+            self.assertEqual(app.text_input(key="b4_autostat_remark_by").value, "MBURGOS")
+            self.assertTrue(app.text_input(key="b4_autostat_remark_by").proto.disabled)
             self.assertIn("b4_autostat_result", app.session_state)
 
 

@@ -107,7 +107,7 @@ class ClearUploadPageTests(unittest.TestCase):
                 self.assertEqual(len(app.exception), 0)
                 self.assertNotIn(prefix + "result", app.session_state)
                 self.assertEqual(len(app.get("download_button")), 0)
-                self.assertEqual(app.text_input(key=prefix + "remark_by").value, "CUSTOM")
+                self.assertEqual(app.text_input(key=prefix + "remark_by").value, "MBURGOS")
                 self.assertEqual(app.radio(key="autostat_upload_type").value, mode)
                 app.run(timeout=20)
                 self.assertNotIn(prefix + "result", app.session_state)
@@ -145,7 +145,7 @@ class ClearUploadPageTests(unittest.TestCase):
             uploads["geo_b2_autostat_uploads_clear_1"] = [activity]
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.text_input(key="geo_b2_autostat_remark_by").value, "CUSTOM")
+            self.assertEqual(app.text_input(key="geo_b2_autostat_remark_by").value, "MBURGOS")
             self.assertIn("geo_b2_autostat_result", app.session_state)
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertNotIn("geo_b2_autostat_result", app.session_state)

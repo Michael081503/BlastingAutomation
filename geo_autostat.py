@@ -10,14 +10,14 @@ import streamlit as st
 
 from automation import AutomationError, OB_SORT_VERSION, XLSX_MIME
 from autostat import (
-    AUTOSTAT_VERSION, ContactSheet, SourceSelection, autostat_source_excluded,
+    AUTOSTAT_VERSION, AUTOSTAT_REMARK_BY, ContactSheet, SourceSelection, autostat_source_excluded,
     build_autostat_channel_excel, build_autostat_excel, build_autostat_excel_zip, build_autostat_exports,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
 from folder_output import MANILA_TIMEZONE
 
 
-GEO_AUTOSTAT_VERSION = 4
+GEO_AUTOSTAT_VERSION = 5
 GEO_FINANCING_ACCOUNT_VERSION = 1
 GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION = 1
 
@@ -60,7 +60,9 @@ def render_geo_autostat(
         st.caption("AUTOSTAT excludes SBC INSURANCE, B2 and B4 files and worksheets.")
         return
     with st.expander("AutoStat log settings"):
-        remark_by = st.text_input("Remark By", value="MBURGOS", key="geo_autostat_remark_by")
+        st.session_state["geo_autostat_remark_by"] = AUTOSTAT_REMARK_BY
+        st.text_input("Remark By", key="geo_autostat_remark_by", disabled=True)
+        remark_by = AUTOSTAT_REMARK_BY
         blank_time = st.checkbox("Leave date and time blank", key="geo_autostat_blank_time")
     signature = (
         GEO_AUTOSTAT_VERSION, AUTOSTAT_VERSION, EMAIL_VALIDATION_VERSION, OB_SORT_VERSION,

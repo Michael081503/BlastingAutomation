@@ -87,7 +87,7 @@ class B2AutostatTests(unittest.TestCase):
         self.assertEqual(email, {
             "Name": "Sample Person", "Account No.": "0005156041234567897",
             "STATUS CODE": "EMAIL BLAST SENT - WAITING FOR REPLY",
-            "REMARKS": "User@example.com | EMAIL SENT | COLLECTOR1", "REMARKS BY": "PBBALUYOT",
+            "REMARKS": "User@example.com | EMAIL SENT | COLLECTOR1", "REMARKS BY": "MBURGOS",
             "REMARKS DATE": "10/30/2026 16:02:03", "Email": "User@example.com", "Collector": "COLLECTOR1",
         })
         for row, channel, remark in (
@@ -97,7 +97,7 @@ class B2AutostatTests(unittest.TestCase):
             self.assertEqual(row, {
                 "Account number": "0005156041234567897", "Name": "Sample Person",
                 "STATUS CODE": f"{channel} BLAST SENT - WAITING FOR REPLY", "REMARKS": remark,
-                "REMARKS BY": "PBBALUYOT", "REMARKS DATE": "10/30/2026 16:02:03", "Mobile Number": "09171234567",
+                "REMARKS BY": "MBURGOS", "REMARKS DATE": "10/30/2026 16:02:03", "Mobile Number": "09171234567",
             })
         with ZipFile(BytesIO(bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
@@ -154,7 +154,7 @@ class B2AutostatTests(unittest.TestCase):
         self.assertEqual([row["Collector"] for row in rows(bundle.files[0])], ["FOURTH", "SECOND", "FIRST"])
         self.assertEqual([row["Name"] for row in rows(bundle.files[1])], ["Second identity", "Phone only", "First valid"])
         for file in bundle.files:
-            self.assertTrue(all(row["REMARKS DATE"] == "" and row["REMARKS BY"] == "OTHER" for row in rows(file)))
+            self.assertTrue(all(row["REMARKS DATE"] == "" and row["REMARKS BY"] == "MBURGOS" for row in rows(file)))
         self.assertEqual(bundle.summary[0]["Invalid emails"], 1)
         self.assertEqual(bundle.summary[0]["Invalid phones"], 1)
         self.assertEqual(bundle.summary[0]["Missing account"], 1)
@@ -200,8 +200,8 @@ class B2AutostatTests(unittest.TestCase):
                     self.assertEqual([row[header] for row in rows(file)], ["00004", "00001"])
                     self.assertEqual([row["Name"] for row in rows(file)], ["After", "Before"])
                 self.assertEqual([row["Collector"] for row in rows(bundle.files[0])], ["KPALIMA", "AMRANCELI"])
-        with self.assertRaisesRegex(AutomationError, "Remarks By"):
-            build_b2_autostat_exports([source(b"Account,email\n1,a@example.com\n")], timestamp=None, remark_by=" ")
+        bundle = build_b2_autostat_exports([source(b"Account,email\n1,a@example.com\n")], timestamp=None, remark_by=" ")
+        self.assertEqual(rows(bundle.files[0])[0]["REMARKS BY"], "MBURGOS")
 
     def test_excel_and_zip_preserve_full_identifiers_mobile_numbers_and_literal_names(self):
         selection = source(b"cardnumber,FullName,email,phone\n0005156041234567897,=literal,one@example.com,09171234567\n")
@@ -215,6 +215,7 @@ class B2AutostatTests(unittest.TestCase):
             name_cell = sheet["A2" if sheet.title == "B2_Email" else "B2"]
             self.assertEqual((name_cell.value, name_cell.data_type), ("=literal", "s"))
             self.assertEqual(sheet["F2"].value, "10/30/2026 16:02:03")
+            self.assertEqual(sheet["E2"].value, "MBURGOS")
         workbook.close()
         with ZipFile(BytesIO(build_autostat_excel_zip(bundle))) as archive:
             for file in bundle.files:
@@ -256,7 +257,8 @@ class B2AutostatPageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             app.radio(key="autostat_upload_type").set_value("B2").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.text_input(key="autostat_b2_remark_by").value, "PBBALUYOT")
+            self.assertEqual(app.text_input(key="autostat_b2_remark_by").value, "MBURGOS")
+            self.assertTrue(app.text_input(key="autostat_b2_remark_by").proto.disabled)
             self.assertFalse(app.button(key="autostat_b2_prepare").disabled)
             app.button(key="autostat_b2_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)

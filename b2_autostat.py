@@ -7,14 +7,14 @@ from datetime import datetime
 
 from automation import AutomationError, normalize_header, ob_sort_key, source_column_positions
 from autostat import (
-    AutostatBundle, ContactRows, ContactSheet, SourceSelection,
+    AUTOSTAT_REMARK_BY, AutostatBundle, ContactRows, ContactSheet, SourceSelection,
     _add_contact_row, _bundle, _contact_summary, _log_file, _read_rows,
     account_number_text, unique_account_contacts,
 )
 
 
-B2_AUTOSTAT_VERSION = 6
-B4_AUTOSTAT_VERSION = 2
+B2_AUTOSTAT_VERSION = 7
+B4_AUTOSTAT_VERSION = 3
 B2_B4_REMARK_DATE_VERSION = 1
 B2_PRIMARY_KEY_VERSION = 1
 B2_COLLECTOR_TERMS_VERSION = 1
@@ -57,15 +57,14 @@ def _text(value) -> str:
 
 def build_b2_autostat_exports(
     sources: list[B2ActivitySource], *, timestamp: datetime | None,
-    remark_by: str = "PBBALUYOT", default_collector: str = "", encoding: str = "cp1252", bucket: int = 2,
+    remark_by: str = AUTOSTAT_REMARK_BY, default_collector: str = "", encoding: str = "cp1252", bucket: int = 2,
 ) -> AutostatBundle:
     """Fill template fields from current uploads, keeping one contact per account and identity."""
+    remark_by = AUTOSTAT_REMARK_BY
     if bucket not in (2, 4):
         raise AutomationError("Choose B2 or B4 for the activity template.")
     if not sources:
         raise AutomationError(f"Select at least one B{bucket} source sheet.")
-    if not remark_by.strip():
-        raise AutomationError(f"Enter Remarks By before preparing the B{bucket} files.")
     time_text = "" if timestamp is None else timestamp.strftime("%m/%d/%Y %H:%M:%S")
     channels = {"Email": [], "Phone": []}
     seen = {"email": set(), "viber": set()}
@@ -144,7 +143,7 @@ def build_b2_autostat_exports(
 
 def build_b4_autostat_exports(
     sources: list[B2ActivitySource], *, timestamp: datetime | None,
-    remark_by: str = "PBBALUYOT", default_collector: str = "", encoding: str = "cp1252",
+    remark_by: str = AUTOSTAT_REMARK_BY, default_collector: str = "", encoding: str = "cp1252",
 ) -> AutostatBundle:
     """Use the B2 layouts for B4, retaining primary_key and Terms collector codes."""
     return build_b2_autostat_exports(sources, timestamp=timestamp, remark_by=remark_by,

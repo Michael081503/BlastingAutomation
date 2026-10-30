@@ -230,10 +230,13 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader), patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             app.checkbox(key="geo_autostat_blank_time").set_value(True).run(timeout=20)
-            app.text_input(key="geo_autostat_remark_by").set_value("USER2").run(timeout=20)
+            app.session_state["geo_autostat_remark_by"] = "USER2"
+            app.run(timeout=20)
+            self.assertEqual(app.text_input(key="geo_autostat_remark_by").value, "MBURGOS")
+            self.assertTrue(app.text_input(key="geo_autostat_remark_by").proto.disabled)
             result = app.session_state["geo_autostat_result"]
             self.assertIsNone(result["timestamp"])
-            self.assertTrue(all(row["Time"] == "" and row["Remark By"] == "USER2" for file in result["bundle"].files for row in log_rows(file)))
+            self.assertTrue(all(row["Time"] == "" and row["Remark By"] == "MBURGOS" for file in result["bundle"].files for row in log_rows(file)))
             uploads[0] = Upload(workbook_data(first_card="5.15604E+15"))
             download.reset_mock()
             app.run(timeout=20)

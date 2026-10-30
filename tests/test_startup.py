@@ -52,6 +52,28 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_modules_refresh_to_mburgos_as_the_only_autostat_author(self):
+        self.run_isolated("""
+            import autostat, b2_autostat, autostat_page, geo_autostat
+            del autostat.AUTOSTAT_REMARK_BY
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat', 'b2_autostat', 'autostat_page', 'geo_autostat'} <= refreshed
+            assert autostat.AUTOSTAT_REMARK_BY == 'MBURGOS'
+            assert autostat_page.AUTOSTAT_REMARK_BY == geo_autostat.AUTOSTAT_REMARK_BY == 'MBURGOS'
+            data = b'primary_key,cardnumber,email,phone,Terms\\n000123,CARD,one@example.com,09171234567,KPALIMA\\n'
+            source = autostat.SourceSelection('accounts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
+            selection = b2_autostat.B2ActivitySource(source, *b2_autostat.b2_metadata_columns(source.sheet.headers))
+            for author in ('PBBALUYOT', 'OTHER', ''):
+                bundle = autostat.build_autostat_exports([source], timestamp=None, remark_by=author)
+                assert all(file.preview[0]['Remark By'] == 'MBURGOS' for file in bundle.files)
+                for builder in (b2_autostat.build_b2_autostat_exports, b2_autostat.build_b4_autostat_exports):
+                    bundle = builder([selection], timestamp=None, remark_by=author)
+                    assert all(file.preview[0]['REMARKS BY'] == 'MBURGOS' for file in bundle.files)
+                    assert bundle.files[0].preview[0]['Collector'] == 'KPALIMA'
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_modules_refresh_for_mc_product_normalization_before_grouping(self):
         self.run_isolated("""
             import automation, exports
@@ -131,7 +153,7 @@ class StartupTests(unittest.TestCase):
             source = autostat.SourceSelection('accounts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
             bundle = autostat_page.build_autostat_exports([source], timestamp=None)
             assert [row['Account No.'] for row in bundle.files[0].preview] == ['5156041234567897', '000123']
-            assert autostat_page.AUTOSTAT_VERSION == 13
+            assert autostat_page.AUTOSTAT_VERSION == 14
             assert refresh_application_modules() == set()
         """)
 
@@ -154,7 +176,7 @@ class StartupTests(unittest.TestCase):
             bundle = b2_autostat.build_b2_autostat_exports([b2_autostat.B2ActivitySource(source)], timestamp=None)
             assert [row['Account No.'] for row in bundle.files[0].preview] == ['0001', '0003']
             assert bundle.summary[0]['Source error rows skipped'] == 1
-            assert autostat.AUTOSTAT_VERSION == 13
+            assert autostat.AUTOSTAT_VERSION == 14
             assert autostat_page.build_autostat_exports is autostat.build_autostat_exports
             assert refresh_application_modules() == set()
         """)
@@ -240,8 +262,8 @@ class StartupTests(unittest.TestCase):
             assert [file.filename for file in bundle.files] == ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv']
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
-            assert autostat.AUTOSTAT_VERSION == 13
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 10
+            assert autostat.AUTOSTAT_VERSION == 14
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 11
             assert refresh_application_modules() == set()
         """)
 
@@ -460,7 +482,7 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'autostat_page' in refreshed
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 10
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 11
             assert autostat_page.render_autostat.__name__ == 'render_autostat'
             assert refresh_application_modules() == set()
         """)
@@ -477,8 +499,8 @@ class StartupTests(unittest.TestCase):
             assert {'b2_autostat', 'autostat_page'} <= refreshed
             assert autostat_page.build_b2_autostat_exports is b2_autostat.build_b2_autostat_exports
             assert autostat_page.B2_UPLOAD_VERSION == 1
-            assert b2_autostat.B2_AUTOSTAT_VERSION == 6
-            assert b2_autostat.B4_AUTOSTAT_VERSION == 2
+            assert b2_autostat.B2_AUTOSTAT_VERSION == 7
+            assert b2_autostat.B4_AUTOSTAT_VERSION == 3
             data = b'cardnumber,primary_key,email,phone,Collector,Terms\\nCARD,000123,one@example.com,09171234567,OLD,AGENT1\\n'
             import autostat
             source = autostat.SourceSelection('B2.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
@@ -507,7 +529,7 @@ class StartupTests(unittest.TestCase):
             source = geo_autostat.mapped_contact_source('source.csv', b'', 'CSV', 1, 3,
                 {'primary_key': 0, 'cardnumber': 1, 'email': 2})
             assert source.sheet.account_column == 1
-            assert geo_autostat.GEO_AUTOSTAT_VERSION == 4
+            assert geo_autostat.GEO_AUTOSTAT_VERSION == 5
             assert refresh_application_modules() == set()
         """)
 
@@ -597,7 +619,7 @@ class StartupTests(unittest.TestCase):
             assert 'geo_autostat' in refreshed
             assert geo_autostat.build_autostat_channel_excel is autostat.build_autostat_channel_excel
             assert geo_autostat.build_autostat_excel_zip is autostat.build_autostat_excel_zip
-            assert geo_autostat.GEO_AUTOSTAT_VERSION == 4
+            assert geo_autostat.GEO_AUTOSTAT_VERSION == 5
             assert refresh_application_modules() == set()
         """)
 
@@ -658,7 +680,7 @@ class StartupTests(unittest.TestCase):
             assert callable(autostat_page.render_b4_autostat_uploads)
             assert {'autostat_b4_uploads', 'b4_autostat_uploads'} <= set(upload_state.UPLOAD_KEYS)
             assert {'autostat_b4_result', 'b4_autostat_result'} <= upload_state.FILE_STATE_KEYS
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 10
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 11
             assert refresh_application_modules() == set()
         """)
 
