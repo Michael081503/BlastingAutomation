@@ -1,4 +1,4 @@
-"""Build B2 activity logs using the supplied Email, SMS and Viber layouts."""
+"""Build B2/B4 activity logs using the supplied Email, SMS and Viber layouts."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ from autostat import (
 )
 
 
-B2_AUTOSTAT_VERSION = 4
+B2_AUTOSTAT_VERSION = 5
+B4_AUTOSTAT_VERSION = 1
 B2_PRIMARY_KEY_VERSION = 1
 B2_COLLECTOR_TERMS_VERSION = 1
 B2_EMAIL_HEADERS = (
@@ -55,18 +56,23 @@ def _text(value) -> str:
 
 def build_b2_autostat_exports(
     sources: list[B2ActivitySource], *, timestamp: datetime | None,
-    remark_by: str = "PBBALUYOT", default_collector: str = "", encoding: str = "cp1252",
+    remark_by: str = "PBBALUYOT", default_collector: str = "", encoding: str = "cp1252", bucket: int = 2,
 ) -> AutostatBundle:
     """Fill template fields from current uploads, keeping one contact per account and identity."""
+    if bucket not in (2, 4):
+        raise AutomationError("Choose B2 or B4 for the activity template.")
     if not sources:
-        raise AutomationError("Select at least one B2 source sheet.")
+        raise AutomationError(f"Select at least one B{bucket} source sheet.")
     if not remark_by.strip():
-        raise AutomationError("Enter Remarks By before preparing the B2 files.")
+        raise AutomationError(f"Enter Remarks By before preparing the B{bucket} files.")
     time_text = "" if timestamp is None else timestamp.strftime("%Y-%m-%d %H:%M:%S")
     channels = {"Email": [], "Phone": []}
     seen = {"email": set(), "viber": set()}
     summaries = []
     for selection in sources:
+        headers = {normalize_header(header) for header in selection.source.sheet.headers}
+        if bucket == 4 and {"accountkey", "contractnumber", "bucketcode"} <= headers and "primarykey" not in headers:
+            raise AutomationError("Upload the B4 CARDS/BEL output files containing primary_key, not the full endorsement database.")
         source = replace(selection.source, sheet=b2_account_sheet(selection.source.sheet))
         labels = [normalize_header(header) for header in source.sheet.headers]
         identity_column = next((labels.index(alias) for alias in ("indexoneuid", "oldic")
@@ -129,7 +135,16 @@ def build_b2_autostat_exports(
             yield row
 
     return _bundle([
-        _log_file(f"AUTOSTAT_B2_{channel}.csv", B2_EMAIL_HEADERS if channel == "Email" else B2_PHONE_HEADERS,
+        _log_file(f"AUTOSTAT_B{bucket}_{channel}.csv", B2_EMAIL_HEADERS if channel == "Email" else B2_PHONE_HEADERS,
                   activity_rows(channel), encoding)
         for channel in B2_CHANNELS
     ], summaries)
+
+
+def build_b4_autostat_exports(
+    sources: list[B2ActivitySource], *, timestamp: datetime | None,
+    remark_by: str = "PBBALUYOT", default_collector: str = "", encoding: str = "cp1252",
+) -> AutostatBundle:
+    """Use the B2 layouts for B4, retaining primary_key and Terms collector codes."""
+    return build_b2_autostat_exports(sources, timestamp=timestamp, remark_by=remark_by,
+                                     default_collector=default_collector, encoding=encoding, bucket=4)

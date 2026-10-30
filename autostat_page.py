@@ -20,7 +20,7 @@ from autostat import (
 )
 from b2_autostat import (
     B2_AUTOSTAT_VERSION, B2_COLLECTOR_TERMS_VERSION, B2_EMAIL_HEADERS, B2_PHONE_HEADERS, B2_PRIMARY_KEY_VERSION, B2ActivitySource,
-    b2_account_sheet, b2_metadata_columns, build_b2_autostat_exports,
+    b2_account_sheet, b2_metadata_columns, build_b2_autostat_exports, build_b4_autostat_exports, B4_AUTOSTAT_VERSION,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
 from export_config import OUTPUT_FOLDER
@@ -28,7 +28,8 @@ from folder_output import MANILA_TIMEZONE, save_files_to_folder
 from upload_state import upload_widget_key
 
 
-AUTOSTAT_PAGE_VERSION = 9
+AUTOSTAT_PAGE_VERSION = 10
+B4_ACTIVITY_PANEL_VERSION = 1
 B2_UPLOAD_VERSION = 1
 B2_ACTIVITY_PANEL_VERSION = 1
 COMPACT_SUMMARY_VERSION = 1
@@ -37,8 +38,9 @@ GROUPED_SOURCE_SETTINGS_VERSION = 1
 
 def render_autostat() -> None:
     st.title("AUTOSTAT")
-    upload_type = st.radio("Upload type", ("Standard", "B2"), horizontal=True, key="autostat_upload_type")
-    _render_autostat_uploads(b2=upload_type == "B2")
+    upload_type = st.radio("Upload type", ("Standard", "B2", "B4"), horizontal=True, key="autostat_upload_type")
+    _render_autostat_uploads(b2=upload_type != "Standard", bucket=4 if upload_type == "B4" else 2,
+                             auto_prepare=upload_type == "B4", compact=upload_type == "B4")
 
 
 def render_b2_autostat_uploads(*, encoding: str) -> None:
@@ -53,17 +55,33 @@ def render_b2_autostat_uploads(*, encoding: str) -> None:
                              uploads=uploads, auto_prepare=True)
 
 
+def render_b4_autostat_uploads(*, encoding: str) -> None:
+    """Automatically prepare B4 logs from the CARDS/BEL files in their own panel."""
+    uploads = st.file_uploader(
+        "B4 source files", type=["xlsx", "csv"], accept_multiple_files=True,
+        key=upload_widget_key("b4_autostat_uploads"),
+        help="Upload the B4 CARDS/BEL output files. The endorsement database is not needed for these activity logs.",
+    )
+    if not uploads:
+        st.session_state.pop("b4_autostat_result", None)
+        return
+    _render_autostat_uploads(b2=True, bucket=4, encoding=encoding, state_prefix="b4_autostat_",
+                             uploads=uploads, auto_prepare=True, compact=True)
+
+
 def _render_autostat_uploads(
     *, b2: bool, encoding: str | None = None, state_prefix: str | None = None,
-    uploads=None, auto_prepare: bool = False,
+    uploads=None, auto_prepare: bool = False, bucket: int = 2, compact: bool = False,
 ) -> None:
-    state_prefix = state_prefix or ("autostat_b2_" if b2 else "autostat_")
+    state_prefix = state_prefix or (f"autostat_b{bucket}_" if b2 else "autostat_")
     result_key = state_prefix + "result"
-    workbook_name = "AUTOSTAT_B2" if b2 else "AUTOSTAT"
-    if b2:
-        st.subheader("B2 activity logs")
+    bucket_label = f"B{bucket}"
+    workbook_name = f"AUTOSTAT_{bucket_label}" if b2 else "AUTOSTAT"
+    options = st.expander(f"{bucket_label} AutoStat options") if compact else None
+    if b2 and not compact:
+        st.subheader(f"{bucket_label} activity logs")
         st.caption(
-            "Upload B2 account files to fill the Email, SMS and Viber templates. "
+            f"Upload {bucket_label} account files to fill the Email, SMS and Viber templates. "
             "Names are copied from the source; Terms supplies the collector agent code when available."
         )
     if encoding is None:
@@ -76,18 +94,19 @@ def _render_autostat_uploads(
             )
         encoding = CSV_OUTPUT_ENCODINGS[csv_file_type]
     else:
-        output_format = st.selectbox(
-            "B2 output files", ("Excel (.xlsx)", "CSV (.csv)"), key=f"{state_prefix}output_format",
-        )
+        with options if compact else st.container():
+            output_format = st.selectbox(
+                f"{bucket_label} output files", ("Excel (.xlsx)", "CSV (.csv)"), key=f"{state_prefix}output_format",
+            )
     excel_output = output_format == "Excel (.xlsx)"
     if uploads is None:
         uploads = st.file_uploader(
-            "B2 source files" if b2 else "Source files", type=["xlsx", "csv"],
+            f"{bucket_label} source files" if b2 else "Source files", type=["xlsx", "csv"],
             accept_multiple_files=True, key=upload_widget_key(f"{state_prefix}uploads"),
         )
     fixed_timestamp = None
     default_collector = ""
-    with st.expander("Log settings"):
+    with options if compact else st.expander("Log settings"):
         remark_by = st.text_input("Remarks By" if b2 else "Remark By", value="PBBALUYOT" if b2 else "MBURGOS",
                                   key=f"{state_prefix}remark_by")
         if b2:
@@ -135,7 +154,7 @@ def _render_autostat_uploads(
         try:
             sheets = inspect(data, extension)
             if source_columns_panel is None:
-                source_columns_panel = st.expander("Edit source columns", expanded=False)
+                source_columns_panel = options.expander("Edit source columns") if compact else st.expander("Edit source columns")
             with source_columns_panel:
                 st.write(f"**{file_index + 1}. {upload.name}**")
                 selected = st.multiselect(
@@ -171,7 +190,7 @@ def _render_autostat_uploads(
                         key=f"{column_key}_account", disabled=primary_key_account,
                     )
                     if primary_key_account:
-                        st.caption("primary_key supplies the account number in all three B2 logs.")
+                        st.caption(f"primary_key supplies the account number in all three {bucket_label} logs.")
                     email_columns = st.multiselect(
                         "Email columns", columns, default=list(sheet.email_columns),
                         format_func=label, key=f"{column_key}_emails",
@@ -226,21 +245,25 @@ def _render_autostat_uploads(
         tuple(configurations), remark_by,
         blank_timestamp, current_time, fixed_timestamp, encoding, output_format, EMAIL_HEADERS, VIBER_HEADERS,
         b2, B2_AUTOSTAT_VERSION, B2_EMAIL_HEADERS, B2_PHONE_HEADERS, default_collector,
+        bucket, B4_AUTOSTAT_VERSION, compact,
     )
     previous = st.session_state.get(result_key)
     if previous is not None and (previous["signature"] != signature or problems):
         st.session_state.pop(result_key, None)
 
-    prepare_requested = st.button("Preview and prepare B2 AUTOSTAT files" if b2 else "Preview and prepare AUTOSTAT files",
-                                  type="primary", key=f"{state_prefix}prepare", disabled=bool(problems) or not sources)
+    prepare_requested = False if auto_prepare else st.button(
+        f"Preview and prepare {bucket_label} AUTOSTAT files" if b2 else "Preview and prepare AUTOSTAT files",
+        type="primary", key=f"{state_prefix}prepare", disabled=bool(problems) or not sources,
+    )
     if prepare_requested or (auto_prepare and sources and not problems and st.session_state.get(result_key) is None):
         st.session_state.pop(result_key, None)
         try:
             with st.spinner("Checking contacts and preparing AUTOSTAT logs..."):
                 timestamp = None if blank_timestamp else fixed_timestamp or datetime.now(MANILA_TIMEZONE)
                 if b2:
-                    bundle = build_b2_autostat_exports(sources, timestamp=timestamp, remark_by=remark_by,
-                                                      default_collector=default_collector, encoding=encoding)
+                    builder = build_b4_autostat_exports if bucket == 4 else build_b2_autostat_exports
+                    bundle = builder(sources, timestamp=timestamp, remark_by=remark_by,
+                                     default_collector=default_collector, encoding=encoding)
                 else:
                     bundle = build_autostat_exports(sources, timestamp=timestamp, remark_by=remark_by, encoding=encoding)
                 st.session_state[result_key] = {"signature": signature, "bundle": bundle, "timestamp": timestamp}
@@ -254,15 +277,17 @@ def _render_autostat_uploads(
     bundle = result["bundle"]
     email_count = bundle.files[0].count
     phone_count = bundle.files[1].count
-    if b2:
+    if b2 and not compact:
         for column, file, channel in zip(st.columns(3), bundle.files, ("Email", "SMS", "Viber")):
             column.metric(f"{channel} accounts", f"{file.count:,}")
-    else:
+    elif not compact:
         email_column, phone_column = st.columns(2)
         email_column.metric("Valid email accounts", f"{email_count:,}")
         phone_column.metric("Valid phone accounts", f"{phone_count:,}")
     if not (email_count or phone_count):
         st.warning("No valid contacts with account numbers were found. The output files contain template headers only.")
+        if compact:
+            return
     skipped_rows = sum(row["Source error rows skipped"] for row in bundle.summary)
     if skipped_rows:
         st.warning(
@@ -275,15 +300,17 @@ def _render_autostat_uploads(
             "Upload the original source with full card numbers stored as text; missing digits cannot be recovered."
         )
     st.download_button(
-        "Download Excel (keeps card numbers as text)", partial(build_autostat_excel, bundle), f"{workbook_name}.xlsx",
+        f"Download {workbook_name}.xlsx" if compact else "Download Excel (keeps card numbers as text)",
+        partial(build_autostat_excel, bundle), f"{workbook_name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         on_click="ignore", key=f"{state_prefix}excel", type="primary",
     )
-    st.caption(
-        f"Open {workbook_name}.xlsx in Excel to keep account numbers as text. Whole-number accounts have no .0 suffix. "
-        "When copying elsewhere, format the destination account column as Text before pasting."
-    )
-    if not excel_output:
+    if not compact:
+        st.caption(
+            f"Open {workbook_name}.xlsx in Excel to keep account numbers as text. Whole-number accounts have no .0 suffix. "
+            "When copying elsewhere, format the destination account column as Text before pasting."
+        )
+    if not excel_output and not compact:
         st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use the Excel download for viewing and editing.")
     st.download_button(
         ("Download all three Excel files (ZIP)" if excel_output else "Download all three CSV files (ZIP)") if b2 else
@@ -298,7 +325,7 @@ def _render_autostat_uploads(
             filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if excel_output else "text/csv",
             key=f"{state_prefix}download_{index}", on_click="ignore",
         )
-    with st.expander("Save to a folder"):
+    with options.expander("Save to a folder") if compact else st.expander("Save to a folder"):
         output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key=f"{state_prefix}output_folder")
         if st.button("Save AUTOSTAT files to folder", key=f"{state_prefix}save"):
             try:
@@ -314,7 +341,7 @@ def _render_autostat_uploads(
         if result.get("saved_folder"):
             st.success(f"Saved {len(bundle.files)} files:")
             st.code(result["saved_folder"], language=None)
-    with st.expander("Preview"):
+    with options.expander("Preview") if compact else st.expander("Preview"):
         filename = st.selectbox(
             "File to preview", [file.filename for file in bundle.files],
             key=f"{state_prefix}preview_{hash(signature)}",
