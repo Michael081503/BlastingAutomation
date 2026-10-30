@@ -166,5 +166,49 @@ class ExcelExportTests(unittest.TestCase):
             workbook.close()
 
 
+    def test_geo_individual_excel_download_shows_xlsx_and_retains_both_source_identifiers(self):
+        workbook = Workbook()
+        workbook.active.title = "NEGATIVE"
+        workbook.active.append(["account", "card_no", "old_ic", "email", "Phone 1", "OB", "Product", "placement", "Area", "Christmas Amnesty", "assign_date"])
+        workbook.active.append(["00001234567890123456", "5156041234567897", "000019", "one@example.com", "09171234567",
+                                1234.5, "MC", 1, "Mindanao", "QUALIFIED", datetime(2026, 10, 30)])
+        data = BytesIO()
+        workbook.save(data)
+        workbook.close()
+        upload = BytesIO(data.getvalue())
+        upload.name = "GEO.xlsx"
+        root = Path(__file__).resolve().parents[1]
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
+                patch("streamlit.download_button") as download:
+            app = AppTest.from_file(str(root / "app.py")).run(timeout=20)
+            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            picker = next(widget for widget in app.selectbox if widget.label == "File to preview")
+            self.assertTrue(all(name.endswith(".xlsx") for name in picker.options))
+            calls = download.call_args_list
+            single_index = next(index for index, call in enumerate(calls) if call.kwargs.get("key", "").startswith("excel_download_"))
+            csv_index = next(index for index, call in enumerate(calls) if call.kwargs.get("key", "").startswith("download_"))
+            self.assertLess(single_index, csv_index)
+            call = calls[single_index]
+            self.assertEqual(call.args[0], "Download " + call.args[2])
+            self.assertEqual(call.kwargs["type"], "primary")
+            saved = load_workbook(BytesIO(call.args[1]()))
+            headers = [cell.value for cell in saved.active[1]]
+            for header, expected in (("primary_key", "00001234567890123456"), ("cardnumber", "5156041234567897"), ("indexoneuid", "000019")):
+                cell = saved.active.cell(2, headers.index(header) + 1)
+                self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
+            self.assertEqual(saved.active.cell(2, headers.index("OB") + 1).data_type, "n")
+            self.assertEqual(saved.active.cell(2, headers.index("EndoDate") + 1).data_type, "d")
+            reopened_data = BytesIO()
+            saved.save(reopened_data)
+            saved.close()
+            reopened = load_workbook(BytesIO(reopened_data.getvalue()))
+            for header, expected in (("primary_key", "00001234567890123456"), ("cardnumber", "5156041234567897"), ("indexoneuid", "000019")):
+                cell = reopened.active.cell(2, headers.index(header) + 1)
+                self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
+            reopened.close()
+
+
 if __name__ == "__main__":
     unittest.main()

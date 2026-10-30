@@ -235,6 +235,8 @@ Use **Download Excel files (ZIP, keeps account numbers as text)** to open or edi
 
 GEO and RECO exports sort every Email and Viber file by **OB, highest to lowest**, including review groups and all-accounts mode. Equal amounts keep source order; blank or invalid amounts go last. Previews, CSV downloads, ZIPs, and folder saves all use the same order. Source values are preserved.
 
+GEO's file picker shows `.xlsx` filenames, and its primary individual download button names the selected Excel file. These Excel downloads appear before the collapsed CSV section. Use them when opening or editing in Excel: `primary_key`, `cardnumber` and `indexoneuid` retain their exact source digits as Text, while balances and dates keep their native types. CSV files retain the original identifier strings in their contents, but cannot prevent Excel from converting long numeric identifiers when opened as CSV.
+
 For GEO workbooks, the app detects the **Area** source column and defaults to **Separate Area and Christmas Amnesty groups**. `Mindanao` and `Region 3` / `R3` form separate groups, ignoring case, spacing, and punctuation. Each Area uses these five main groups, combining **all levels** within each product:
 
 | Christmas Amnesty | Product |

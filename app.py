@@ -499,6 +499,21 @@ def render_workbook_page() -> None:
         Path(result["zip_filename"]).stem + "_Excel.zip",
         mime="application/zip", type="primary", on_click="ignore", key="excel_zip",
     )
+    st.subheader("Download and preview an export")
+    selected_file = st.selectbox(
+        "File to preview", [file.filename for file in files],
+        format_func=(lambda name: Path(name).with_suffix(".xlsx").name) if result["geo"] else str,
+        key=f"preview_file_{hash(signature)}",
+    )
+    file = next(file for file in files if file.filename == selected_file)
+    excel_name = Path(file.filename).with_suffix(".xlsx").name
+    st.download_button(
+        f"Download {excel_name}" if result["geo"] else "Download Excel for this export",
+        partial(build_export_excel, file), excel_name, mime=XLSX_MIME,
+        key=f"excel_download_{file.key}", on_click="ignore", type="primary" if result["geo"] else "secondary",
+        help="Keeps primary_key, cardnumber and indexoneuid as exact text; balances and dates retain their source types.",
+    )
+    show_preview(file.preview, file.count, file.headers)
     with st.expander("CSV files for system upload"):
         st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use Excel files for viewing and editing.")
         st.download_button(
@@ -510,18 +525,6 @@ def render_workbook_page() -> None:
                 f"Download {file.filename}", file.data, file.filename,
                 mime="text/csv", key=f"download_{file.key}", on_click="ignore",
             )
-    st.subheader("Preview an export")
-    selected_file = st.selectbox(
-        "File to preview", [file.filename for file in files],
-        key=f"preview_file_{hash(signature)}",
-    )
-    file = next(file for file in files if file.filename == selected_file)
-    st.download_button(
-        "Download Excel for this export", partial(build_export_excel, file),
-        Path(file.filename).with_suffix(".xlsx").name, mime=XLSX_MIME,
-        key=f"excel_download_{file.key}", on_click="ignore",
-    )
-    show_preview(file.preview, file.count, file.headers)
 
 
 def main() -> None:
