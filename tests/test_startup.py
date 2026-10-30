@@ -470,18 +470,24 @@ class StartupTests(unittest.TestCase):
         self.run_isolated("""
             import b2_autostat, autostat_page
             del b2_autostat.B2_COLLECTOR_TERMS_VERSION
+            del b2_autostat.B2_B4_REMARK_DATE_VERSION
             del autostat_page.B2_UPLOAD_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'b2_autostat', 'autostat_page'} <= refreshed
             assert autostat_page.build_b2_autostat_exports is b2_autostat.build_b2_autostat_exports
             assert autostat_page.B2_UPLOAD_VERSION == 1
-            assert b2_autostat.B2_AUTOSTAT_VERSION == 5
+            assert b2_autostat.B2_AUTOSTAT_VERSION == 6
+            assert b2_autostat.B4_AUTOSTAT_VERSION == 2
             data = b'cardnumber,primary_key,email,phone,Collector,Terms\\nCARD,000123,one@example.com,09171234567,OLD,AGENT1\\n'
             import autostat
             source = autostat.SourceSelection('B2.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
             selection = b2_autostat.B2ActivitySource(source, *b2_autostat.b2_metadata_columns(source.sheet.headers))
-            bundle = b2_autostat.build_b2_autostat_exports([selection], timestamp=None)
+            from datetime import datetime
+            bundle = b2_autostat.build_b2_autostat_exports([selection], timestamp=datetime(2026, 1, 2, 0, 4, 5))
+            assert all(file.preview[0]['REMARKS DATE'] == '01/02/2026 00:04:05' for file in bundle.files)
+            b4 = b2_autostat.build_b4_autostat_exports([selection], timestamp=datetime(2026, 1, 2, 23, 4, 5))
+            assert all(file.preview[0]['REMARKS DATE'] == '01/02/2026 23:04:05' for file in b4.files)
             assert bundle.files[0].preview[0]['Account No.'] == '000123'
             assert bundle.files[1].preview[0]['Account number'] == '000123'
             assert bundle.files[2].preview[0]['Account number'] == '000123'

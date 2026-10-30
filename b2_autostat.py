@@ -13,8 +13,9 @@ from autostat import (
 )
 
 
-B2_AUTOSTAT_VERSION = 5
-B4_AUTOSTAT_VERSION = 1
+B2_AUTOSTAT_VERSION = 6
+B4_AUTOSTAT_VERSION = 2
+B2_B4_REMARK_DATE_VERSION = 1
 B2_PRIMARY_KEY_VERSION = 1
 B2_COLLECTOR_TERMS_VERSION = 1
 B2_EMAIL_HEADERS = (
@@ -65,7 +66,7 @@ def build_b2_autostat_exports(
         raise AutomationError(f"Select at least one B{bucket} source sheet.")
     if not remark_by.strip():
         raise AutomationError(f"Enter Remarks By before preparing the B{bucket} files.")
-    time_text = "" if timestamp is None else timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    time_text = "" if timestamp is None else timestamp.strftime("%m/%d/%Y %H:%M:%S")
     channels = {"Email": [], "Phone": []}
     seen = {"email": set(), "viber": set()}
     summaries = []

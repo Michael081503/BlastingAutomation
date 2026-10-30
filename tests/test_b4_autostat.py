@@ -54,18 +54,20 @@ class B4AutostatTests(unittest.TestCase):
         for file in b4.files:
             header = "Account No." if file.filename.endswith("Email.csv") else "Account number"
             self.assertEqual([row[header] for row in rows(file)], ["000000000000000002", "000000000000000001"])
+            self.assertTrue(all(row["REMARKS DATE"] == "10/30/2026 14:00:00" for row in rows(file)))
         self.assertEqual([row["Collector"] for row in rows(b4.files[0])], ["KPALIMA", "AMRANCELI"])
         self.assertEqual(rows(b4.files[0])[0]["REMARKS"], "two@example.com | EMAIL SENT | KPALIMA")
         self.assertEqual(rows(b4.files[1])[0]["Mobile Number"], "09181234567")
 
     def test_excel_and_zip_names_and_account_text_follow_b4_channels(self):
-        bundle = build_b4_autostat_exports([source()], timestamp=None)
+        bundle = build_b4_autostat_exports([source()], timestamp=NOW)
         workbook = load_workbook(BytesIO(build_autostat_excel(bundle)))
         self.assertEqual(workbook.sheetnames, ["B4_Email", "B4_SMS", "B4_Viber"])
         for sheet in workbook:
             column = "B" if sheet.title.endswith("Email") else "A"
             self.assertEqual([cell.value for cell in sheet[column][1:]], ["000000000000000002", "000000000000000001"])
             self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in sheet[column][1:]))
+            self.assertEqual(sheet["F2"].value, "10/30/2026 14:00:00")
         workbook.close()
         with ZipFile(BytesIO(build_autostat_excel_zip(bundle))) as archive:
             self.assertEqual(archive.namelist(), ["AUTOSTAT_B4_Email.xlsx", "AUTOSTAT_B4_SMS.xlsx", "AUTOSTAT_B4_Viber.xlsx"])

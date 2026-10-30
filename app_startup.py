@@ -99,6 +99,7 @@ def refresh_application_modules() -> set[str]:
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",
             "B2_COLLECTOR_TERMS_VERSION",
+            "B2_B4_REMARK_DATE_VERSION",
             "B4_AUTOSTAT_VERSION", "build_b4_autostat_exports",
         ), ("autostat", "automation")),
         ("autostat_page", (

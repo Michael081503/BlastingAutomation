@@ -88,7 +88,7 @@ class B2AutostatTests(unittest.TestCase):
             "Name": "Sample Person", "Account No.": "0005156041234567897",
             "STATUS CODE": "EMAIL BLAST SENT - WAITING FOR REPLY",
             "REMARKS": "User@example.com | EMAIL SENT | COLLECTOR1", "REMARKS BY": "PBBALUYOT",
-            "REMARKS DATE": "2026-10-30 16:02:03", "Email": "User@example.com", "Collector": "COLLECTOR1",
+            "REMARKS DATE": "10/30/2026 16:02:03", "Email": "User@example.com", "Collector": "COLLECTOR1",
         })
         for row, channel, remark in (
             (sms, "SMS", "09171234567 |  SMS SENT"),
@@ -97,7 +97,7 @@ class B2AutostatTests(unittest.TestCase):
             self.assertEqual(row, {
                 "Account number": "0005156041234567897", "Name": "Sample Person",
                 "STATUS CODE": f"{channel} BLAST SENT - WAITING FOR REPLY", "REMARKS": remark,
-                "REMARKS BY": "PBBALUYOT", "REMARKS DATE": "2026-10-30 16:02:03", "Mobile Number": "09171234567",
+                "REMARKS BY": "PBBALUYOT", "REMARKS DATE": "10/30/2026 16:02:03", "Mobile Number": "09171234567",
             })
         with ZipFile(BytesIO(bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])
@@ -214,12 +214,14 @@ class B2AutostatTests(unittest.TestCase):
             self.assertEqual((cell.value, cell.data_type, cell.number_format), ("0005156041234567897", "s", "@"))
             name_cell = sheet["A2" if sheet.title == "B2_Email" else "B2"]
             self.assertEqual((name_cell.value, name_cell.data_type), ("=literal", "s"))
+            self.assertEqual(sheet["F2"].value, "10/30/2026 16:02:03")
         workbook.close()
         with ZipFile(BytesIO(build_autostat_excel_zip(bundle))) as archive:
             for file in bundle.files:
                 name = Path(file.filename).with_suffix(".xlsx").name
                 book = load_workbook(BytesIO(archive.read(name)))
                 self.assertEqual(tuple(cell.value for cell in book.active[1]), file.headers)
+                self.assertEqual(book.active["F2"].value, "10/30/2026 16:02:03")
                 book.close()
 
 
