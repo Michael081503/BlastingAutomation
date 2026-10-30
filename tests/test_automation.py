@@ -1079,7 +1079,10 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             saved = Path(app.session_state["result"]["saved_folder"])
             for file in result["files"]:
-                self.assertEqual((saved / file.filename).read_bytes(), file.data)
+                book = load_workbook(saved / Path(file.filename).with_suffix(".xlsx"))
+                self.assertEqual(book.active.max_row, file.count + 1)
+                self.assertEqual(book.active.cell(2, file.headers.index("FullName") + 1).value, "POSITIVE")
+                book.close()
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             app.selectbox[0].select("CONTACTED").run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
@@ -1138,6 +1141,7 @@ class AppTests(unittest.TestCase):
             GEO_OUTPUT_FILENAMES, names,
         ), patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+            app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
             app.button[0].click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -1147,7 +1151,7 @@ class AppTests(unittest.TestCase):
                         "My R3 BEL_Email.csv", "My R3 BEL_Viber.csv"]
             self.assertEqual([file.filename for file in files], expected)
             self.assertEqual([button.label for button in app.get("download_button") if button.label.endswith(".csv")],
-                             [f"Download {name}" for name in expected])
+                             [f"Download {expected[0]}"])
             self.assertFalse(any(field.label == "ZIP filename" for field in app.text_input))
             with ZipFile(BytesIO(result["zip_data"])) as archive:
                 self.assertEqual(archive.namelist(), expected)
@@ -1339,7 +1343,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state["result"]["count"], 1)
-            self.assertEqual(len(app.get("download_button")), 10)
+            self.assertEqual(len(app.get("download_button")), 7)
             files = app.session_state["result"]["files"]
             self.assertTrue(all(file.filename.endswith(".csv") for file in files))
             rows = list(csv.DictReader(StringIO(files[0].data.decode("utf-8-sig"))))
@@ -1378,7 +1382,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual([file.count for file in app.session_state['result']['files']], [1, 0])
-            self.assertEqual(len(app.get("download_button")), 10)
+            self.assertEqual(len(app.get("download_button")), 7)
 
     def test_uploaded_excel_template_produces_csv_in_both_export_modes(self):
         upload = FakeUpload("source.xlsx", source_file([
@@ -1471,7 +1475,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(preview.loc[0, "Monthly"], app.table[0].value.loc[0, "Monthly"])
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
-            self.assertEqual(len(app.get("download_button")), 22)
+            self.assertEqual(len(app.get("download_button")), 7)
             app.main.selectbox[-1].select(OUTPUT_FILENAMES["blank_other_products"] + "_Email.csv").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["count"], 7)
@@ -1552,11 +1556,18 @@ class AppTests(unittest.TestCase):
                 self.assertEqual(len(app.error), 0)
                 saved = Path(app.session_state["result"]["saved_folder"])
                 files = app.session_state["result"]["files"]
-                self.assertTrue(all(file.filename.endswith(".csv") for file in files))
-                self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in files})
+                self.assertTrue(app.session_state["result"]["excel_output"])
+                self.assertEqual({path.name for path in saved.iterdir()}, {Path(file.filename).with_suffix(".xlsx").name for file in files})
                 for file in files:
-                    self.assertEqual((saved / file.filename).read_bytes(), file.data)
-                    self.assertEqual(csv_template_headers(file.data), list(DEFAULT_TEMPLATE_HEADERS))
+                    book = load_workbook(saved / Path(file.filename).with_suffix(".xlsx"))
+                    self.assertEqual([cell.value for cell in book.active[1]], list(DEFAULT_TEMPLATE_HEADERS))
+                    self.assertEqual(book.active.max_row, file.count + 1)
+                    if file.count:
+                        for header, expected in (("primary_key", "0000000456"), ("cardnumber", "000123456789012345"), ("indexoneuid", "000123")):
+                            cell = book.active.cell(2, file.headers.index(header) + 1)
+                            self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
+                        self.assertEqual(book.active.cell(2, file.headers.index("OB") + 1).data_type, "n")
+                    book.close()
                 app.run(timeout=20)
                 self.assertEqual(list(parent.iterdir()), [saved])
 
@@ -1570,6 +1581,7 @@ class AppTests(unittest.TestCase):
         with TemporaryDirectory(prefix="blasting-app-folder-test-") as directory:
             with patch("streamlit.file_uploader", side_effect=uploader):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
+                app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
                 app.radio[0].set_value("All accounts in one group").run(timeout=20)
                 app.button[0].click().run(timeout=20)
                 app.text_input(key="output_folder").set_value(directory).run(timeout=20)

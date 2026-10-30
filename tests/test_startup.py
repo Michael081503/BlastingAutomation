@@ -542,6 +542,18 @@ class StartupTests(unittest.TestCase):
         """)
 
 
+    def test_cached_geo_reco_exports_refresh_for_consistent_output_format(self):
+        self.run_isolated("""
+            import exports
+            del exports.CAMPAIGN_OUTPUT_FORMAT_VERSION
+            del exports.campaign_output_files
+            from app_startup import refresh_application_modules
+            assert 'exports' in refresh_application_modules()
+            import app
+            assert app.campaign_output_files is exports.campaign_output_files
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_geo_reco_exports_refresh_for_native_excel_types(self):
         self.run_isolated("""
             import automation, exports

@@ -135,30 +135,30 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 ## Use
 
 1. Upload your source `.xlsx` workbook.
-2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template with all 16 campaign headers. Both template formats produce CSV outputs.
+2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template with all 16 campaign headers. **Output files** defaults to **Excel (.xlsx)** for both GEO and RECO. Individual downloads, ZIP contents, previews and folder saves all follow this setting. Choose **CSV (.csv)** for direct system uploads.
    **CSV file type** defaults to **CSV (Comma delimited)**, using Windows-1252 without a UTF-8 marker. Choose **CSV UTF-8 (Comma delimited)** when your data needs characters beyond that format. Both choices use commas and `.csv` filenames.
 3. Choose the source sheet. **NEGATIVE** is selected automatically.
 4. Choose the destination sheet if your template has multiple sheets.
 5. Check **Header rows** if the detected row is incorrect.
 6. For worksheets with grouping columns, keep **Separate Christmas Amnesty groups** selected to create the groups below. Worksheets with Area default to **Separate Area and Christmas Amnesty groups** instead. If grouping columns are absent, the app automatically uses **All accounts in one group** and copies the available values. Every group is still split into Email and Viber files. Each worksheet remembers its own output-mode selection.
 7. Click **Preview and prepare files**, then review the email-validation counts and export previews.
-8. Under **Save to a folder**, enter an output location and click **Save files to folder**. The app displays the full path of the created folder. Individual downloads and **Download all files (ZIP)** are also available.
+8. Download the selected file or all files as a ZIP. To save locally, enter an output location under **Save to a folder** and click **Save files to folder**. All three routes use the selected output format.
 
-Changing a file, sheet, header row, export mode, or filename configuration clears the previous result. Prepare a new download after changing inputs. Filenames from `export_config.py` apply to individual downloads, ZIP contents, previews, and folder saves. Duplicate or invalid filenames must be corrected in that file before preparing exports.
+Changing a file, sheet, header row, output format, export mode, or filename configuration clears the previous result. Prepare a new download after changing inputs. Filenames from `export_config.py` apply to individual downloads, ZIP contents, previews, and folder saves, with `.xlsx` or `.csv` matching the selected format. Duplicate or invalid filenames must be corrected in that file before preparing exports.
 
-After downloading the ZIP, right-click it and choose **Extract All**, then open the CSV files from the extracted folder to edit them. Opening a CSV directly inside the ZIP can make Excel show a read-only temporary copy and ask you to save another file. Individual CSV downloads and local folder saves can also be opened from their saved location. The app does not set read-only permissions or protect the exported files. See Microsoft's [ZIP extraction instructions](https://support.microsoft.com/en-us/windows/experience/storage-filemanagement/zip-and-unzip-files).
+After downloading the ZIP, right-click it and choose **Extract All**, then open the `.xlsx` files from the extracted folder to edit them. Opening files directly inside the ZIP can make Excel show a read-only temporary copy and ask you to save another file. Individual Excel downloads and local folder saves can also be opened from their saved location. The app does not set read-only permissions or protect the exported files. See Microsoft's [ZIP extraction instructions](https://support.microsoft.com/en-us/windows/experience/storage-filemanagement/zip-and-unzip-files).
 
 ## Save directly to a folder
 
-The default destination is the project's `output` folder. Each save creates a new folder, for example `output/your_workbook_NEGATIVE_2026-10-26_21-00-00/`, containing the separate CSV files directly. Dates and times use Asia/Manila. An existing export is never overwritten, even when you save twice in the same second. No ZIP is written into this folder.
+The default destination is the project's `output` folder. Each save creates a new folder, for example `output/your_workbook_NEGATIVE_2026-10-26_21-00-00/`, containing the separate files in the selected format (Excel by default). Dates and times use Asia/Manila. An existing export is never overwritten, even when you save twice in the same second. No ZIP is written into this folder.
 
 You can change the **Output folder** field in the app or edit `OUTPUT_FOLDER` in [export_config.py](export_config.py). Relative paths start in the project folder; an absolute path selects another location. Files are saved on the computer running Streamlit: your computer when running locally, or the server when deployed online.
 
-Files are written only after clicking **Save files to folder**. Preparing or previewing the files does not save them. The folder option works with Excel or CSV templates and exports that keep all accounts in one group. Folder saves accept only CSV files.
+Files are written only after clicking **Save files to folder**. Preparing or previewing the files does not save them. The folder option works with Excel or CSV templates, grouped exports and all-accounts exports. It uses the same **Output files** setting as downloads and ZIPs.
 
 ## Email and Viber files
 
-Every nonempty group creates two CSV files using the same template and all its original headers:
+Every nonempty group creates two files in the selected format using the same template and all its original headers:
 
 - **Valid email only:** included in `_Email` only.
 - **Phone only:** included in `_Viber` only.
@@ -171,8 +171,8 @@ The **email and phone headers remain in both files**. In `_Email` files, the `ph
 For example, the base name `CS AMNESTY NEGA CARDS - L1` produces:
 
 ```text
-CS AMNESTY NEGA CARDS - L1_Email.csv
-CS AMNESTY NEGA CARDS - L1_Viber.csv
+CS AMNESTY NEGA CARDS - L1_Email.xlsx
+CS AMNESTY NEGA CARDS - L1_Viber.xlsx
 ```
 
 If a group has accounts but one channel has no matching accounts, that channel's file still contains the template headers with no account data. A group with no accounts produces no files. This behavior applies to qualified, blank, review, and other-sheet exports, including folder saves, individual downloads, and ZIP downloads.
@@ -231,11 +231,11 @@ Before email validation, the sample dated October 26, 2026 had qualified group c
 
 ## GEO Area separation
 
-Use **Download Excel files (ZIP, keeps account numbers as text)** to open or edit GEO/RECO accounts in Excel, or to pass them into AUTOSTAT. Each campaign file has an `.xlsx` copy with the same headers, full rows, and order. **Numeric balances and levels retain their source number types, and dates remain Excel dates**. Names, email addresses, labels and headers use General formatting. Only `primary_key`, `cardnumber`, `indexoneuid` and `phone` use Text formatting to preserve digits and leading zeros. Text values from the source stay literal text, including values beginning with `=`, and extra template columns stay blank. **Download Excel for this export** saves just the file selected in Preview. Workbooks are generated when downloaded. The existing CSVs and ZIP remain under **CSV files for system upload**, and folder saves still write CSVs. Opening and resaving those CSVs in Excel can round long identifiers; use the `.xlsx` copies instead. An Excel copy preserves the supplied values but cannot restore digits already missing from a rounded source.
+Keep **Output files → Excel (.xlsx)** to open or edit GEO/RECO accounts in Excel, or to pass them into AUTOSTAT. This default applies to individual downloads, **Download all Excel files (ZIP)**, and **Save files to folder**. All files have the same headers, full rows and order. **Numeric balances and levels retain their source number types, and dates remain Excel dates**. Names, email addresses, labels and headers use General formatting. Only `primary_key`, `cardnumber`, `indexoneuid` and `phone` use Text formatting to preserve digits and leading zeros. Text values from the source stay literal text, including values beginning with `=`, and extra template columns stay blank. The individual button downloads the file selected in Preview. Workbooks are generated when downloaded or saved. An Excel copy preserves supplied values but cannot restore digits already missing from a rounded source.
 
 GEO and RECO exports sort every Email and Viber file by **OB, highest to lowest**, including review groups and all-accounts mode. Equal amounts keep source order; blank or invalid amounts go last. Previews, CSV downloads, ZIPs, and folder saves all use the same order. Source values are preserved.
 
-GEO's file picker shows `.xlsx` filenames, and its primary individual download button names the selected Excel file. These Excel downloads appear before the collapsed CSV section. Use them when opening or editing in Excel: `primary_key`, `cardnumber` and `indexoneuid` retain their exact source digits as Text, while balances and dates keep their native types. CSV files retain the original identifier strings in their contents, but cannot prevent Excel from converting long numeric identifiers when opened as CSV.
+Both GEO and RECO show filenames matching the selected format. Choosing **CSV (.csv)** switches individual downloads, the ZIP and folder saves together. CSV retains the supplied identifier strings in its contents and is intended for direct system upload. CSV has no cell types and cannot prevent Excel from converting long numeric identifiers when opened and resaved. Use the default `.xlsx` files for that workflow; changing a previously rounded CSV to Excel cannot recover its missing digits.
 
 For GEO workbooks, the app detects the **Area** source column and defaults to **Separate Area and Christmas Amnesty groups**. `Mindanao` and `Region 3` / `R3` form separate groups, ignoring case, spacing, and punctuation. Each Area uses these five main groups, combining **all levels** within each product:
 
@@ -313,9 +313,9 @@ The built-in template uses your original 16-column layout: `email`, `primary_key
 
 - Source order is retained within each output group. Hidden and filtered source rows are included.
 - Rows with no values in any mapped field are skipped. Accounts with neither a valid email nor a phone are removed and counted separately. Invalid emails are removed and counted. Duplicates are retained. Accounts with only a valid email or only a phone go to that channel; accounts with both go to both channels.
-- Campaign Email/Viber files are CSV, including individual downloads, files inside ZIP downloads, and folder saves. The blank template download is also CSV. AUTOSTAT additionally offers its text-formatted Excel download.
+- GEO/RECO campaign Email/Viber files default to Excel, including individual downloads, ZIP contents and folder saves. Choosing CSV changes all three routes. The blank template download remains CSV. AUTOSTAT has its own Excel/CSV selection.
 - IDs, account numbers, card numbers, and phones retain existing text leading zeros and simple Excel zero masks such as `000000` in the CSV data. Digits already lost in the original Excel file cannot be recovered. CSV has no text column types: import identifier columns as text when opening it in Excel to preserve leading zeros.
-- Dates use ISO text and balances use their source values without currency formatting. The default **CSV (Comma delimited)** uses Windows-1252 without a BOM and Windows line endings. **CSV UTF-8 (Comma delimited)** uses UTF-8 with BOM. Characters unsupported by the standard format produce an actionable error; they are never silently replaced or dropped.
+- Excel dates and numeric balances retain their source types. CSV dates use ISO text and balances use their source values without currency formatting. **CSV (Comma delimited)** uses Windows-1252 without a BOM and Windows line endings. **CSV UTF-8 (Comma delimited)** uses UTF-8 with BOM. Characters unsupported by the standard format produce an actionable error; they are never silently replaced or dropped.
 - Excel templates supply the selected sheet's header labels and column order from the chosen header row. Their CSV outputs use commas. Content above the header, stale template rows, styles, and other worksheets are omitted. Extra template columns are blank. The original template is never changed.
 - CSV templates supply their first-row headers and column order. Comma, semicolon, tab, and pipe delimiters are accepted as inputs; outputs always use commas. Extra template columns are blank.
 - Formula source cells use values cached by Excel. A mapped formula without a saved result stops processing; recalculate and save the source in Excel before uploading again.

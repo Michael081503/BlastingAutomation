@@ -10,6 +10,7 @@ import streamlit as st
 CLEAR_UPLOADS_VERSION = 1
 B4_UPLOADS_VERSION = 1
 B4_AUTOSTAT_UPLOADS_VERSION = 1
+CAMPAIGN_FORMAT_SETTINGS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
@@ -32,7 +33,7 @@ FILE_STATE_PREFIXES = (
     "b4_sheet_", "b4_header_", "b4_preview_",
     "autostat_b4_preview_", "b4_autostat_preview_",
 )
-SETTINGS_KEYS = {"csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder", "b4_csv_type", "b4_output_folder"} | {
+SETTINGS_KEYS = {"campaign_output_format", "csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder", "b4_csv_type", "b4_output_folder"} | {
     prefix + suffix
     for prefix in ("autostat_", "autostat_b2_", "autostat_b4_", "b4_autostat_", "geo_b2_autostat_", "geo_autostat_")
     for suffix in ("output_format", "csv_file_type", "remark_by", "collector", "blank_time",

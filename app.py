@@ -24,7 +24,7 @@ from export_config import (
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
     GROUPED_SHEET_EXPORT_VERSION,
-    EXCEL_EXPORT_VERSION, build_excel_zip, build_export_excel,
+    EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_output_files, build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
 from folder_output import save_files_to_folder
@@ -94,13 +94,13 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
     st.subheader("Save to a folder")
     output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key="output_folder")
     st.caption(
-        "Saves directly to the computer running this app. "
+        f"Saves {'Excel (.xlsx)' if result['excel_output'] else 'CSV (.csv)'} files directly to the computer running this app. "
         "Each export creates a new folder with its date and time inside the location above. "
         "When hosted online, the folder is on the server; use the downloads to save files on your PC."
     )
     if st.button("Save files to folder", type="primary", key="save_to_folder"):
-        output_files = [(file.filename, file.data) for file in result["files"]]
         try:
+            output_files = campaign_output_files(result["files"], excel=result["excel_output"])
             folder = save_files_to_folder(
                 output_files, output_folder, batch_name=f"{Path(source_name).stem}_{sheet_name}",
             )
@@ -121,11 +121,16 @@ def render_workbook_page() -> None:
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
     st.caption("Product MC is converted to CARDS before grouping accounts into their designated files.")
     with st.sidebar:
-        output_format = st.selectbox(
+        campaign_format = st.selectbox(
+            "Output files", ("Excel (.xlsx)", "CSV (.csv)"), key="campaign_output_format",
+            help="Excel preserves account digits when opening and saving. CSV is intended for direct system upload.",
+        )
+        csv_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
             help="Use CSV UTF-8 for names or other text that the standard CSV format cannot represent.",
         )
-    encoding = CSV_OUTPUT_ENCODINGS[output_format]
+    encoding = CSV_OUTPUT_ENCODINGS[csv_format]
+    excel_output = campaign_format == "Excel (.xlsx)"
     if st.session_state.get("blank_template_headers") != (DEFAULT_TEMPLATE_HEADERS, encoding):
         st.session_state["blank_template"] = create_default_csv_template(encoding=encoding)
         st.session_state["blank_template_headers"] = (DEFAULT_TEMPLATE_HEADERS, encoding)
@@ -222,7 +227,7 @@ def render_workbook_page() -> None:
         else:
             template_sheet = ""
             template_info = None
-            st.caption("CSV output keeps the template's column order and always separates columns with commas.")
+            st.caption("Outputs keep the template's column order. CSV output separates columns with commas.")
 
     if not any(normalize_header(sheet.name) == "negative" for sheet in source_sheets):
         st.info("No NEGATIVE sheet was found. Choose the sheet you want to process.")
@@ -230,7 +235,7 @@ def render_workbook_page() -> None:
         st.caption("Using the built-in CSV template with all 16 campaign headers. Upload your template to use its column layout.")
     else:
         st.caption(
-            "Outputs are always CSV, using only the selected template headers and column order. "
+            "Outputs use the selected file format, template headers and column order. "
             "Additional template columns will be blank."
         )
 
@@ -376,6 +381,7 @@ def render_workbook_page() -> None:
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
         "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
+        CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
@@ -419,6 +425,7 @@ def render_workbook_page() -> None:
                     "signature": signature,
                     "grouped": grouped,
                     "geo": geo,
+                    "excel_output": excel_output,
                     "count": len(mapped.records),
                     "blank_rows": mapped.blank_rows_skipped,
                     "no_contact_rows": mapped.no_contact_rows_skipped,
@@ -495,36 +502,28 @@ def render_workbook_page() -> None:
         "Extract the Excel ZIP before opening its workbooks."
     )
     st.download_button(
-        "Download Excel files (ZIP, keeps account numbers as text)", partial(build_excel_zip, files),
-        Path(result["zip_filename"]).stem + "_Excel.zip",
-        mime="application/zip", type="primary", on_click="ignore", key="excel_zip",
+        "Download all Excel files (ZIP)" if excel_output else "Download all CSV files (ZIP)",
+        partial(build_excel_zip, files) if excel_output else result["zip_data"],
+        Path(result["zip_filename"]).stem + "_Excel.zip" if excel_output else result["zip_filename"],
+        mime="application/zip", type="primary", on_click="ignore", key="excel_zip" if excel_output else "csv_zip",
     )
     st.subheader("Download and preview an export")
     selected_file = st.selectbox(
         "File to preview", [file.filename for file in files],
-        format_func=(lambda name: Path(name).with_suffix(".xlsx").name) if result["geo"] else str,
+        format_func=(lambda name: Path(name).with_suffix(".xlsx").name) if excel_output else str,
         key=f"preview_file_{hash(signature)}",
     )
     file = next(file for file in files if file.filename == selected_file)
-    excel_name = Path(file.filename).with_suffix(".xlsx").name
+    filename = Path(file.filename).with_suffix(".xlsx").name if excel_output else file.filename
     st.download_button(
-        f"Download {excel_name}" if result["geo"] else "Download Excel for this export",
-        partial(build_export_excel, file), excel_name, mime=XLSX_MIME,
-        key=f"excel_download_{file.key}", on_click="ignore", type="primary" if result["geo"] else "secondary",
-        help="Keeps primary_key, cardnumber and indexoneuid as exact text; balances and dates retain their source types.",
+        f"Download {filename}", partial(build_export_excel, file) if excel_output else file.data,
+        filename, mime=XLSX_MIME if excel_output else "text/csv",
+        key=f"excel_download_{file.key}" if excel_output else f"download_{file.key}",
+        on_click="ignore", type="primary",
+        help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
+        "Use CSV for direct system upload. Opening and resaving it in Excel can change account digits.",
     )
     show_preview(file.preview, file.count, file.headers)
-    with st.expander("CSV files for system upload"):
-        st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use Excel files for viewing and editing.")
-        st.download_button(
-            "Download all files (ZIP)", result["zip_data"], result["zip_filename"],
-            mime="application/zip", on_click="ignore",
-        )
-        for file in files:
-            st.download_button(
-                f"Download {file.filename}", file.data, file.filename,
-                mime="text/csv", key=f"download_{file.key}", on_click="ignore",
-            )
 
 
 def main() -> None:

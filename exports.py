@@ -52,6 +52,7 @@ GEO_LOAN_PRODUCTS = frozenset({"csl", "pl", "sla"})
 GROUPED_SHEET_EXPORT_VERSION = 1
 EXCEL_EXPORT_VERSION = 2
 TYPED_EXCEL_EXPORT_VERSION = 1
+CAMPAIGN_OUTPUT_FORMAT_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
@@ -114,6 +115,12 @@ def build_excel_zip(files: list[ExportFile]) -> bytes:
         for file in files:
             archive.writestr(Path(file.filename).with_suffix(".xlsx").name, build_export_excel(file))
     return output.getvalue()
+
+
+def campaign_output_files(files: list[ExportFile], *, excel: bool) -> list[tuple[str, bytes]]:
+    """Use the chosen format consistently for folder saves and downloads."""
+    return [(Path(file.filename).with_suffix(".xlsx").name, build_export_excel(file)) if excel
+            else (file.filename, file.data) for file in files]
 
 
 def _level(value: Any) -> str:

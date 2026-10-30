@@ -93,15 +93,21 @@ class GeoLoanRoutingTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertTrue(app.session_state["result"]["geo"])
-            calls = {call.kwargs.get("key"): call for call in download.call_args_list}
             for area, group in (("MINDANAO", "mindanao"), ("R3", "r3")):
                 for channel in ("email", "viber"):
-                    call = calls[f"download_{group}_blank_other_products_{channel}"]
-                    self.assertEqual(call.args[2], f"GEO NEGA LOANS - {area}_{channel.title()}.csv")
-                    data = list(csv.DictReader(StringIO(call.args[1].decode("cp1252"))))
+                    download.reset_mock()
+                    picker = next(widget for widget in app.selectbox if widget.label == "File to preview")
+                    picker.select(f"GEO NEGA LOANS - {area}_{channel.title()}.csv").run(timeout=20)
+                    call = next(call for call in download.call_args_list if call.kwargs.get("key") == f"excel_download_{group}_blank_other_products_{channel}")
+                    self.assertEqual(call.args[2], f"GEO NEGA LOANS - {area}_{channel.title()}.xlsx")
+                    workbook = load_workbook(BytesIO(call.args[1]()))
+                    rows = iter(workbook.active.values)
+                    headers = next(rows)
+                    data = [dict(zip(headers, row)) for row in rows]
                     self.assertEqual(len(data), 48)
                     self.assertEqual({row["Product"].strip().upper() for row in data}, {"CSL", "PL", "SLA"})
-                    self.assertEqual({row["ChristmasAmnesty"] for row in data}, {"", "QUALIFIED"})
+                    self.assertEqual({row["ChristmasAmnesty"] for row in data}, {None, "QUALIFIED"})
+                    workbook.close()
 
     def test_reco_keeps_its_existing_loan_routing_and_product_values(self):
         source = records()[:-3]

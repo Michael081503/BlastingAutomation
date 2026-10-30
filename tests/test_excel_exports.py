@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO, StringIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zipfile import ZipFile
 
@@ -14,7 +15,7 @@ from streamlit.testing.v1 import AppTest
 
 from automation import DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
 from autostat import SourceSelection, build_autostat_exports, inspect_contact_source
-from exports import build_excel_zip, build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
+from exports import campaign_output_files, build_excel_zip, build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
 
 
 class ExcelExportTests(unittest.TestCase):
@@ -188,8 +189,7 @@ class ExcelExportTests(unittest.TestCase):
             self.assertTrue(all(name.endswith(".xlsx") for name in picker.options))
             calls = download.call_args_list
             single_index = next(index for index, call in enumerate(calls) if call.kwargs.get("key", "").startswith("excel_download_"))
-            csv_index = next(index for index, call in enumerate(calls) if call.kwargs.get("key", "").startswith("download_"))
-            self.assertLess(single_index, csv_index)
+            self.assertFalse(any(call.kwargs.get("key", "").startswith("download_") for call in calls))
             call = calls[single_index]
             self.assertEqual(call.args[0], "Download " + call.args[2])
             self.assertEqual(call.kwargs["type"], "primary")
@@ -208,6 +208,84 @@ class ExcelExportTests(unittest.TestCase):
                 cell = reopened.active.cell(2, headers.index(header) + 1)
                 self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
             reopened.close()
+
+    def test_geo_reco_format_controls_downloads_zip_and_folder_and_clears_stale_results(self):
+        for geo in (True, False):
+            for grouped in (True, False):
+                with self.subTest(geo=geo, grouped=grouped), TemporaryDirectory() as directory:
+                    workbook = Workbook()
+                    workbook.active.title = "NEGATIVE"
+                    headers = ["Account No.", "Financing/Card No.", "Old I.C.", "Debtor Email", "Phone 1",
+                               "OB", "Product", "Level", "Christmas Amnesty", "Assign Date"]
+                    values = ["00001234567890123456", "5156041234567897", "000019", "one@example.com",
+                              "09171234567", 1234.5, "MC", 1, "QUALIFIED", datetime(2026, 10, 30)]
+                    if geo:
+                        headers.append("Area")
+                        values.append("Mindanao")
+                    workbook.active.append(headers)
+                    workbook.active.append(values)
+                    data = BytesIO()
+                    workbook.save(data)
+                    workbook.close()
+                    upload = BytesIO(data.getvalue())
+                    upload.name = "GEO.xlsx" if geo else "RECO.xlsx"
+                    with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
+                            patch("streamlit.download_button") as download:
+                        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=20)
+                        self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
+                        if not grouped:
+                            app.radio[0].set_value("All accounts in one group").run(timeout=20)
+                        for excel in (True, False):
+                            download.reset_mock()
+                            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+                            self.assertEqual(len(app.exception), 0)
+                            self.assertEqual(len(app.error), 0)
+                            result = app.session_state["result"]
+                            self.assertEqual(result["excel_output"], excel)
+                            self.assertEqual(result["geo"], geo)
+                            self.assertEqual(result["grouped"], grouped)
+                            suffix = ".xlsx" if excel else ".csv"
+                            picker = next(widget for widget in app.selectbox if widget.label == "File to preview")
+                            self.assertTrue(all(name.endswith(suffix) for name in picker.options))
+                            zip_call = next(call for call in download.call_args_list if call.kwargs.get("key") == ("excel_zip" if excel else "csv_zip"))
+                            zip_data = zip_call.args[1]() if excel else zip_call.args[1]
+                            single = next(call for call in download.call_args_list if call.kwargs.get("key", "").startswith("excel_download_" if excel else "download_"))
+                            self.assertTrue(single.args[2].endswith(suffix))
+                            with ZipFile(BytesIO(zip_data)) as archive:
+                                self.assertTrue(all(name.endswith(suffix) for name in archive.namelist()))
+                                app.text_input(key="output_folder").set_value(directory).run(timeout=20)
+                                app.button(key="save_to_folder").click().run(timeout=20)
+                                self.assertEqual(len(app.exception), 0)
+                                self.assertEqual(len(app.error), 0)
+                                saved = Path(app.session_state["result"]["saved_folder"])
+                                self.assertEqual({path.name for path in saved.iterdir()}, set(archive.namelist()))
+                                for file in result["files"]:
+                                    filename = Path(file.filename).with_suffix(suffix).name
+                                    if excel:
+                                        book = load_workbook(saved / filename)
+                                        cells = dict(zip([cell.value for cell in book.active[1]], book.active[2]))
+                                        for header, value in (("primary_key", values[0]), ("cardnumber", values[1]), ("indexoneuid", values[2])):
+                                            self.assertEqual((cells[header].value, cells[header].data_type, cells[header].number_format), (value, "s", "@"))
+                                        self.assertEqual((cells["OB"].value, cells["OB"].data_type), (1234.5, "n"))
+                                        self.assertEqual(cells["EndoDate"].data_type, "d")
+                                        book.close()
+                                    else:
+                                        self.assertEqual((saved / filename).read_bytes(), file.data)
+                                        self.assertEqual(archive.read(filename), file.data)
+                            if excel:
+                                app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
+                                self.assertNotIn("result", app.session_state)
+                        app.button(key="clear_all_files").click().run(timeout=20)
+                        self.assertEqual(app.selectbox(key="campaign_output_format").value, "CSV (.csv)")
+
+    def test_folder_delivery_does_not_convert_csv_identifiers_or_build_excel_in_csv_mode(self):
+        bundle = build_sheet_exports(create_default_csv_template(), [{
+            "primary_key": "00001234567890123456", "cardnumber": "5156041234567897", "email": "one@example.com",
+        }], "", 1, base_name="RECO", label="RECO", template_extension=".csv")
+        with patch("exports.build_export_excel") as excel_builder:
+            self.assertEqual(campaign_output_files(bundle.files, excel=False),
+                             [(file.filename, file.data) for file in bundle.files])
+            excel_builder.assert_not_called()
 
 
 if __name__ == "__main__":
