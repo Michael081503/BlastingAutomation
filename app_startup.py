@@ -70,6 +70,7 @@ def refresh_application_modules() -> set[str]:
         ), ("automation", "email_validation", "export_config", "exports")),
         ("geo_autostat", (
             "GEO_AUTOSTAT_VERSION", "GEO_PRIMARY_KEY_VERSION", "mapped_contact_source", "render_geo_autostat",
+            "GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION",
         ), ("autostat", "automation", "email_validation", "folder_output")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",

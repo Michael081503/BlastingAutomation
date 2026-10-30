@@ -11,14 +11,15 @@ import streamlit as st
 from automation import AutomationError, OB_SORT_VERSION, XLSX_MIME
 from autostat import (
     AUTOSTAT_VERSION, ContactSheet, SourceSelection, autostat_source_excluded,
-    build_autostat_excel, build_autostat_exports,
+    build_autostat_channel_excel, build_autostat_excel, build_autostat_excel_zip, build_autostat_exports,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
 from folder_output import MANILA_TIMEZONE
 
 
-GEO_AUTOSTAT_VERSION = 2
+GEO_AUTOSTAT_VERSION = 3
 GEO_PRIMARY_KEY_VERSION = 1
+GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION = 1
 
 
 def mapped_contact_source(
@@ -53,7 +54,7 @@ def render_geo_autostat(
     if not source.sheet.ready:
         st.session_state.pop("geo_autostat_result", None)
         return
-    st.subheader("AUTOSTAT from this upload")
+    st.subheader("AUTOSTAT — Email and Viber")
     if autostat_source_excluded(name) or autostat_source_excluded(sheet_name):
         st.session_state.pop("geo_autostat_result", None)
         st.caption("AUTOSTAT excludes SBC INSURANCE, B2 and B4 files and worksheets.")
@@ -97,7 +98,28 @@ def render_geo_autostat(
             "Some source account cells are numeric and may already be rounded. "
             "Use the original full account numbers stored as Text; missing digits cannot be recovered."
         )
+    if not source.sheet.phone_columns:
+        st.warning(
+            "No phone column is selected for Viber. Open Source columns, enable manual mapping, "
+            "and select the mobile-number column for phone."
+        )
+    elif not phone_count:
+        st.warning(
+            "No valid mobile numbers with account numbers were found for Viber. Check the selected phone column. "
+            "Mobile numbers must normalize to 10 digits starting with 9."
+        )
+    for column, channel, file in zip(st.columns(2), ("Email", "Viber"), bundle.files):
+        with column:
+            st.caption(f"{channel}: {file.count:,} valid accounts")
+            st.download_button(
+                f"Download AUTOSTAT_{channel}.xlsx", partial(build_autostat_channel_excel, file), f"AUTOSTAT_{channel}.xlsx",
+                mime=XLSX_MIME, on_click="ignore", key=f"geo_autostat_{channel.lower()}_excel", type="primary",
+            )
     st.download_button(
-        "Download AUTOSTAT.xlsx", partial(build_autostat_excel, bundle), "AUTOSTAT.xlsx",
+        "Download both AUTOSTAT files (ZIP)", partial(build_autostat_excel_zip, bundle), "AUTOSTAT_FILES.zip",
+        mime="application/zip", on_click="ignore", key="geo_autostat_zip",
+    )
+    st.download_button(
+        "Download AUTOSTAT.xlsx (Email + Viber sheets)", partial(build_autostat_excel, bundle), "AUTOSTAT.xlsx",
         mime=XLSX_MIME, on_click="ignore", key="geo_autostat_excel",
     )

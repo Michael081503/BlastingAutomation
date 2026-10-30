@@ -5,11 +5,12 @@ import unittest
 from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
+from zipfile import ZipFile
 
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
-from autostat import build_autostat_excel, build_autostat_exports
+from autostat import build_autostat_channel_excel, build_autostat_excel, build_autostat_excel_zip, build_autostat_exports
 from geo_autostat import mapped_contact_source
 
 
@@ -49,6 +50,86 @@ def log_rows(file):
 
 
 class AutomaticGeoAutostatTests(unittest.TestCase):
+    def test_separate_email_viber_and_zip_downloads_follow_template_on_geo_and_reco(self):
+        upload = Upload(workbook_data())
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
+                patch("geo_autostat.build_autostat_channel_excel", wraps=build_autostat_channel_excel) as channel_excel, \
+                patch("geo_autostat.build_autostat_excel_zip", wraps=build_autostat_excel_zip) as excel_zip, \
+                patch("streamlit.download_button") as download:
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            channel_excel.assert_not_called()
+            excel_zip.assert_not_called()
+            for sheet_name, accounts, phones in (
+                ("NEGATIVE", ["000000000000000002", "000000000000000003", "000000000000000001"],
+                 ["9000000002", "9000000003", "9000000001"]),
+                ("GEO", ["000000000000000019"], ["9000000005"]),
+            ):
+                with self.subTest(sheet=sheet_name):
+                    if sheet_name == "GEO":
+                        download.reset_mock()
+                        next(widget for widget in app.selectbox if widget.label == "Source sheet").select(sheet_name).run(timeout=20)
+                    self.assertEqual(len(app.error), 0)
+                    calls = {call.kwargs.get("key"): call for call in download.call_args_list}
+                    email = calls["geo_autostat_email_excel"]
+                    viber = calls["geo_autostat_viber_excel"]
+                    self.assertEqual(email.args[2], "AUTOSTAT_Email.xlsx")
+                    self.assertEqual(viber.args[2], "AUTOSTAT_Viber.xlsx")
+                    self.assertEqual(viber.args[0], "Download AUTOSTAT_Viber.xlsx")
+                    self.assertTrue(callable(viber.args[1]))
+                    workbook = load_workbook(BytesIO(viber.args[1]()))
+                    self.assertEqual(workbook.sheetnames, ["Viber"])
+                    output = workbook.active
+                    self.assertEqual(tuple(cell.value for cell in output[1]),
+                                     ("Time", "Account No.", "Status", "Remark", "Remark By"))
+                    self.assertEqual([cell.value for cell in output["B"][1:]], accounts)
+                    self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in output["B"][1:]))
+                    self.assertTrue(all(cell.value == "SMS BLAST SENT - WAITING FOR REPLY" for cell in output["C"][1:]))
+                    self.assertEqual([cell.value for cell in output["D"][1:]], [
+                        f"SPMA | 08 With SMS / email / DL without response - {phone} - VIBER SENT - BLASTING" for phone in phones
+                    ])
+                    self.assertTrue(all(cell.value == "MBURGOS" for cell in output["E"][1:]))
+                    workbook.close()
+                    workbook = load_workbook(BytesIO(email.args[1]()))
+                    self.assertEqual(workbook.sheetnames, ["Email"])
+                    self.assertEqual(workbook.active.max_column, 11)
+                    workbook.close()
+                    with ZipFile(BytesIO(calls["geo_autostat_zip"].args[1]())) as archive:
+                        self.assertEqual(archive.namelist(), ["AUTOSTAT_Email.xlsx", "AUTOSTAT_Viber.xlsx"])
+                        workbook = load_workbook(BytesIO(archive.read("AUTOSTAT_Viber.xlsx")))
+                        self.assertEqual([cell.value for cell in workbook.active["B"][1:]], accounts)
+                        workbook.close()
+
+    def test_viber_empty_channels_explain_missing_or_invalid_phones_and_phone_only_files_work(self):
+        for headers, record, expected_viber_rows, warning in (
+            (["primary_key", "email"], ["0001", "one@example.com"], 0, "No phone column is selected"),
+            (["primary_key", "email", "phone"], ["0001", "one@example.com", "123"], 0, "No valid mobile numbers"),
+            (["primary_key", "phone"], ["0001", "09171234567"], 1, None),
+        ):
+            with self.subTest(headers=headers):
+                workbook = Workbook()
+                workbook.active.append(headers)
+                workbook.active.append(record)
+                data = BytesIO()
+                workbook.save(data)
+                workbook.close()
+                upload = Upload(data.getvalue())
+                with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
+                        patch("streamlit.download_button") as download:
+                    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    if warning:
+                        self.assertTrue(any(warning in item.value for item in app.warning))
+                    call = next(call for call in download.call_args_list if call.kwargs.get("key") == "geo_autostat_viber_excel")
+                    saved = load_workbook(BytesIO(call.args[1]()))
+                    self.assertEqual(saved.active.max_row, expected_viber_rows + 1)
+                    self.assertEqual(saved.active.max_column, 5)
+                    if expected_viber_rows:
+                        self.assertEqual(saved.active["B2"].value, "0001")
+                        self.assertTrue(saved.active["D2"].value.endswith("9171234567 - VIBER SENT - BLASTING"))
+                    saved.close()
+
     def test_upload_immediately_prepares_download_and_reruns_reuse_it(self):
         uploads = [Upload(workbook_data())]
         uploader = lambda label, **kw: uploads[0] if kw.get("key") == "source_upload" else None

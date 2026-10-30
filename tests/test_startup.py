@@ -434,7 +434,7 @@ class StartupTests(unittest.TestCase):
             source = geo_autostat.mapped_contact_source('source.csv', b'', 'CSV', 1, 3,
                 {'primary_key': 0, 'cardnumber': 1, 'email': 2})
             assert source.sheet.account_column == 0
-            assert geo_autostat.GEO_AUTOSTAT_VERSION == 2
+            assert geo_autostat.GEO_AUTOSTAT_VERSION == 3
             assert refresh_application_modules() == set()
         """)
 
@@ -497,6 +497,20 @@ class StartupTests(unittest.TestCase):
             assert workbook.active['G2'].data_type == 'n'
             assert workbook.active['G2'].number_format == 'General'
             workbook.close()
+            assert refresh_application_modules() == set()
+        """)
+
+
+    def test_cached_geo_autostat_refreshes_for_separate_email_and_viber_downloads(self):
+        self.run_isolated("""
+            import geo_autostat, autostat
+            del geo_autostat.GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert 'geo_autostat' in refreshed
+            assert geo_autostat.build_autostat_channel_excel is autostat.build_autostat_channel_excel
+            assert geo_autostat.build_autostat_excel_zip is autostat.build_autostat_excel_zip
+            assert geo_autostat.GEO_AUTOSTAT_VERSION == 3
             assert refresh_application_modules() == set()
         """)
 
