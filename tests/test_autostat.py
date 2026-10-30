@@ -179,21 +179,34 @@ class AutostatTests(unittest.TestCase):
         self.assertEqual([cell.value for cell in workbook["Viber"][1]], list(VIBER_HEADERS))
         workbook.close()
 
-    def test_abbreviated_scientific_accounts_stop_exports_and_numeric_sources_retain_supplied_digits(self):
-        data = b"cardnumber,indexoneuid,email\n5.15604E+15,UID-1,first@example.com\n5156041234567897,UID-2,second@example.com\n"
+    def test_abbreviated_scientific_accounts_are_skipped_and_numeric_sources_retain_supplied_digits(self):
+        data = (
+            b"cardnumber,indexoneuid,email,phone\n"
+            b"000001,UID-0,before@example.com,09171234567\n"
+            b"5.15604E+15,UID-1,invalid@example.com,09181234567\n"
+            b"5156041234567897,UID-2,after@example.com,09191234567\n"
+        )
         source = SourceSelection("source.csv", data, inspect_contact_source(data, ".csv")[0])
-        with self.assertRaisesRegex(AutomationError, "source.csv / CSV, row 2.*scientific notation"):
-            build_autostat_exports([source], timestamp=NOW)
+        contacts = extract_contacts(source)
+        self.assertEqual(contacts.source_error_rows, [3])
+        bundle = build_autostat_exports([source], timestamp=NOW)
+        self.assertEqual(bundle.summary[0]["Source error rows skipped"], 1)
+        self.assertEqual(bundle.summary[0]["Account precision issues"], 0)
+        for file in bundle.files:
+            self.assertEqual([row["Account No."] for row in exported_rows(file)], ["000001", "5156041234567897"])
         workbook = Workbook()
-        workbook.active.append(["cardnumber", "email"])
-        workbook.active.append(["5.15604E+15", "first@example.com"])
+        for row in csv.reader(StringIO(data.decode())):
+            workbook.active.append(row)
         output = BytesIO()
         workbook.save(output)
         workbook.close()
         data = output.getvalue()
         source = SourceSelection("source.xlsx", data, inspect_contact_source(data, ".xlsx")[0])
-        with self.assertRaisesRegex(AutomationError, "source.xlsx / Sheet, row 2.*scientific notation"):
-            build_autostat_exports([source], timestamp=NOW)
+        self.assertEqual(extract_contacts(source).source_error_rows, [3])
+        bundle = build_autostat_exports([source], timestamp=NOW)
+        self.assertEqual(bundle.summary[0]["Source error rows skipped"], 1)
+        for file in bundle.files:
+            self.assertEqual([row["Account No."] for row in exported_rows(file)], ["000001", "5156041234567897"])
         workbook = Workbook()
         workbook.active.append(["cardnumber", "email"])
         workbook.active.append([5156040000000000, "first@example.com"])
@@ -207,6 +220,33 @@ class AutostatTests(unittest.TestCase):
         self.assertEqual(bundle.summary[0]["Account precision issues"], 1)
         self.assertEqual([row["Account No."] for row in exported_rows(bundle.files[0])],
                          ["5156040000000000", "001234567890123456", "123"])
+
+    def test_excel_errors_and_missing_formula_values_skip_each_bad_row_once(self):
+        workbook = Workbook()
+        workbook.active.append(["cardnumber", "email", "phone", "Unused"])
+        for row in (
+            ["000001", "before@example.com", "09171234567", None],
+            ["#N/A", "bad-account@example.com", "09181234567", None],
+            ["000002", "#VALUE!", "09181234567", None],
+            ["000003", "bad-phone@example.com", "#DIV/0!", None],
+            ["#REF!", "#N/A", "09181234567", None],
+            ["=1+1", "formula-account@example.com", "09181234567", None],
+            ["000004", "formula-phone@example.com", "=1+1", None],
+            ["000009", "unused-error@example.com", "09191234567", "#N/A"],
+            ["000002", "after@example.com", "09201234567", None],
+        ):
+            workbook.active.append(row)
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        data = output.getvalue()
+        source = SourceSelection("errors.xlsx", data, inspect_contact_source(data, ".xlsx")[0])
+        self.assertEqual(extract_contacts(source).source_error_rows, [3, 4, 5, 6, 7, 8])
+        bundle = build_autostat_exports([source], timestamp=NOW)
+        self.assertEqual(bundle.summary[0]["Source error rows skipped"], 6)
+        self.assertEqual(bundle.summary[0]["Rows checked"], 3)
+        for file in bundle.files:
+            self.assertEqual([row["Account No."] for row in exported_rows(file)], ["000001", "000009", "000002"])
 
     def test_each_single_email_is_validated_once_including_addresses_with_a_pipe(self):
         data = (
@@ -569,8 +609,9 @@ class AutostatTests(unittest.TestCase):
         workbook.close()
         data = output.getvalue()
         source = SourceSelection("formula.xlsx", data, inspect_contact_source(data, ".xlsx")[0])
-        with self.assertRaisesRegex(AutomationError, "formula has no saved value"):
-            extract_contacts(source)
+        contacts = extract_contacts(source)
+        self.assertEqual(contacts.source_error_rows, [2])
+        self.assertEqual(contacts.emails, [])
         data = 'Account,email\n0001,ana\u6f22@example.com\n'.encode()
         source = SourceSelection("unicode.csv", data, inspect_contact_source(data, ".csv")[0])
         with self.assertRaisesRegex(AutomationError, "CSV UTF-8"):
@@ -641,20 +682,21 @@ class AutostatAppTests(unittest.TestCase):
             with ZipFile(BytesIO(calls["autostat_zip"].args[1])) as archive:
                 self.assertEqual(archive.namelist(), ["AUTOSTAT_Email.csv", "AUTOSTAT_Viber.csv"])
 
-    def test_abbreviated_source_accounts_clear_previous_results_and_offer_no_download(self):
+    def test_abbreviated_source_accounts_are_skipped_and_new_valid_rows_replace_previous_downloads(self):
         uploads = [Upload("contacts.csv", b"cardnumber,email\n5156041234567897,first@example.com\n")]
         with patch("streamlit.file_uploader", side_effect=lambda *args, **kwargs: uploads):
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
             app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertIn("autostat_result", app.session_state)
-            uploads[0] = Upload("contacts.csv", b"cardnumber,email\n5.15604E+15,first@example.com\n")
+            uploads[0] = Upload("contacts.csv", b"cardnumber,email\n5.15604E+15,first@example.com\n000002,second@example.com\n")
             app.run(timeout=20)
+            self.assertNotIn("autostat_result", app.session_state)
             app.button(key="autostat_prepare").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertNotIn("autostat_result", app.session_state)
-            self.assertEqual(len(app.get("download_button")), 0)
-            self.assertIn("scientific notation", app.error[0].value)
-            self.assertIn("row 2", app.error[0].value)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(exported_rows(app.session_state["autostat_result"]["bundle"].files[0])[0]["Account No."], "000002")
+            self.assertGreater(len(app.get("download_button")), 0)
+            self.assertTrue(any("Skipped 1 database row with" in item.value for item in app.warning))
 
     def test_excluded_uploads_are_skipped_before_reading_and_only_included_accounts_are_counted(self):
         included = Upload("GEO.csv", b"cardnumber,email,phone\n0001,first@example.com,09171234567\n")

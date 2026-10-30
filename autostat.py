@@ -26,10 +26,11 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 12
+AUTOSTAT_VERSION = 13
 ACCOUNT_TEXT_EXPORT_VERSION = 2
 ACCOUNT_NUMBER_NORMALIZATION_VERSION = 1
 ACCOUNT_INTEGRITY_VERSION = 1
+SOURCE_ROW_SKIP_VERSION = 1
 EXCEL_CHANNEL_OUTPUT_VERSION = 1
 ACCOUNT_DEDUP_VERSION = 2
 ACCOUNT_IDENTITY_VERSION = 1
@@ -226,6 +227,7 @@ class ContactRows:
     account_precision_issues: int = 0
     email_ob_values: list[Any] = field(default_factory=list)
     phone_ob_values: list[Any] = field(default_factory=list)
+    source_error_rows: list[int] = field(default_factory=list)
 
 
 def _validated_candidates(value: Any, validator) -> list[tuple[Any, str | None]]:
@@ -262,9 +264,9 @@ def account_number_text(value: Any) -> str | None:
 
 def _read_rows(
     source: SourceSelection, *, extra_columns: tuple[int, ...] = (),
-    account_issues: list[int] | None = None,
+    account_issues: list[int] | None = None, row_errors: list[int] | None = None,
 ):
-    """Yield selected values; do not evaluate source formulas or follow links."""
+    """Yield selected values, recording and skipping bad source rows when requested."""
     sheet = source.sheet
     columns = tuple(dict.fromkeys((sheet.account_column, *sheet.email_columns, *sheet.phone_columns, *extra_columns)))
     if sheet.account_column is None or not (sheet.email_columns or sheet.phone_columns):
@@ -276,6 +278,10 @@ def _read_rows(
     if Path(source.name).suffix.lower() == ".csv":
         for number, row in enumerate(_csv_rows(source.data), 1):
             if number > sheet.header_row:
+                if (row_errors is not None and sheet.account_column < len(row)
+                        and _account_precision_risk(row[sheet.account_column])):
+                    row_errors.append(number)
+                    continue
                 if (account_issues is not None and sheet.account_column < len(row)
                         and _account_precision_risk(row[sheet.account_column])):
                     account_issues.append(number)
@@ -292,19 +298,29 @@ def _read_rows(
             row = {}
             for index in columns:
                 cell = values[index]
+                error = None
                 if formulas[index].data_type == "f" and cell.value is None:
-                    raise AutomationError(
+                    error = (
                         f"{source.name} / {sheet.name}, row {number}: a formula has no saved value. "
                         "Recalculate and save the source in Excel before uploading again."
                     )
                 if cell.data_type == "e":
-                    raise AutomationError(f"{source.name} / {sheet.name}, row {number}: fix Excel error {cell.value}.")
-                if (account_issues is not None and index == sheet.account_column
-                        and _account_precision_risk(cell.value)):
-                    account_issues.append(number)
+                    error = f"{source.name} / {sheet.name}, row {number}: fix Excel error {cell.value}."
+                if error:
+                    if row_errors is None:
+                        raise AutomationError(error)
+                    row_errors.append(number)
+                    break
                 row[index] = (_identifier(cell.value, cell.number_format)
                               if index == sheet.account_column else cell.value)
-            yield row
+            else:
+                account = row[sheet.account_column]
+                if row_errors is not None and isinstance(account, str) and _account_precision_risk(account):
+                    row_errors.append(number)
+                    continue
+                if account_issues is not None and _account_precision_risk(values[sheet.account_column].value):
+                    account_issues.append(number)
+                yield row
     finally:
         original.close()
         if cached is not None:
@@ -358,17 +374,10 @@ def extract_contacts(source: SourceSelection) -> ContactRows:
     extra_columns = tuple(column for column in (identity_column, ob_column) if column is not None)
     result = ContactRows()
     account_issues = []
-    for row_number, row in enumerate(_read_rows(
+    for row in _read_rows(
         source, extra_columns=extra_columns, account_issues=account_issues,
-    ), source.sheet.header_row + 1):
-        account = row[source.sheet.account_column]
-        if isinstance(account, str) and _account_precision_risk(account):
-            raise AutomationError(
-                f"{source.name} / {source.sheet.name}, row {row_number}: the account number is already "
-                "abbreviated in scientific notation. Upload the original source with the full account "
-                "number stored as Text, or its original CSV without opening and resaving it in Excel. "
-                "Changing the cell format cannot recover missing digits. No AUTOSTAT files were prepared."
-            )
+        row_errors=result.source_error_rows,
+    ):
         row[source.sheet.account_column] = account_number_text(row[source.sheet.account_column])
         _add_contact_row(result, source.sheet, row, identity=row.get(identity_column), ob=row.get(ob_column))
     result.account_precision_issues = len(account_issues)
@@ -478,6 +487,7 @@ def _contact_summary(source: SourceSelection, contacts: ContactRows) -> dict[str
         "Duplicate Email rows removed": contacts.duplicate_email_rows,
         "Duplicate Viber rows removed": contacts.duplicate_phone_rows,
         "Account precision issues": contacts.account_precision_issues,
+        "Source error rows skipped": len(contacts.source_error_rows),
     }
 
 

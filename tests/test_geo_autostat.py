@@ -224,7 +224,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
                         self.assertEqual([row["Account No."] for row in log_rows(file)],
                                          ["000123456789012345", "000123456789012345", "12345678901234567"])
 
-    def test_log_settings_rebuild_automatically_and_scientific_accounts_clear_downloads(self):
+    def test_log_settings_rebuild_automatically_and_scientific_accounts_are_skipped(self):
         uploads = [Upload(workbook_data())]
         uploader = lambda label, **kw: uploads[0] if kw.get("key") == "source_upload" else None
         with patch("streamlit.file_uploader", side_effect=uploader), patch("streamlit.download_button") as download:
@@ -238,9 +238,30 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             download.reset_mock()
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertIn("scientific notation", app.session_state["geo_autostat_result"]["error"])
-            self.assertNotIn("bundle", app.session_state["geo_autostat_result"])
-            self.assertFalse(any(call.kwargs.get("key") == "geo_autostat_excel" for call in download.call_args_list))
+            result = app.session_state["geo_autostat_result"]
+            self.assertNotIn("error", result)
+            self.assertEqual(result["bundle"].summary[0]["Source error rows skipped"], 2)
+            for file in result["bundle"].files:
+                self.assertEqual([row["Account No."] for row in log_rows(file)], ["000123456789012345", "000123456789012345"])
+            self.assertTrue(any("Skipped 2 database rows" in item.value for item in app.warning))
+            self.assertTrue(any(call.kwargs.get("key") == "geo_autostat_excel" for call in download.call_args_list))
+
+    def test_all_invalid_account_rows_show_skipped_count_without_stale_downloads(self):
+        workbook = Workbook()
+        workbook.active.append(["primary_key", "cardnumber", "email", "phone"])
+        workbook.active.append(["VALID-PRIMARY", "5.15604E+15", "one@example.com", "09171234567"])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        upload = Upload(output.getvalue())
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
+                patch("streamlit.download_button") as download:
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual([file.count for file in app.session_state["geo_autostat_result"]["bundle"].files], [0, 0])
+            self.assertTrue(any("Skipped 1 database row with" in item.value for item in app.warning))
+            self.assertFalse(any(call.kwargs.get("key", "").startswith("geo_autostat_") for call in download.call_args_list))
 
     def test_excluded_uploads_do_not_leave_previous_autostat_available(self):
         uploads = [Upload(workbook_data())]

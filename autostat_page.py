@@ -263,9 +263,15 @@ def _render_autostat_uploads(
         phone_column.metric("Valid phone accounts", f"{phone_count:,}")
     if not (email_count or phone_count):
         st.warning("No valid contacts with account numbers were found. The output files contain template headers only.")
+    skipped_rows = sum(row["Source error rows skipped"] for row in bundle.summary)
+    if skipped_rows:
+        st.warning(
+            f"Skipped {skipped_rows:,} database row{'s' if skipped_rows != 1 else ''} with scientific-notation account numbers, Excel cell errors, "
+            "or formulas without saved values. Only valid rows are included in AUTOSTAT."
+        )
     if any(row["Account precision issues"] for row in bundle.summary):
         st.warning(
-            "Some source account numbers are numeric or in scientific notation and may already be rounded. "
+            "Some source account numbers are numeric and may already be rounded. "
             "Upload the original source with full card numbers stored as text; missing digits cannot be recovered."
         )
     st.download_button(

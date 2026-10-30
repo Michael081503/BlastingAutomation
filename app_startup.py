@@ -65,6 +65,7 @@ def refresh_application_modules() -> set[str]:
             "ACCOUNT_TEXT_EXPORT_VERSION", "build_autostat_excel",
             "ACCOUNT_NUMBER_NORMALIZATION_VERSION", "account_number_text",
             "ACCOUNT_INTEGRITY_VERSION", "EXCEL_CHANNEL_OUTPUT_VERSION",
+            "SOURCE_ROW_SKIP_VERSION", "ContactRows.__dataclass_fields__.source_error_rows",
             "build_autostat_channel_excel", "build_autostat_excel_zip",
             "ContactRows.__dataclass_fields__.email_ob_values", "ContactRows.__dataclass_fields__.phone_ob_values",
         ), ("automation", "email_validation", "export_config", "exports")),

@@ -85,6 +85,12 @@ def render_geo_autostat(
         return
     bundle = result["bundle"]
     email_count, phone_count = (file.count for file in bundle.files)
+    skipped_rows = sum(row["Source error rows skipped"] for row in bundle.summary)
+    if skipped_rows:
+        st.warning(
+            f"Skipped {skipped_rows:,} database row{'s' if skipped_rows != 1 else ''} with scientific-notation account numbers, Excel cell errors, "
+            "or formulas without saved values. Only valid rows are included in AUTOSTAT."
+        )
     if not (email_count or phone_count):
         st.caption("No valid email or mobile contacts with account numbers were found for AUTOSTAT.")
         return

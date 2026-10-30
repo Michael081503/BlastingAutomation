@@ -174,17 +174,32 @@ class B2AutostatTests(unittest.TestCase):
             self.assertEqual(row["REMARKS"], f"only@example.com | EMAIL SENT | {collector}")
             self.assertEqual([file.count for file in result.files], [1, 0, 0])
 
-    def test_scientific_accounts_and_uncomputed_formulas_fail_without_output(self):
-        with self.assertRaisesRegex(AutomationError, "scientific notation"):
-            build_b2_autostat_exports([source(b"cardnumber,email\n5.15604E+15,a@example.com\n")], timestamp=None)
+    def test_scientific_accounts_and_uncomputed_formulas_are_skipped(self):
+        bundle = build_b2_autostat_exports([source(b"primary_key,email\n5.15604E+15,a@example.com\n")], timestamp=None)
+        self.assertEqual([file.count for file in bundle.files], [0, 0, 0])
+        self.assertEqual(bundle.summary[0]["Source error rows skipped"], 1)
         workbook = Workbook()
-        workbook.active.append(["Account No.", "Name", "Email"])
-        workbook.active.append(["00001", '=CONCAT("Sample","Name")', "a@example.com"])
+        workbook.active.append(["primary_key", "cardnumber", "FullName", "email", "phone", "Terms", "OB"])
+        for row in (
+            ["00001", "CARD-1", "Before", "before@example.com", "09171234567", "AMRANCELI", 9],
+            ["5.15604E+15", "CARD-SCI", "Bad account", "bad@example.com", "09181234567", "BAD", 10000],
+            ["00002", "CARD-2", '=CONCAT("Sample","Name")', "formula@example.com", "09181234567", "BAD", 9000],
+            ["00003", "CARD-3", "Cell error", "#N/A", "09181234567", "BAD", 8000],
+            ["00004", "CARD-4", "After", "after@example.com", "09191234567", "KPALIMA", 1000],
+        ):
+            workbook.active.append(row)
         output = BytesIO()
         workbook.save(output)
         workbook.close()
-        with self.assertRaisesRegex(AutomationError, "formula has no saved value"):
-            build_b2_autostat_exports([source(output.getvalue(), "B2.xlsx")], timestamp=None)
+        for name in ("B2.xlsx", "B4.xlsx"):
+            with self.subTest(name=name):
+                bundle = build_b2_autostat_exports([source(output.getvalue(), name)], timestamp=None)
+                self.assertEqual(bundle.summary[0]["Source error rows skipped"], 3)
+                for file in bundle.files:
+                    header = "Account No." if file.filename.endswith("Email.csv") else "Account number"
+                    self.assertEqual([row[header] for row in rows(file)], ["00004", "00001"])
+                    self.assertEqual([row["Name"] for row in rows(file)], ["After", "Before"])
+                self.assertEqual([row["Collector"] for row in rows(bundle.files[0])], ["KPALIMA", "AMRANCELI"])
         with self.assertRaisesRegex(AutomationError, "Remarks By"):
             build_b2_autostat_exports([source(b"Account,email\n1,a@example.com\n")], timestamp=None, remark_by=" ")
 

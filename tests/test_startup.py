@@ -88,7 +88,31 @@ class StartupTests(unittest.TestCase):
             source = autostat.SourceSelection('accounts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
             bundle = autostat_page.build_autostat_exports([source], timestamp=None)
             assert [row['Account No.'] for row in bundle.files[0].preview] == ['5156041234567897', '000123']
-            assert autostat_page.AUTOSTAT_VERSION == 12
+            assert autostat_page.AUTOSTAT_VERSION == 13
+            assert refresh_application_modules() == set()
+        """)
+
+    def test_cached_autostat_refreshes_to_skip_bad_source_rows_in_all_active_workflows(self):
+        self.run_isolated("""
+            import autostat, geo_autostat, b2_autostat, autostat_page
+            del autostat.SOURCE_ROW_SKIP_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat', 'geo_autostat', 'b2_autostat', 'autostat_page'} <= refreshed
+            data = b'primary_key,cardnumber,email\\n0001,5.15604E+15,badcard@example.com\\n5.15604E+15,0002,badprimary@example.com\\n0003,0004,valid@example.com\\n'
+            source = autostat.SourceSelection('source.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
+            bundle = autostat_page.build_autostat_exports([source], timestamp=None)
+            assert [row['Account No.'] for row in bundle.files[0].preview] == ['0002', '0004']
+            assert bundle.summary[0]['Source error rows skipped'] == 1
+            geo_source = geo_autostat.mapped_contact_source('source.csv', data, 'CSV', 1, 3,
+                {'primary_key': 0, 'cardnumber': 1, 'email': 2})
+            bundle = geo_autostat.build_autostat_exports([geo_source], timestamp=None)
+            assert [row['Account No.'] for row in bundle.files[0].preview] == ['0002', '0004']
+            bundle = b2_autostat.build_b2_autostat_exports([b2_autostat.B2ActivitySource(source)], timestamp=None)
+            assert [row['Account No.'] for row in bundle.files[0].preview] == ['0001', '0003']
+            assert bundle.summary[0]['Source error rows skipped'] == 1
+            assert autostat.AUTOSTAT_VERSION == 13
+            assert autostat_page.build_autostat_exports is autostat.build_autostat_exports
             assert refresh_application_modules() == set()
         """)
 
@@ -173,7 +197,7 @@ class StartupTests(unittest.TestCase):
             assert [file.filename for file in bundle.files] == ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv']
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
-            assert autostat.AUTOSTAT_VERSION == 12
+            assert autostat.AUTOSTAT_VERSION == 13
             assert autostat_page.AUTOSTAT_PAGE_VERSION == 9
             assert refresh_application_modules() == set()
         """)
@@ -409,7 +433,7 @@ class StartupTests(unittest.TestCase):
             assert {'b2_autostat', 'autostat_page'} <= refreshed
             assert autostat_page.build_b2_autostat_exports is b2_autostat.build_b2_autostat_exports
             assert autostat_page.B2_UPLOAD_VERSION == 1
-            assert b2_autostat.B2_AUTOSTAT_VERSION == 3
+            assert b2_autostat.B2_AUTOSTAT_VERSION == 4
             data = b'cardnumber,primary_key,email,phone,Collector,Terms\\nCARD,000123,one@example.com,09171234567,OLD,AGENT1\\n'
             import autostat
             source = autostat.SourceSelection('B2.csv', data, autostat.inspect_contact_source(data, '.csv')[0])

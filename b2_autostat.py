@@ -7,13 +7,13 @@ from datetime import datetime
 
 from automation import AutomationError, normalize_header, ob_sort_key, source_column_positions
 from autostat import (
-    AutostatBundle, ContactRows, ContactSheet, SourceSelection, _account_precision_risk,
+    AutostatBundle, ContactRows, ContactSheet, SourceSelection,
     _add_contact_row, _bundle, _contact_summary, _log_file, _read_rows,
     account_number_text, unique_account_contacts,
 )
 
 
-B2_AUTOSTAT_VERSION = 3
+B2_AUTOSTAT_VERSION = 4
 B2_PRIMARY_KEY_VERSION = 1
 B2_COLLECTOR_TERMS_VERSION = 1
 B2_EMAIL_HEADERS = (
@@ -80,16 +80,11 @@ def build_b2_autostat_exports(
         contacts = ContactRows()
         metadata = {"Email": {}, "Phone": {}}
         account_issues = []
-        for number, row in enumerate(_read_rows(
+        for row in _read_rows(
             source, extra_columns=extra_columns, account_issues=account_issues,
-        ), source.sheet.header_row + 1):
+            row_errors=contacts.source_error_rows,
+        ):
             account = row[source.sheet.account_column]
-            if isinstance(account, str) and _account_precision_risk(account):
-                raise AutomationError(
-                    f"{source.name} / {source.sheet.name}, row {number}: the account number is already "
-                    "abbreviated in scientific notation. Upload the original full account number stored as Text. "
-                    "No B2 AUTOSTAT files were prepared."
-                )
             row[source.sheet.account_column] = account_number_text(account)
             email_start, phone_start = len(contacts.emails), len(contacts.phones)
             _add_contact_row(contacts, source.sheet, row, identity=row.get(identity_column), ob=row.get(ob_column))
