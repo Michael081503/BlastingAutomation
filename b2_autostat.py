@@ -13,8 +13,9 @@ from autostat import (
 )
 
 
-B2_AUTOSTAT_VERSION = 2
+B2_AUTOSTAT_VERSION = 3
 B2_PRIMARY_KEY_VERSION = 1
+B2_COLLECTOR_TERMS_VERSION = 1
 B2_EMAIL_HEADERS = (
     "Name", "Account No.", "STATUS CODE", "REMARKS", "REMARKS BY", "REMARKS DATE", "Email", "Collector",
 )
@@ -45,7 +46,7 @@ def b2_metadata_columns(headers: tuple[str, ...]) -> tuple[int | None, int | Non
     def find(aliases):
         return next((labels.index(alias) for alias in aliases if labels.count(alias) == 1), None)
 
-    return find(("fullname", "name", "debtorname", "customername")), find(("collector", "collectorcode"))
+    return find(("fullname", "name", "debtorname", "customername")), find(("terms", "collector", "collectory", "collectorcode"))
 
 
 def _text(value) -> str:

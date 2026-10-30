@@ -19,7 +19,7 @@ from autostat import (
     build_autostat_channel_excel, build_autostat_excel_zip,
 )
 from b2_autostat import (
-    B2_AUTOSTAT_VERSION, B2_EMAIL_HEADERS, B2_PHONE_HEADERS, B2_PRIMARY_KEY_VERSION, B2ActivitySource,
+    B2_AUTOSTAT_VERSION, B2_COLLECTOR_TERMS_VERSION, B2_EMAIL_HEADERS, B2_PHONE_HEADERS, B2_PRIMARY_KEY_VERSION, B2ActivitySource,
     b2_account_sheet, b2_metadata_columns, build_b2_autostat_exports,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
@@ -64,7 +64,7 @@ def _render_autostat_uploads(
         st.subheader("B2 activity logs")
         st.caption(
             "Upload B2 account files to fill the Email, SMS and Viber templates. "
-            "Names and collectors are copied from the source when available."
+            "Names are copied from the source; Terms supplies the collector agent code when available."
         )
     if encoding is None:
         with st.sidebar:
@@ -190,7 +190,7 @@ def _render_autostat_uploads(
                         )
                         collector_column = st.selectbox(
                             "Collector column", account_options, index=account_options.index(collector_default),
-                            format_func=label, key=f"{column_key}_collector",
+                            format_func=label, key=f"{column_key}_collector_{B2_COLLECTOR_TERMS_VERSION}",
                         )
                         configurations.append((name_column, collector_column))
                     if account is None or not (email_columns or phone_columns):

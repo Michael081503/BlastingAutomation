@@ -43,6 +43,37 @@ class Upload(BytesIO):
 
 
 class B2AutostatTests(unittest.TestCase):
+    def test_terms_supply_collector_codes_in_csv_excel_and_remarks_ahead_of_collector(self):
+        headers = ["primary_key", "FullName", "email", "phone", "Collector", " tErMs "]
+        records = [
+            ["000001", "First Person", "one@example.com", "09171234567", "OLD1", " AGENT1 "],
+            ["000002", "Second Person", "two@example.com", "09181234567", "OLD2", "0007"],
+            ["000003", "Third Person", "three@example.com", "09191234567", "OLD3", None],
+        ]
+        csv_output = StringIO(newline="")
+        writer = csv.writer(csv_output)
+        writer.writerows([headers, *records])
+        workbook = Workbook()
+        workbook.active.append(headers)
+        for record in records:
+            workbook.active.append(record)
+        excel_output = BytesIO()
+        workbook.save(excel_output)
+        workbook.close()
+        for name, data in (("B2.csv", csv_output.getvalue().encode()), ("B2.xlsx", excel_output.getvalue())):
+            with self.subTest(name=name):
+                selection = source(data, name)
+                bundle = build_b2_autostat_exports([selection], timestamp=None, default_collector="FALLBACK")
+                email_rows = rows(bundle.files[0])
+                self.assertEqual([row["Collector"] for row in email_rows], ["AGENT1", "0007", "FALLBACK"])
+                self.assertEqual([row["REMARKS"] for row in email_rows], [
+                    "one@example.com | EMAIL SENT | AGENT1", "two@example.com | EMAIL SENT | 0007",
+                    "three@example.com | EMAIL SENT | FALLBACK",
+                ])
+                saved = load_workbook(BytesIO(build_autostat_excel(bundle)))
+                self.assertEqual([cell.value for cell in saved["B2_Email"]["H"][1:]], ["AGENT1", "0007", "FALLBACK"])
+                saved.close()
+
     def test_exact_layouts_and_channel_text_use_source_data_and_current_settings(self):
         selection = source(
             b"primary_key,cardnumber,FullName,email,phone,Collector\n"
@@ -179,7 +210,7 @@ class B2AutostatTests(unittest.TestCase):
 
 class B2AutostatPageTests(unittest.TestCase):
     def test_b2_account_control_and_prepared_files_use_primary_key(self):
-        upload = Upload(b"cardnumber,primary_key,email,phone\nCARD-1,000001,one@example.com,09171234567\n")
+        upload = Upload(b"cardnumber,primary_key,email,phone,Collector,Terms\nCARD-1,000001,one@example.com,09171234567,OLD,AGENT1\n")
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: [upload] if kw.get("key") == "autostat_b2_uploads" else []):
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
             app.radio(key="autostat_upload_type").set_value("B2").run(timeout=20)
@@ -187,11 +218,16 @@ class B2AutostatPageTests(unittest.TestCase):
             account = next(widget for widget in app.selectbox if widget.label == "Account number column")
             self.assertEqual(account.value, 1)
             self.assertTrue(account.disabled)
+            collector = next(widget for widget in app.selectbox if widget.label == "Collector column")
+            self.assertEqual(collector.value, 5)
             app.button(key="autostat_b2_prepare").click().run(timeout=20)
             self.assertEqual(len(app.error), 0)
             for file in app.session_state["autostat_b2_result"]["bundle"].files:
                 header = "Account No." if file.filename.endswith("Email.csv") else "Account number"
                 self.assertEqual(rows(file)[0][header], "000001")
+            email = rows(app.session_state["autostat_b2_result"]["bundle"].files[0])[0]
+            self.assertEqual(email["Collector"], "AGENT1")
+            self.assertEqual(email["REMARKS"], "one@example.com | EMAIL SENT | AGENT1")
 
     def test_b2_upload_prepare_download_save_invalidation_and_switching(self):
         uploads = [Upload(b"cardnumber,FullName,email,phone,Collector\n00001,Sample,one@example.com,09171234567,COLLECTOR\n")]

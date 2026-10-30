@@ -84,13 +84,13 @@ class WorkflowPageTests(unittest.TestCase):
     def test_negative_b2_activity_uploads_prepare_all_channels_independently_of_matching(self):
         matching = {}
         csv_upload = Upload(
-            b"cardnumber,primary_key,FullName,email,phone,Collector\n"
+            b"cardnumber,primary_key,FullName,email,phone,Terms\n"
             b"CARD1,000000000000000001,CSV Person,csv@example.com,+639171234567,COL1\n"
             b"CARD2,000000000000000002,Email only,only@example.com,123,COL2\n"
         )
         csv_upload.name = "NEGATIVE B2 - CARDS.csv"
         workbook = Workbook()
-        workbook.active.append(["primary_key", "cardnumber", "FullName", "email", "phone", "Collector"])
+        workbook.active.append(["primary_key", "cardnumber", "FullName", "email", "phone", "Terms"])
         workbook.active.append(["000000000000000003", "CARD3", "Excel Person", None, "09181234567", "COL3"])
         output = BytesIO()
         workbook.save(output)
@@ -110,6 +110,8 @@ class WorkflowPageTests(unittest.TestCase):
             self.assertNotIn("geo_autostat_result", app.session_state)
             result = app.session_state["geo_b2_autostat_result"]
             self.assertEqual([file.count for file in result["bundle"].files], [2, 2, 2])
+            self.assertEqual([row["Collector"] for row in csv_rows(result["bundle"].files[0])], ["COL1", "COL2"])
+            self.assertEqual(csv_rows(result["bundle"].files[0])[0]["REMARKS"], "csv@example.com | EMAIL SENT | COL1")
             self.assertEqual([row["Account No."] for row in csv_rows(result["bundle"].files[0])],
                              ["000000000000000001", "000000000000000002"])
             for file in result["bundle"].files[1:]:
