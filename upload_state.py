@@ -8,24 +8,27 @@ import streamlit as st
 
 
 CLEAR_UPLOADS_VERSION = 1
+B4_UPLOADS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
     "autostat_uploads", "autostat_b2_uploads", "b2_database_upload", "b2_grid_upload",
+    "b4_database_upload", "b4_grid_upload",
 )
 FILE_STATE_KEYS = {
     "result", "source_info", "template_info", "source_previews", "sheet_output_modes",
     "geo_autostat_result", "geo_b2_autostat_result", "geo_b2_autostat_source_info",
     "autostat_result", "autostat_source_info", "autostat_b2_result", "autostat_b2_source_info",
-    "b2_result", "b2_source_info",
+    "b2_result", "b2_source_info", "b4_result", "b4_source_info",
 }
 FILE_STATE_PREFIXES = (
     "source_sheet_", "template_sheet_", "source_header_", "template_header_",
     "manual_mapping_", "source_mapping_", "output_mode_", "preview_file_",
     "download_", "excel_download_", "b2_sheet_", "b2_header_", "b2_preview_",
     "autostat_preview_", "autostat_b2_preview_", "geo_b2_autostat_preview_",
+    "b4_sheet_", "b4_header_", "b4_preview_",
 )
-SETTINGS_KEYS = {"csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder"} | {
+SETTINGS_KEYS = {"csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder", "b4_csv_type", "b4_output_folder"} | {
     prefix + suffix
     for prefix in ("autostat_", "autostat_b2_", "geo_b2_autostat_", "geo_autostat_")
     for suffix in ("output_format", "csv_file_type", "remark_by", "collector", "blank_time",

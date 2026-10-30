@@ -1,4 +1,4 @@
-"""Match DataGrid accounts to SBC contacts and fill the B2 blasting template."""
+"""Match DataGrid accounts to SBC contacts and fill B2 and B4 blasting templates."""
 
 from __future__ import annotations
 
@@ -13,13 +13,15 @@ from autostat import (
     _add_contact_row, _bundle, _contact_summary, _log_file, _workbook,
     unique_account_contacts,
 )
-from export_config import AUTOSTAT_B2_FILENAMES
+from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES, COLLECTION_AGENTS
 from exports import export_filename
 
 
-B2_MATCHING_VERSION = 4
+B2_MATCHING_VERSION = 5
+B4_MATCHING_VERSION = 1
+B2_B4_AGENTS_VERSION = 1
 B2_UPLOAD_ROLES_VERSION = 1
-B2_TEMPLATE_VERSION = 1
+B2_TEMPLATE_VERSION = 2
 B2_CONTACT_PRIORITY_VERSION = 1
 # Exact header order from 1EMAIL_Blasting - Template.xlsx; no sample rows are used.
 B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
@@ -81,9 +83,11 @@ def is_sbc_database_sheet(headers: Sequence[str]) -> bool:
     return all(any(normalize_header(alias) in labels for alias in aliases) for aliases in RAW_FIELDS.values())
 
 
-def validate_b2_source(source: SourceSelection, *, database: bool) -> None:
+def validate_b2_source(source: SourceSelection, *, database: bool, bucket: int = 2) -> None:
     """Check the selected workbook role before enabling matching."""
-    _columns(source, database=database)
+    columns = _columns(source, database=database)
+    if database and bucket == 4:
+        _b4_contact_sheet(source.sheet, columns["contract"])
 
 
 def _columns(source: SourceSelection, *, database: bool) -> dict[str, int]:
@@ -135,7 +139,23 @@ def _preferred_contact_columns(sheet: ContactSheet, columns: tuple[int, ...], pr
     return tuple(sorted(columns, key=lambda index: normalize_header(sheet.headers[index]) != preferred))
 
 
-def _campaign_record(raw: dict, grid: dict, raw_columns: dict, raw_details: dict, grid_details: dict, group: str) -> dict:
+def _b4_contact_sheet(sheet: ContactSheet, account_column: int) -> ContactSheet:
+    labels = [normalize_header(header) for header in sheet.headers]
+
+    def column(header):
+        matches = [index for index, label in enumerate(labels) if label == normalize_header(header)]
+        if len(matches) != 1:
+            raise AutomationError(f"{sheet.name}: B4 needs one unambiguous {header} column in the endorsement database.")
+        return matches[0]
+
+    return replace(sheet, account_column=account_column, email_columns=(column("Email (01)"),),
+                   phone_columns=(column("Phone (01)"),))
+
+
+def _campaign_record(
+    raw: dict, grid: dict, raw_columns: dict, raw_details: dict, grid_details: dict,
+    group: str, *, bucket: int = 2,
+) -> dict:
     record = dict.fromkeys(B2_TEMPLATE_HEADERS, "")
     for target in set(raw_details) | set(grid_details):
         value = raw.get(raw_details.get(target))
@@ -145,10 +165,8 @@ def _campaign_record(raw: dict, grid: dict, raw_columns: dict, raw_details: dict
     record.update({
         "primary_key": raw[raw_columns["account_key"]],
         "cardnumber": raw[raw_columns["contract"]],
-        "doclass": f"SBC {group} B2",
+        "doclass": f"SBC {group} B{bucket}",
         "Product": group,
-        "Monthly": "",
-        "Terms": "",
     })
     return record
 
@@ -206,14 +224,17 @@ class B2MatchResult:
 
 
 def build_b2_exports(
-    database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252",
+    database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252", bucket: int = 2,
 ) -> B2MatchResult:
     """Fill the 16-column blasting layout once per verified DataGrid account."""
-    if set(AUTOSTAT_B2_FILENAMES) != {"CARDS", "BEL"}:
-        raise AutomationError("Set both CARDS and BEL B2 filenames in export_config.py.")
-    names = {group: export_filename(name, ".csv") for group, name in AUTOSTAT_B2_FILENAMES.items()}
+    if bucket not in (2, 4):
+        raise AutomationError("Choose bucket B2 or B4.")
+    filenames = AUTOSTAT_B2_FILENAMES if bucket == 2 else AUTOSTAT_B4_FILENAMES
+    if set(filenames) != {"CARDS", "BEL"}:
+        raise AutomationError(f"Set both CARDS and BEL B{bucket} filenames in export_config.py.")
+    names = {group: export_filename(name, ".csv") for group, name in filenames.items()}
     if len({name.casefold() for name in names.values()}) != 2:
-        raise AutomationError("The B2 output filenames must be unique. Check export_config.py.")
+        raise AutomationError(f"The B{bucket} output filenames must be unique. Check export_config.py.")
     raw_columns = _columns(database, database=True)
     grid_columns = _columns(datagrid, database=False)
     raw_details = _detail_columns(database, RAW_DETAILS)
@@ -223,6 +244,8 @@ def build_b2_exports(
         email_columns=_preferred_contact_columns(database.sheet, database.sheet.email_columns, "EMAIL (01)"),
         phone_columns=_preferred_contact_columns(database.sheet, database.sheet.phone_columns, "Mobile 1"),
     )
+    if bucket == 4:
+        contacts_sheet = _b4_contact_sheet(database.sheet, raw_columns["contract"])
     selected_raw = (set(raw_columns.values()) | set(raw_details.values())
                     | set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns))
     raw_rows = list(_rows(
@@ -237,7 +260,7 @@ def build_b2_exports(
                 indexes[field][key].add(index)
 
     stats = dict.fromkeys((
-        "Database rows", "DataGrid rows", "Matched rows", "Unique B2 accounts",
+        "Database rows", "DataGrid rows", "Matched rows", f"Unique B{bucket} accounts",
         "Unmatched rows", "Missing account numbers", "Conflicting or ambiguous keys",
         "Other or missing bucket", "Unsupported product", "Duplicate account rows removed",
     ), 0)
@@ -267,7 +290,7 @@ def build_b2_exports(
             _, matched = raw_rows[next(iter(candidates))]
             stats["Matched rows"] += 1
             contract = _key(matched[raw_columns["contract"]])
-            if _key(matched[raw_columns["bucket"]]) not in {"2", "2.0", "b2"}:
+            if _key(matched[raw_columns["bucket"]]) not in {str(bucket), f"{bucket}.0", f"b{bucket}"}:
                 reason = "Other or missing bucket"
             else:
                 category = _key(matched[raw_columns["category"]])
@@ -280,9 +303,9 @@ def build_b2_exports(
                     reason = "Duplicate account rows removed"
                 else:
                     seen_accounts.add(contract)
-                    stats["Unique B2 accounts"] += 1
+                    stats[f"Unique B{bucket} accounts"] += 1
                     _add_contact_row(groups[group], contacts_sheet, matched)
-                    records[group].append(_campaign_record(matched, row, raw_columns, raw_details, grid_details, group))
+                    records[group].append(_campaign_record(matched, row, raw_columns, raw_details, grid_details, group, bucket=bucket))
         if reason:
             stats[reason] += 1
             audit.append({
@@ -303,7 +326,17 @@ def build_b2_exports(
             if account not in emails and account not in phones:
                 continue
             record.update({"email": emails.get(account, ""), "phone": phones.get(account, "")})
+            agent_name, agent_code = COLLECTION_AGENTS[len(rows) % len(COLLECTION_AGENTS)]
+            record.update({"Monthly": agent_name, "Terms": agent_code})
             rows.append({header: _template_text(record[header]) for header in B2_TEMPLATE_HEADERS})
-        summaries.append({"Group": group, "Accounts exported": len(rows), **_contact_summary(database, contacts)})
+        summaries.append({"Group": group, "Accounts exported": len(rows), **_contact_summary(database, contacts),
+                          **{f"{code} accounts": sum(row["Terms"] == code for row in rows) for _, code in COLLECTION_AGENTS}})
         files.append(_log_file(names[group], B2_TEMPLATE_HEADERS, rows, encoding))
     return B2MatchResult(_bundle(files, summaries), stats, audit)
+
+
+def build_b4_exports(
+    database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252",
+) -> B2MatchResult:
+    """Match verified B4 accounts using exactly Email (01) and Phone (01)."""
+    return build_b2_exports(database, datagrid, encoding=encoding, bucket=4)

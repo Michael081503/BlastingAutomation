@@ -80,3 +80,15 @@ AUTOSTAT_B2_FILENAMES = {
     "CARDS": "NEGATIVE B2 - CARDS",
     "BEL": "NEGATIVE B2 - BEL",
 }
+
+# B4 blasting template: match DataGrid accounts to the B4 endorsement database.
+AUTOSTAT_B4_FILENAMES = {
+    "CARDS": "NEGATIVE B4 - CARDS",
+    "BEL": "NEGATIVE B4 - BEL",
+}
+
+# Alternate exported accounts between these agents separately in each CARDS/BEL file.
+COLLECTION_AGENTS = (
+    ("Almera Ranceli", "AMRANCELI"),
+    ("Kyarill Palima", "KPALIMA"),
+)

@@ -15,6 +15,7 @@ from streamlit.testing.v1 import AppTest
 
 from automation import AutomationError, inspect_workbook, read_source
 from autostat import SourceSelection, inspect_contact_source
+from b2_autostat import B2ActivitySource, b2_metadata_columns, build_b2_autostat_exports
 from b2_matching import B2_TEMPLATE_HEADERS, build_b2_exports, is_datagrid_sheet, matching_sheet_score
 
 
@@ -84,6 +85,22 @@ def csv_rows(file):
 
 
 class B2Tests(unittest.TestCase):
+    def test_even_agent_assignment_survives_template_to_autostat_processing(self):
+        raw, grid = fixtures()
+        result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
+        expected = {row['primary_key']: row['Terms'] for file in result.bundle.files for row in csv_rows(file)}
+        sources = []
+        for file in result.bundle.files:
+            sheet = inspect_contact_source(file.data, '.csv')[0]
+            source = SourceSelection(file.filename, file.data, sheet)
+            sources.append(B2ActivitySource(source, *b2_metadata_columns(sheet.headers)))
+        activity = build_b2_autostat_exports(sources, timestamp=None)
+        for row in csv_rows(activity.files[0]):
+            self.assertEqual(row['Collector'], expected[row['Account No.']])
+            self.assertTrue(row['REMARKS'].endswith(' | ' + expected[row['Account No.']]))
+        self.assertEqual(result.bundle.summary[0]['AMRANCELI accounts'], 2)
+        self.assertEqual(result.bundle.summary[0]['KPALIMA accounts'], 1)
+
     def test_email_01_and_mobile_1_take_priority_over_earlier_fields_with_valid_fallbacks(self):
         headers = ['Account Key', 'Contract Number', 'Product Category Code', 'Bucket Code',
                    'Phone (01)', 'Email (02)', 'Mobile 1', 'EMAIL (01)']
@@ -146,9 +163,9 @@ class B2Tests(unittest.TestCase):
             self.assertEqual(tuple(rows[0]), B2_TEMPLATE_HEADERS)
             identities = [row['cardnumber'] for row in rows]
             self.assertEqual(len(identities), len(set(identities)))
-            for row in rows:
-                self.assertEqual(row['Monthly'], '')
-                self.assertEqual(row['Terms'], '')
+            for index, row in enumerate(rows):
+                self.assertEqual((row['Monthly'], row['Terms']),
+                                 [('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA')][index % 2])
                 self.assertTrue(row['email'] or row['phone'])
                 self.assertTrue(not row['phone'] or re.fullmatch(r'9[0-9]{9}', row['phone']))
         self.assertIn('recovered@example.com', {row['email'] for row in csv_rows(cards)})
@@ -201,10 +218,13 @@ class B2Tests(unittest.TestCase):
         self.assertEqual(bel[0]['doclass'], 'SBC BEL B2')
         self.assertEqual(bel[0]['Product'], 'BEL')
         for row in cards + bel:
-            for column in ('Monthly', 'Terms', 'Level', 'ChristmasAmnesty', 'NewEndo'):
+            for column in ('Level', 'ChristmasAmnesty', 'NewEndo'):
                 self.assertEqual(row[column], '')
             self.assertNotIn('Time', row)
             self.assertNotIn('Remark', row)
+        self.assertEqual([(row['Monthly'], row['Terms']) for row in cards],
+                         [('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA')])
+        self.assertEqual((bel[0]['Monthly'], bel[0]['Terms']), ('Almera Ranceli', 'AMRANCELI'))
 
     def test_incorrect_excel_dimensions_do_not_hide_headers_or_rows_in_either_reader(self):
         raw, grid = fixtures()

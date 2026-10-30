@@ -17,7 +17,7 @@ Open **http://localhost:8501**. If the dependencies are already installed, run `
 Use the sidebar to switch between three separate pages:
 
 - **GEO & RECO**: the original workbook-to-template workflow, with the existing Area, product, level, and Christmas Amnesty grouping and configured filenames.
-- **NEGATIVE B2**: DataGrid matching against the latest SBC database, the two B2 blasting files, and a B2 upload panel for Email, SMS and Viber activity logs.
+- **NEGATIVE B2**: B2 and B4 account matching, separate CARDS/BEL blasting files for each bucket, and a B2 upload panel for Email, SMS and Viber activity logs.
 - **AUTOSTAT**: Standard uploads compile into Email and Viber activity files; B2 uploads use separate Email, SMS and Viber templates.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
@@ -85,9 +85,24 @@ DataGrid `Account No.` matches database `Account Key`, and `Financing/Card No.` 
 
 The first valid email and first valid mobile come from the matched database record. **EMAIL (01)** supplies the preferred email and **Mobile 1** supplies the preferred phone, regardless of their positions in the worksheet. Other recognized Email/Phone, Mobile, Cellphone, Home Phone, and Business Phone fields are checked in source order when the preferred value is missing or invalid, or the preferred header is absent. Header matching ignores case, spaces and punctuation. Numbers must normalize to ten digits starting with 9. Errors or uncached formulas in contact cells count as invalid contacts, allowing other contact fields to be checked. Matching/classification cell errors must be corrected. Duplicate DataGrid accounts are excluded. Each exported account has **one row**, with both contacts in `email` and `phone`; an account with only one valid contact is still included. Accounts without valid contacts produce no row.
 
-DataGrid Old I.C. supplies `indexoneuid`. Database Name, Total Outstanding, Assignment Date, and Area supply `FullName`, `OB`, `EndoDate`, and `AREA`; recognized DataGrid fields supply these when database values are missing. `Product` is CARDS or BEL and `doclass` is SBC CARDS B2 or SBC BEL B2. **Monthly and Terms remain blank**, as requested. Level, ChristmasAmnesty, and NewEndo are copied only when explicitly present; other unavailable fields stay blank. Dates use ISO text. B2 exports have no activity statuses, remarks, author, or log timestamp. AUTOSTAT compiles activity logs on its own page.
+DataGrid Old I.C. supplies `indexoneuid`. Database Name, Total Outstanding, Assignment Date, and Area supply `FullName`, `OB`, `EndoDate`, and `AREA`; recognized DataGrid fields supply these when database values are missing. `Product` is CARDS or BEL and `doclass` is SBC CARDS B2 or SBC BEL B2. **Monthly contains the assigned agent name and Terms contains the matching agent code**, using the even assignment below. Level, ChristmasAmnesty, and NewEndo are copied only when explicitly present; other unavailable fields stay blank. Dates use ISO text. B2 blasting exports have no activity statuses, remarks, author, or log timestamp; the B2 files panel prepares activity logs from those exports.
 
 Review matching and contact counts, preview either group, download the two CSVs or their ZIP, or save both to a folder. B2 names are configurable in `AUTOSTAT_B2_FILENAMES` in `export_config.py`.
+
+### B4 matching on the NEGATIVE B2 page
+
+The **NEGATIVE B4 — match accounts and contacts** section uses the same matching rules with independent uploads and results. Upload **SPM ENDORSEMENT B4 as of 29OCTOBER2026.xlsx** as the **B4 endorsement database** and **NEGATIVE B4 DB.xlsx** as the **B4 account list**. Daily filenames may change. Account No. matches Account Key; Financing/Card No. matches Contract Number, with both required to agree when both are supplied. Only database Bucket Code `4` / `B4` qualifies. Other buckets, missing identifiers, ambiguous matches and duplicates are excluded and reported.
+
+B4 uses exactly **Email (01) → email** and **Phone (01) → phone**. Both headers must be present. Invalid or blank 01 contacts stay blank; other Email, Phone and Mobile columns are not substituted. The existing email validation and mobile normalization apply. Accounts without a valid 01 contact are excluded. Outputs are **NEGATIVE B4 - CARDS.csv** and **NEGATIVE B4 - BEL.csv**, using the same 16-column template with `primary_key` from Account Key, `cardnumber` from Contract Number, and `doclass` set to SBC CARDS B4 or SBC BEL B4. B4 filenames are configurable in `AUTOSTAT_B4_FILENAMES`.
+
+For **both B2 and B4**, each CARDS/BEL output alternates its exported accounts between the two agents below. Assignment happens after matching, deduplication and contact exclusions, so each agent gets the same number of accounts, or a one-account difference. Almera receives the extra account for an odd total. Names and codes stay paired on the same row, and each group's split starts independently. The summary shows each agent's account count. Existing collector assignments in the source do not control this requested split.
+
+| Monthly | Terms |
+| --- | --- |
+| Almera Ranceli | AMRANCELI |
+| Kyarill Palima | KPALIMA |
+
+The agent pairs are configured in `COLLECTION_AGENTS` in `export_config.py`. Feeding a B2 blasting file into B2 AutoStat copies Terms into Collector and the email remarks. **Clear all files** clears B2 and B4 matching uploads, results and source selections together.
 
 Some Excel exports incorrectly save their worksheet range as `A1:C1` despite containing more columns and thousands of rows. Both readers now use the actual worksheet cells, recovering these hidden headers and data without modifying the original files.
 

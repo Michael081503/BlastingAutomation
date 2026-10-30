@@ -23,7 +23,7 @@ def refresh_application_modules() -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
-        ("upload_state", ("CLEAR_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
+        ("upload_state", ("CLEAR_UPLOADS_VERSION", "B4_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "HALLOWEEN_THEME_VERSION", "HALLOWEEN_GHOST_VERSION", "HALLOWEEN_SPIDER_VERSION",
             "render_clear_all_files",
@@ -32,7 +32,7 @@ def refresh_application_modules() -> set[str]:
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",
             "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME", "AUTOSTAT_BEL_FILENAMES",
-            "AUTOSTAT_B2_FILENAMES",
+            "AUTOSTAT_B2_FILENAMES", "AUTOSTAT_B4_FILENAMES", "COLLECTION_AGENTS",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (
@@ -74,8 +74,9 @@ def refresh_application_modules() -> set[str]:
             "B2_TEMPLATE_VERSION", "B2_TEMPLATE_HEADERS",
             "B2_CONTACT_PRIORITY_VERSION",
             "B2_UPLOAD_ROLES_VERSION", "is_sbc_database_sheet", "validate_b2_source",
+            "B4_MATCHING_VERSION", "build_b4_exports", "B2_B4_AGENTS_VERSION",
         ), ("autostat", "automation", "export_config")),
-        ("b2_page", ("render_b2_page", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
+        ("b2_page", ("render_b2_page", "B4_PAGE_VERSION", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
         ("b2_autostat", (
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",

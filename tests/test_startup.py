@@ -365,7 +365,7 @@ class StartupTests(unittest.TestCase):
             b2_page.render_b2_page = lambda: None
             import app
             assert b2_matching.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
-            assert b2_matching.B2_MATCHING_VERSION == 4
+            assert b2_matching.B2_MATCHING_VERSION == 5
             assert len(b2_page.B2_TEMPLATE_HEADERS) == 16
             assert 'Time' not in b2_page.B2_TEMPLATE_HEADERS
             assert 'timestamp' not in inspect.signature(b2_matching.build_b2_exports).parameters
@@ -451,6 +451,26 @@ class StartupTests(unittest.TestCase):
             assert branding.render_clear_all_files is upload_state.render_clear_all_files
             assert b2_page.upload_widget_key is upload_state.upload_widget_key
             assert autostat_page.upload_widget_key is upload_state.upload_widget_key
+            assert refresh_application_modules() == set()
+        """)
+
+
+    def test_cached_b4_matching_agent_names_and_uploads_refresh_together(self):
+        self.run_isolated("""
+            import export_config, b2_matching, b2_page, upload_state
+            del export_config.AUTOSTAT_B4_FILENAMES
+            del b2_matching.B4_MATCHING_VERSION
+            del b2_page.B4_PAGE_VERSION
+            del upload_state.B4_UPLOADS_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'export_config', 'b2_matching', 'b2_page', 'upload_state'} <= refreshed
+            assert b2_page.build_b4_exports is b2_matching.build_b4_exports
+            assert b2_matching.B2_TEMPLATE_VERSION == 2
+            assert export_config.AUTOSTAT_B4_FILENAMES['CARDS'] == 'NEGATIVE B4 - CARDS'
+            assert export_config.COLLECTION_AGENTS == (('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA'))
+            assert 'b4_database_upload' in upload_state.UPLOAD_KEYS
+            assert 'b4_grid_upload' in upload_state.UPLOAD_KEYS
             assert refresh_application_modules() == set()
         """)
 
