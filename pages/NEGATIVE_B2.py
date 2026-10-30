@@ -15,7 +15,6 @@ encoding = CSV_OUTPUT_ENCODINGS[csv_file_type]
 render_b2_page(encoding=encoding)
 st.divider()
 render_b2_page(encoding=encoding, bucket=4)
-with st.container(border=True):
+with st.expander("B2 AutoStat — Email, SMS and Viber"):
     st.subheader("B2 files")
-    st.caption("Upload B2 Excel or CSV account files here for Email, SMS and Viber AUTOSTAT logs using primary_key.")
     render_b2_autostat_uploads(encoding=encoding)

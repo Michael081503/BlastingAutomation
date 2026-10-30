@@ -146,7 +146,6 @@ class WorkflowPageTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["geo_b2_autostat_result"]["timestamp"], result["timestamp"])
-            app.button(key="b2_prepare").click().run(timeout=20)
             self.assertEqual(len(app.error), 0)
             self.assertIn("b2_result", app.session_state)
             self.assertEqual(app.session_state["geo_b2_autostat_result"]["timestamp"], result["timestamp"])

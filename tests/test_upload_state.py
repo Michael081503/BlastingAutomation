@@ -129,7 +129,6 @@ class ClearUploadPageTests(unittest.TestCase):
 
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
-            app.button(key="b2_prepare").click().run(timeout=20)
             self.assertIn("b2_result", app.session_state)
             self.assertIn("geo_b2_autostat_result", app.session_state)
             app.text_input(key="geo_b2_autostat_remark_by").set_value("CUSTOM").run(timeout=20)

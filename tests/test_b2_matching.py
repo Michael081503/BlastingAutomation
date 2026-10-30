@@ -281,21 +281,19 @@ class B2AppTests(unittest.TestCase):
             self.assertEqual(next(widget.value for widget in app.selectbox if widget.label == 'SBC database sheet'), 'SBC')
             self.assertEqual(next(widget.value for widget in app.selectbox if widget.label == 'DataGrid accounts sheet'), 'Sheet')
             self.assertTrue(any('Detected the SBC database' in item.value for item in app.info))
-            app.button(key='b2_prepare').click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             actual = app.session_state['b2_result']['matched']
             self.assertEqual(actual.stats, expected.stats)
             self.assertEqual([file.data for file in actual.bundle.files], [file.data for file in expected.bundle.files])
-            # A new database in the other upload box must clear the old downloads.
+            # Replacing the daily database must automatically replace the downloads.
             uploads['b2_grid_upload'] = Upload('sbc cards-bel database as of October 29, 2026.xlsx', workbook_data(
                 RAW_HEADERS, [['00001', '0000000000000001', 'MC', 2, '09181234567', None, 'updated@example.com', None]],
                 sheet_name='SBC',
             ))
             app.run(timeout=20)
-            self.assertNotIn('b2_result', app.session_state)
-            self.assertEqual(len(app.get('download_button')), 0)
-            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertIn('b2_result', app.session_state)
+            self.assertEqual(len(app.get('download_button')), 1)
             self.assertEqual(csv_rows(app.session_state['b2_result']['matched'].bundle.files[0])[0]['email'], 'updated@example.com')
 
     def test_two_account_lists_clear_old_downloads_and_report_missing_database_before_matching(self):
@@ -303,7 +301,6 @@ class B2AppTests(unittest.TestCase):
         uploads = {'b2_database_upload': Upload('database.xlsx', raw), 'b2_grid_upload': Upload('NEGATIVE B2 - BP.xlsx', grid)}
         with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
             app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
-            app.button(key='b2_prepare').click().run(timeout=20)
             self.assertIn('b2_result', app.session_state)
             uploads['b2_database_upload'] = Upload('NEGATIVE B2 - CARDS AND BEL.xlsx', grid)
             app.run(timeout=20)
@@ -327,7 +324,6 @@ class B2AppTests(unittest.TestCase):
             self.assertTrue(any('Upload the DataGrid account list in the empty box' in item.value for item in app.info))
             uploads['b2_database_upload'] = Upload('NEGATIVE B2 - CARDS AND BEL.xlsx', grid)
             app.run(timeout=20)
-            app.button(key='b2_prepare').click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual([file.count for file in app.session_state['b2_result']['matched'].bundle.files], [3, 1])
@@ -347,7 +343,6 @@ class B2AppTests(unittest.TestCase):
         uploads = {'b2_database_upload': Upload('database.xlsx', output.getvalue()), 'b2_grid_upload': Upload('list.xlsx', grid)}
         with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
             app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
-            app.button(key='b2_prepare').click().run(timeout=20)
             self.assertIn('b2_result', app.session_state)
             database_sheet = next(widget for widget in app.selectbox if widget.label == 'SBC database sheet')
             database_sheet.set_value('SBC Lite').run(timeout=20)
@@ -358,7 +353,6 @@ class B2AppTests(unittest.TestCase):
             self.assertFalse(any(widget.key == 'b2_prepare' for widget in app.button))
             database_sheet = next(widget for widget in app.selectbox if widget.label == 'SBC database sheet')
             database_sheet.set_value('SBC').run(timeout=20)
-            app.button(key='b2_prepare').click().run(timeout=20)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state['b2_result']['matched'].bundle.files[0].count, 1)
 
@@ -375,7 +369,6 @@ class B2AppTests(unittest.TestCase):
 
             uploads['b2_database_upload'] = Upload('daily database.xlsx', raw)
             app.run(timeout=20)
-            app.button(key='b2_prepare').click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertNotIn('result', app.session_state)
@@ -394,9 +387,7 @@ class B2AppTests(unittest.TestCase):
             ], sheet_name='SBC')
             uploads['b2_database_upload'] = Upload('daily database.xlsx', updated)
             app.run(timeout=20)
-            self.assertNotIn('b2_result', app.session_state)
-            self.assertFalse(any('Download NEGATIVE B2' in widget.proto.label for widget in app.get('download_button')))
-            app.button(key='b2_prepare').click().run(timeout=20)
+            self.assertIn('b2_result', app.session_state)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             files = app.session_state['b2_result']['matched'].bundle.files
@@ -419,7 +410,6 @@ class B2AppTests(unittest.TestCase):
             app.switch_page('pages/NEGATIVE_B2.py').run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.title[0].value, 'NEGATIVE B2')
-            app.button(key='b2_prepare').click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state['b2_result']['matched']
@@ -433,7 +423,8 @@ class B2AppTests(unittest.TestCase):
             for file in result.bundle.files:
                 self.assertEqual((saved / file.filename).read_bytes(), file.data)
             app.selectbox(key='b2_csv_type').set_value('CSV UTF-8 (Comma delimited)').run(timeout=20)
-            self.assertNotIn('b2_result', app.session_state)
+            self.assertTrue(app.session_state['b2_result']['matched'].bundle.files[0].data.startswith(b'\xef\xbb\xbf'))
+            self.assertNotIn('saved_folder', app.session_state['b2_result'])
 
 
 if __name__ == '__main__':

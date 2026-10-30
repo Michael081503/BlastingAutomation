@@ -432,7 +432,7 @@ class StartupTests(unittest.TestCase):
             b2_page.render_b2_page = lambda: None
             import app
             assert b2_matching.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
-            assert b2_matching.B2_MATCHING_VERSION == 5
+            assert b2_matching.B2_MATCHING_VERSION == 6
             assert len(b2_page.B2_TEMPLATE_HEADERS) == 16
             assert 'Time' not in b2_page.B2_TEMPLATE_HEADERS
             assert 'timestamp' not in inspect.signature(b2_matching.build_b2_exports).parameters
@@ -605,6 +605,22 @@ class StartupTests(unittest.TestCase):
                 '', 1, '.csv', agents=agents)
             assert all('Terms' not in row and 'Monthly' not in row for file in geo.files for row in file.preview)
             assert agent_cycle_page.AGENT_CYCLE_PAGE_VERSION == 2
+            assert refresh_application_modules() == set()
+        """)
+
+
+    def test_cached_bucket_pages_refresh_for_automatic_downloads_and_bucket_errors(self):
+        self.run_isolated("""
+            import b2_matching, b2_page
+            del b2_matching.B2_BUCKET_DIAGNOSTICS_VERSION
+            del b2_page.B2_COMPACT_DOWNLOADS_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'b2_matching', 'b2_page'} <= refreshed
+            assert b2_matching.B2_MATCHING_VERSION == 6
+            assert b2_page.B2_COMPACT_DOWNLOADS_VERSION == 1
+            assert b2_page.B4_PAGE_VERSION == 2
+            assert callable(b2_page.no_matching_rows_message)
             assert refresh_application_modules() == set()
         """)
 

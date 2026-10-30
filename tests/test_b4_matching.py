@@ -129,6 +129,58 @@ class B4MatchingTests(unittest.TestCase):
 
 
 class B4PageTests(unittest.TestCase):
+    def test_b2_only_database_explains_zero_rows_and_never_offers_empty_downloads(self):
+        _, grid = fixtures()
+        wrong_raw = workbook_data(HEADERS, [
+            ["B2-ONLY", "B2-CARD", 2, "MC", None, None, "09171234567", "b2@example.com", "B2 Person"],
+        ])
+        uploads = {"b4_database_upload": Upload("daily database.xlsx", wrong_raw),
+                   "b4_grid_upload": Upload("NEGATIVE B4 DB.xlsx", grid)}
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])):
+            app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(any("1 B2 accounts and no B4 accounts" in item.value for item in app.error))
+            self.assertEqual(len(app.get("download_button")), 0)
+            result = app.session_state["b4_result"]["matched"]
+            self.assertEqual(result.stats["Database B2 rows"], 1)
+            self.assertEqual(result.stats["Database B4 rows"], 0)
+            self.assertEqual([file.count for file in result.bundle.files], [0, 0])
+            uploads["b4_database_upload"] = Upload("daily database.xlsx", fixtures()[0])
+            app.run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual([file.count for file in app.session_state["b4_result"]["matched"].bundle.files], [2, 1])
+            self.assertEqual(len(app.get("download_button")), 3)
+            uploads["b4_database_upload"] = Upload("daily database.xlsx", wrong_raw)
+            app.run(timeout=20)
+            self.assertEqual(len(app.get("download_button")), 0)
+
+    def test_unrelated_b4_database_reports_account_mismatch(self):
+        _, grid = fixtures()
+        raw = workbook_data(HEADERS, [
+            ["OTHER", "OTHER-CARD", 4, "MC", None, None, "09171234567", "other@example.com", "Other Person"],
+        ])
+        uploads = {"b4_database_upload": Upload("B4.xlsx", raw), "b4_grid_upload": Upload("list.xlsx", grid)}
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])):
+            app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(any("No account numbers from this B4 list match" in item.value for item in app.error))
+            self.assertEqual(len(app.get("download_button")), 0)
+
+    def test_uploads_automatically_prepare_once_with_details_and_options_collapsed(self):
+        raw, grid = fixtures()
+        uploads = {"b4_database_upload": Upload("B4.xlsx", raw), "b4_grid_upload": Upload("list.xlsx", grid)}
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
+                patch("b2_page.build_b4_exports", wraps=build_b4_exports) as prepare:
+            app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(prepare.call_count, 1)
+            self.assertEqual(len(app.get("download_button")), 3)
+            self.assertFalse(any(widget.key == "b4_prepare" for widget in app.button))
+            self.assertTrue(all(not panel.proto.expanded for panel in app.expander))
+            self.assertEqual(len(app.metric), 0)
+            app.run(timeout=20)
+            self.assertEqual(prepare.call_count, 1)
+
     def test_b4_uploads_prepare_on_negative_b2_page_and_clear_independently(self):
         raw, grid = fixtures()
         uploads = {"b4_database_upload": Upload("endorsement.xlsx", raw), "b4_grid_upload": Upload("NEGATIVE B4 DB.xlsx", grid)}
@@ -136,14 +188,12 @@ class B4PageTests(unittest.TestCase):
             app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
-            app.button(key="b4_prepare").click().run(timeout=20)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["b4_result"]
             self.assertEqual([file.count for file in result["matched"].bundle.files], [2, 1])
             uploads["b4_database_upload"] = Upload("endorsement.xlsx", fixtures("updated@example.com")[0])
             app.run(timeout=20)
-            self.assertNotIn("b4_result", app.session_state)
-            app.button(key="b4_prepare").click().run(timeout=20)
+            self.assertIn("b4_result", app.session_state)
             self.assertEqual(rows(app.session_state["b4_result"]["matched"].bundle.files[0])[0]["email"], "updated@example.com")
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)

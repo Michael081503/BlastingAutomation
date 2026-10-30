@@ -17,7 +17,8 @@ from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES, COLLECTI
 from exports import export_filename
 
 
-B2_MATCHING_VERSION = 5
+B2_MATCHING_VERSION = 6
+B2_BUCKET_DIAGNOSTICS_VERSION = 1
 B4_MATCHING_VERSION = 1
 B2_B4_AGENTS_VERSION = 1
 B2_UPLOAD_ROLES_VERSION = 1
@@ -265,6 +266,11 @@ def build_b2_exports(
         "Other or missing bucket", "Unsupported product", "Duplicate account rows removed",
     ), 0)
     stats["Database rows"] = len(raw_rows)
+    for source_bucket in (2, 4):
+        stats[f"Database B{source_bucket} rows"] = sum(
+            _key(row[raw_columns["bucket"]]) in {str(source_bucket), f"{source_bucket}.0", f"b{source_bucket}"}
+            for _, row in raw_rows
+        )
     groups = {"CARDS": ContactRows(), "BEL": ContactRows()}
     records = {"CARDS": [], "BEL": []}
     audit, seen_accounts = [], set()
