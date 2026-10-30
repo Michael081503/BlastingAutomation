@@ -582,12 +582,13 @@ class StartupTests(unittest.TestCase):
         """)
 
 
-    def test_cached_modules_refresh_for_geo_reco_agent_assignment_fields(self):
+    def test_cached_modules_refresh_for_reco_only_agent_assignment_fields(self):
         self.run_isolated("""
             from datetime import date
             import automation, agent_cycle, exports, agent_cycle_page
             del automation.ASSIGNMENT_TEMPLATE_HEADERS
             del exports.AGENT_ASSIGNMENT_EXPORT_VERSION
+            del exports.RECO_ONLY_AGENTS_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'automation', 'agent_cycle', 'exports', 'agent_cycle_page'} <= refreshed
@@ -599,6 +600,11 @@ class StartupTests(unittest.TestCase):
             assert bundle.files[0].preview[0]['Monthly'] == 'Rosalie Vinoya'
             assert bundle.files[0].preview[0]['Terms'] == 'ROSVINOYA'
             assert b'Rosalie Vinoya,ROSVINOYA' in bundle.files[0].data
+            geo = exports.build_geo_exports(automation.create_default_csv_template(),
+                [{'primary_key': '0001', 'email': 'one@example.com', 'product': 'CARDS', 'AREA': 'Mindanao'}],
+                '', 1, '.csv', agents=agents)
+            assert all('Terms' not in row and 'Monthly' not in row for file in geo.files for row in file.preview)
+            assert agent_cycle_page.AGENT_CYCLE_PAGE_VERSION == 2
             assert refresh_application_modules() == set()
         """)
 

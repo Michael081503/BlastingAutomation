@@ -95,7 +95,7 @@ COLLECTION_AGENTS = (
     ("Kyarill Palima", "KPALIMA"),
 )
 
-# GEO/RECO daily cycle. The first agent moves to the end every calendar day.
+# RECO-only daily cycle. The first agent moves to the end every calendar day.
 GEO_RECO_AGENTS = (
     ("Andrea Mamaril", "APMAMARIL"),
     ("Rosalie Vinoya", "ROSVINOYA"),

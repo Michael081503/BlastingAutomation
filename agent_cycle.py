@@ -1,4 +1,4 @@
-"""Saved daily GEO/RECO agent rotation and consistent account assignments."""
+"""Saved daily RECO agent rotation and consistent account assignments."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def default_cycle() -> AgentCycle:
 def validate_cycle(cycle: AgentCycle) -> None:
     expected = {code for _, code in GEO_RECO_AGENTS}
     if len(cycle.agent_codes) != len(expected) or set(cycle.agent_codes) != expected:
-        raise AutomationError("Choose each GEO/RECO agent exactly once in the cycle.")
+        raise AutomationError("Choose each RECO agent exactly once in the cycle.")
     if type(cycle.start_date) is not date:
         raise AutomationError("Choose a valid cycle start date.")
 
@@ -56,7 +56,7 @@ def load_cycle(path: Path | None = None) -> AgentCycle:
         validate_cycle(cycle)
         return cycle
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise AutomationError("The saved GEO/RECO agent cycle cannot be read. Reset the cycle or restore its settings file.") from exc
+        raise AutomationError("The saved RECO agent cycle cannot be read. Reset the cycle or restore its settings file.") from exc
 
 
 def save_cycle(cycle: AgentCycle, path: Path | None = None) -> None:

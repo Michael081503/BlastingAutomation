@@ -52,7 +52,8 @@ GEO_LOAN_PRODUCTS = frozenset({"csl", "pl", "sla"})
 GROUPED_SHEET_EXPORT_VERSION = 1
 EXCEL_EXPORT_VERSION = 2
 TYPED_EXCEL_EXPORT_VERSION = 1
-AGENT_ASSIGNMENT_EXPORT_VERSION = 1
+AGENT_ASSIGNMENT_EXPORT_VERSION = 2
+RECO_ONLY_AGENTS_VERSION = 1
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
     "qualified_cards": "QUALIFIED / CARDS",
@@ -339,14 +340,17 @@ def build_geo_exports(
     source_sheet: str = "NEGATIVE",
     agents: tuple[tuple[str, str], ...] | None = None,
 ) -> ExportBundle:
-    """Create CSV files by Area, Christmas Amnesty, product, and channel."""
+    """Create GEO files without applying RECO's three-agent cycle.
+
+    The agents keyword remains accepted for older callers and is ignored here.
+    """
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     if not any(normalize_header(header) == "area" for header in csv_template_headers(template)):
         raise AutomationError("GEO exports need an AREA header in the template. Use the built-in 16-column template.")
     return _build_grouped_exports(
         template, records, "", 1, ".csv", groups=separate_geo(records),
         labels=GEO_GROUP_LABELS, names=GEO_OUTPUT_FILENAMES, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
-        source_sheet=source_sheet, agents=agents,
+        source_sheet=source_sheet, agents=None,
     )
 
 

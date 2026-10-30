@@ -62,6 +62,7 @@ def refresh_application_modules() -> set[str]:
             "EXCEL_EXPORT_VERSION", "build_export_excel", "build_excel_zip",
             "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",
             "AGENT_ASSIGNMENT_EXPORT_VERSION",
+            "RECO_ONLY_AGENTS_VERSION",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "render_agent_cycle"), ("agent_cycle", "folder_output")),

@@ -120,11 +120,6 @@ def render_workbook_page() -> None:
     st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically using Financing/Card No. (cardnumber) for Account No.")
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
     st.caption("Product MC is converted to CARDS before grouping accounts into their designated files.")
-    agent_plan = render_agent_cycle()
-    if agent_plan is None:
-        st.session_state.pop("result", None)
-        return
-    assignment_date, agents = agent_plan
     with st.sidebar:
         output_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
@@ -181,6 +176,7 @@ def render_workbook_page() -> None:
     if source_file is None:
         st.session_state.pop("result", None)
         st.session_state.pop("geo_autostat_result", None)
+        render_agent_cycle()
         st.info("Upload a source workbook to begin. NEGATIVE will be selected automatically if it exists.")
         st.caption("Every worksheet uses the same separation rules. GEO worksheets separate Mindanao and R3 first.")
         return
@@ -314,6 +310,13 @@ def render_workbook_page() -> None:
     if missing_fields:
         st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
     geo = source_info.has_area
+    assignment_date, agents = None, None
+    if not geo:
+        agent_plan = render_agent_cycle()
+        if agent_plan is None:
+            st.session_state.pop("result", None)
+            return
+        assignment_date, agents = agent_plan
     if geo:
         st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
     st.caption("Accounts are excluded when they have neither a valid email address nor a phone number.")
@@ -373,7 +376,7 @@ def render_workbook_page() -> None:
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
         "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
-        assignment_date.isoformat(), agents,
+        assignment_date.isoformat() if assignment_date is not None else None, agents,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
     previous_result = st.session_state.get("result")

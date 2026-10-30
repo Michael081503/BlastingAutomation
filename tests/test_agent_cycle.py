@@ -70,11 +70,11 @@ class AgentCycleTests(unittest.TestCase):
         self.assertEqual(assigned[2]["Terms"], "ROSVINOYA")
         self.assertNotIn("Terms", source[0])
 
-    def test_geo_reco_and_all_accounts_use_balanced_paired_assignments_in_all_formats(self):
+    def test_reco_and_all_accounts_use_balanced_paired_assignments_in_all_formats(self):
         source = records()
         original = [dict(row) for row in source]
         headers = [header for header in DEFAULT_TEMPLATE_HEADERS if header not in ("Monthly", "Terms")]
-        for mode in ("GEO", "RECO", "All accounts"):
+        for mode in ("RECO", "All accounts"):
             for include_headers in (True, False):
                 with self.subTest(mode=mode, include_headers=include_headers):
                     template = create_default_csv_template() if include_headers else (",".join(headers) + "\n").encode()
@@ -107,12 +107,27 @@ class AgentCycleTests(unittest.TestCase):
                     self.assertEqual(assignments[f"{11:018d}"][1], "APMAMARIL")
                     self.assertEqual(source, original)
 
+    def test_geo_ignores_reco_agents_even_when_supplied_by_an_older_caller(self):
+        source = records()
+        bundle = build_geo_exports(create_default_csv_template(), source, "", 1, ".csv", agents=GEO_RECO_AGENTS)
+        for file in bundle.files:
+            self.assertTrue(all(row["Monthly"] == row["Terms"] == "" for row in rows(file)))
+            workbook = load_workbook(BytesIO(build_export_excel(file)))
+            headers = [cell.value for cell in workbook.active[1]]
+            for row in list(workbook.active.values)[1:]:
+                self.assertIsNone(row[headers.index("Monthly")])
+                self.assertIsNone(row[headers.index("Terms")])
+            workbook.close()
+        self.assertTrue(all("Monthly" not in row and "Terms" not in row for row in source))
+
 
 class Upload(BytesIO):
-    def __init__(self):
+    def __init__(self, *, geo=False):
         workbook = Workbook()
         workbook.active.title = "NEGATIVE"
-        headers = ["primary_key", "cardnumber", "indexoneuid", "email", "phone", "OB", "product", "level", "AREA", "ChristmasAmnesty"]
+        headers = ["primary_key", "cardnumber", "indexoneuid", "email", "phone", "OB", "product", "level", "ChristmasAmnesty"]
+        if geo:
+            headers.append("AREA")
         workbook.active.append(headers)
         for row in records():
             workbook.active.append([row.get(header) for header in headers])
@@ -120,7 +135,7 @@ class Upload(BytesIO):
         workbook.save(output)
         workbook.close()
         super().__init__(output.getvalue())
-        self.name = "GEO.xlsx"
+        self.name = "GEO.xlsx" if geo else "RECO.xlsx"
 
 
 class AgentCyclePageTests(unittest.TestCase):
@@ -194,6 +209,31 @@ class AgentCyclePageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(load_cycle(), default_cycle())
+
+    def test_geo_grouped_and_all_accounts_exports_do_not_use_or_load_reco_settings(self):
+        self.path.write_text("bad reco cycle json", encoding="utf-8")
+        upload = Upload(geo=True)
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertFalse(any(widget.key == "agent_cycle_save" for widget in app.button))
+            self.assertFalse(any(widget.label == "Assignment date (Asia/Manila)" for widget in app.date_input))
+            for mode in ("Separate Area and Christmas Amnesty groups", "All accounts in one group"):
+                with self.subTest(mode=mode):
+                    app.radio[0].set_value(mode).run(timeout=20)
+                    next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    result = app.session_state["result"]
+                    self.assertTrue(result["geo"])
+                    for file in result["files"]:
+                        self.assertTrue(all(row["Monthly"] == row["Terms"] == "" for row in rows(file)))
+                    signature = result["signature"]
+                    save_cycle(AgentCycle(TODAY, ("ROSVINOYA", "JBATALLER", "APMAMARIL")))
+                    with patch("agent_cycle_page.manila_today", return_value=TODAY + timedelta(days=1)):
+                        app.run(timeout=20)
+                        self.assertEqual(app.session_state["result"]["signature"], signature)
 
 
 if __name__ == "__main__":

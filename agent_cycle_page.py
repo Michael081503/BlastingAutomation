@@ -1,4 +1,4 @@
-"""Visible, editable daily agent cycle for GEO and RECO campaign exports."""
+"""Visible, editable daily agent cycle for RECO campaign exports."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from export_config import GEO_RECO_AGENTS
 from folder_output import MANILA_TIMEZONE
 
 
-AGENT_CYCLE_PAGE_VERSION = 1
+AGENT_CYCLE_PAGE_VERSION = 2
 
 
 def manila_today():
@@ -33,13 +33,13 @@ def render_agent_cycle():
                 st.error(str(error))
         return None
     today = manila_today()
-    with st.expander("GEO & RECO agent cycle", expanded=True):
+    with st.expander("RECO agent cycle", expanded=True):
         assignment_date = st.date_input(
             "Assignment date (Asia/Manila)", today, key=f"agent_cycle_date_{today.isoformat()}",
             help="Defaults to today's Manila date each day. Choose another date to preview or prepare that day's assignments.",
         )
         if assignment_date is None:
-            st.info("Choose an assignment date to prepare GEO and RECO files.")
+            st.info("Choose an assignment date to prepare RECO files.")
             return None
         agents = cycle_agents(cycle, assignment_date)
         st.table([{"Order": number, "Monthly": name, "Terms": code} for number, (name, code) in enumerate(agents, 1)])
@@ -47,14 +47,14 @@ def render_agent_cycle():
             "Accounts in each output group are split evenly in this order, starting with the highest OB. "
             "The same account keeps its agent in Email and Viber. The first agent moves to the end each calendar day."
         )
-        st.caption("Change the saved order and start date under Change GEO & RECO agent cycle in the sidebar.")
+        st.caption("Change the saved order and start date under Change RECO agent cycle in the sidebar.")
         with st.expander("See upcoming days"):
             st.table([
                 {"Date": (assignment_date + timedelta(days=day)).isoformat(),
                  **{label: code for label, (_, code) in zip(("First", "Second", "Third"), cycle_agents(cycle, assignment_date + timedelta(days=day)))}}
                 for day in range(3)
             ])
-        with st.sidebar.expander("Change GEO & RECO agent cycle"):
+        with st.sidebar.expander("Change RECO agent cycle"):
             revision = hashlib.sha256(repr(cycle).encode()).hexdigest()[:12]
             start = st.date_input("Cycle start date", cycle.start_date, key=f"agent_cycle_start_{revision}")
             codes = [code for _, code in GEO_RECO_AGENTS]
@@ -76,7 +76,7 @@ def render_agent_cycle():
                     st.rerun()
                 except AutomationError as exc:
                     st.error(str(exc))
-            st.caption("The saved cycle is shared by GEO and RECO and stored on the computer or server running this app.")
+            st.caption("This cycle applies only to RECO and is stored on the computer or server running this app.")
         if st.session_state.pop("agent_cycle_saved", False):
             st.success("Agent cycle saved.")
     return assignment_date, agents
