@@ -74,6 +74,27 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_geo_loan_filenames_and_labels_refresh_together(self):
+        self.run_isolated("""
+            import export_config, exports
+            del export_config.GEO_LOANS_FILENAMES_VERSION
+            del exports.GEO_LOANS_VERSION
+            export_config.GEO_OUTPUT_FILENAMES['mindanao_blank_other_products'] = 'Wrong CARDS destination'
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'export_config', 'exports'} <= refreshed
+            assert export_config.GEO_OUTPUT_FILENAMES['mindanao_blank_other_products'] == 'GEO NEGA LOANS - MINDANAO'
+            assert exports.GEO_OUTPUT_FILENAMES is export_config.GEO_OUTPUT_FILENAMES
+            assert 'LOANS' in exports.GEO_PRODUCT_GROUP_LABELS['blank_other_products']
+            assert exports.GEO_FILENAME_CONFIG_VERSION == 3
+            record = {'primary_key': '0001', 'email': 'one@example.com', 'product': 'CSL',
+                      'AREA': 'Mindanao', 'ChristmasAmnesty': 'QUALIFIED'}
+            groups = exports.separate_geo([record])
+            assert groups['mindanao_blank_other_products'] == [record]
+            assert groups['mindanao_qualified_review'] == []
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_modules_refresh_for_ob_ordering(self):
         self.run_isolated("""
             import automation, autostat, autostat_page, exports
@@ -310,7 +331,7 @@ class StartupTests(unittest.TestCase):
             import app
             assert hasattr(automation.MappedData, 'valid_email_rows')
             assert hasattr(automation.MappedData, 'missing_email_rows')
-            assert app.GEO_FILENAME_CONFIG_VERSION == 2
+            assert app.GEO_FILENAME_CONFIG_VERSION == 3
             assert exports.AutomationError is automation.AutomationError
             assert folder_output.AutomationError is automation.AutomationError
         """)

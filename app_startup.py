@@ -32,6 +32,7 @@ def refresh_application_modules() -> set[str]:
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",
             "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME", "AUTOSTAT_BEL_FILENAMES",
+            "GEO_LOANS_FILENAMES_VERSION",
             "AUTOSTAT_B2_FILENAMES", "AUTOSTAT_B4_FILENAMES", "COLLECTION_AGENTS",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
@@ -51,6 +52,7 @@ def refresh_application_modules() -> set[str]:
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
             "GEO_FILENAME_CONFIG_VERSION",
+            "GEO_LOANS_VERSION", "GEO_LOAN_PRODUCTS",
             "GROUPED_SHEET_EXPORT_VERSION",
             "EXCEL_EXPORT_VERSION", "build_export_excel", "build_excel_zip",
             "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",

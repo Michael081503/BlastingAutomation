@@ -844,6 +844,9 @@ class GeoTests(unittest.TestCase):
             sample_row(Area=None, product="BEL"),
             sample_row(Area="Mindanao", debtor_email=None, phone_1=None),
         ])
+        for number, row in enumerate(rows):
+            row["Account no."] = f"{number:018d}"
+        expected_status = {row["Account no."]: row.get("Christmas Amnesty") or "" for row in rows}
         mapped = read_source(geo_source_file(rows), "NEGATIVE", 1)
         groups = separate_geo(mapped.records)
         self.assertEqual(mapped.no_contact_rows_skipped, 1)
@@ -854,6 +857,10 @@ class GeoTests(unittest.TestCase):
         self.assertEqual([row["level"] for row in groups["r3_blank_cards"]], levels)
         self.assertFalse(any("level" in key for key in groups))
         self.assertEqual(len(groups["r3_qualified_bel"]), 2)
+        self.assertEqual(len(groups["mindanao_blank_other_products"]), 2)
+        self.assertEqual(len(groups["r3_blank_other_products"]), 2)
+        self.assertEqual(len(groups["mindanao_qualified_review"]), 0)
+        self.assertEqual(len(groups["r3_qualified_review"]), 0)
         self.assertEqual(len(groups["area_review_blank_cards"]), 1)
         self.assertEqual(len(groups["area_review_blank_bel"]), 1)
         bundle = build_geo_exports(create_default_csv_template(), mapped.records, "", 1, ".csv")
@@ -875,7 +882,7 @@ class GeoTests(unittest.TestCase):
                         self.assertIn(file.group_key, GEO_REVIEW_GROUP_KEYS)
                         self.assertIn(record["AREA"], ("Other", ""))
                         self.assertEqual(record["doclass"], "")
-                    self.assertEqual(record["ChristmasAmnesty"], "QUALIFIED" if "_qualified_" in file.group_key else "")
+                    self.assertEqual(record["ChristmasAmnesty"], expected_status[record["primary_key"]])
                     self.assertEqual(record["phone" if file.channel == "email" else "email"], "")
 
     def test_five_main_groups_per_area_produce_twenty_channel_files(self):

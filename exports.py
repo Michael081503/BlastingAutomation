@@ -44,7 +44,9 @@ GROUP_LABELS = {
 }
 REVIEW_GROUP_KEYS = frozenset({"qualified_review", "blank_review"})
 CHANNEL_LABELS = {"email": "Email", "viber": "Viber"}
-GEO_FILENAME_CONFIG_VERSION = 2
+GEO_FILENAME_CONFIG_VERSION = 3
+GEO_LOANS_VERSION = 1
+GEO_LOAN_PRODUCTS = frozenset({"csl", "pl", "sla"})
 GROUPED_SHEET_EXPORT_VERSION = 1
 EXCEL_EXPORT_VERSION = 2
 TYPED_EXCEL_EXPORT_VERSION = 1
@@ -54,7 +56,7 @@ GEO_PRODUCT_GROUP_LABELS = {
     "qualified_bel": "QUALIFIED / BEL",
     "blank_cards": "BLANK / CARDS",
     "blank_bel": "BLANK / BEL",
-    "blank_other_products": "BLANK / Other than CARDS and BEL",
+    "blank_other_products": "LOANS / CSL, PL, SLA and other loan products",
     "qualified_review": "QUALIFIED / Other products (review)",
 }
 GEO_GROUP_LABELS = {
@@ -158,7 +160,11 @@ def separate_geo(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
         area_key = "mindanao" if area == "mindanao" else "r3" if area in {"r3", "region3"} else "area_review"
         qualified = normalize_header(record.get("ChristmasAmnesty")) == "qualified"
         product = normalize_header(record.get("product"))
-        if product in {"cards", "bel"}:
+        # These loan products always use the existing area's LOANS file,
+        # including qualified accounts. Preserve each row's original status.
+        if product in GEO_LOAN_PRODUCTS:
+            key = "blank_other_products"
+        elif product in {"cards", "bel"}:
             key = f"{'qualified' if qualified else 'blank'}_{product}"
         else:
             key = "qualified_review" if qualified else "blank_other_products"

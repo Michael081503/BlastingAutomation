@@ -7,6 +7,8 @@ GEO names below already include the Area. The app adds _Email or _Viber and .csv
 
 # ==================== EDIT YOUR GEO FILENAMES HERE ====================
 # Each entry is the full base filename for one group. All levels are combined.
+# CSL, PL and SLA always use their Area's GEO NEGA LOANS file, at every status.
+GEO_LOANS_FILENAMES_VERSION = 1
 GEO_OUTPUT_FILENAMES = {
     # MINDANAO: edit the five filenames on the right.
     "mindanao_qualified_cards": "CS AMNESTY GEO CARDS - MINDANAO",

@@ -219,9 +219,9 @@ For GEO workbooks, the app detects the **Area** source column and defaults to **
 | QUALIFIED | BEL |
 | Blank / not qualified | CARDS |
 | Blank / not qualified | BEL |
-| Blank / not qualified | Other than CARDS and BEL |
+| Any status for CSL/PL/SLA; blank / not qualified for other loan products | LOANS |
 
-Every nonempty group then produces Email and Viber CSV files, so five populated groups in each Area produce **20 files**. Level values are retained in the output column and do not affect GEO grouping. Qualified products other than CARDS and BEL, and other or missing Area values, are kept in clearly named review files when present. The standard NEGATIVE workflow without an Area column retains its original level rules.
+Every nonempty group then produces Email and Viber CSV files, so five populated groups in each Area produce **20 files**. **CSL, PL and SLA always go directly to the area's existing LOANS files:** `GEO NEGA LOANS - MINDANAO_Email/Viber.csv` or `GEO NEGA LOANS - R3_Email/Viber.csv`. This routing takes priority over Christmas Amnesty grouping, including QUALIFIED accounts. The Product and ChristmasAmnesty columns retain each account's source values. Level values are retained and do not affect GEO grouping. Unrecognized qualified products, and other or missing Area values, are kept in clearly named review files when present. RECO retains its existing grouping rules.
 
 The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `placement`, `Product`, `OB (MASTERLIST}`, and `Phone 1` are accepted. `assign_date` supplies `EndoDate`; `placement` supplies `Level`. The source Area is copied into `AREA`, preserving `Region 3` as the source value even though its group is named R3. The `doclass` template column is filled automatically with **`SBC GEO Mindanao`** for Mindanao accounts and **`SBC GEO R3`** for Region 3 / R3 accounts, ignoring capitalization, spacing, and punctuation in Area. This applies to both Email and Viber files, previews, ZIPs, folder saves, and the all-accounts mode. Other or missing Areas leave `doclass` blank. Area is optional for existing workbooks. GEO grouped exports require an AREA template header; the built-in 16-column template already includes AREA and doclass.
 

@@ -344,9 +344,10 @@ def render_workbook_page() -> None:
                 "Other or missing Area values go to separate review files. AREA retains its source value."
             )
             st.caption(
-                "QUALIFIED: CARDS and BEL. BLANK: CARDS, BEL, and other products. "
+                "CSL, PL and SLA go directly to GEO NEGA LOANS for their Area, at every Christmas Amnesty status. "
+                "CARDS and BEL are separated by QUALIFIED or BLANK status. "
                 "Each product group combines all levels. Empty groups produce no file. "
-                "Qualified other products go to a separate review group."
+                "Unrecognized qualified products go to a separate review group."
             )
         else:
             st.caption(
