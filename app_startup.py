@@ -23,7 +23,7 @@ def refresh_application_modules() -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
-        ("upload_state", ("CLEAR_UPLOADS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
+        ("upload_state", ("CLEAR_UPLOADS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "HALLOWEEN_THEME_VERSION", "HALLOWEEN_GHOST_VERSION", "HALLOWEEN_SPIDER_VERSION",
             "render_clear_all_files",
@@ -61,7 +61,8 @@ def refresh_application_modules() -> set[str]:
             "GROUPED_SHEET_EXPORT_VERSION",
             "EXCEL_EXPORT_VERSION", "build_export_excel", "build_excel_zip",
             "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",
-            "CAMPAIGN_OUTPUT_FORMAT_VERSION", "campaign_output_files",
+            "CAMPAIGN_OUTPUT_FORMAT_VERSION", "CSV_CAMPAIGN_DEFAULT_VERSION", "campaign_output_files",
+            "EXCEL_SAFE_CSV_VERSION", "build_export_csv", "build_csv_zip",
             "AGENT_ASSIGNMENT_EXPORT_VERSION",
             "RECO_ONLY_AGENTS_VERSION",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),

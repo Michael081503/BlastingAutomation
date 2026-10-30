@@ -24,7 +24,9 @@ from export_config import (
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
     GROUPED_SHEET_EXPORT_VERSION,
-    EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_output_files, build_excel_zip, build_export_excel,
+    EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
+    EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
+    campaign_output_files, build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
 from folder_output import save_files_to_folder
@@ -100,7 +102,9 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
     )
     if st.button("Save files to folder", type="primary", key="save_to_folder"):
         try:
-            output_files = campaign_output_files(result["files"], excel=result["excel_output"])
+            output_files = campaign_output_files(
+                result["files"], excel=result["excel_output"], protect_csv_identifiers=result["protect_csv_identifiers"],
+            )
             folder = save_files_to_folder(
                 output_files, output_folder, batch_name=f"{Path(source_name).stem}_{sheet_name}",
             )
@@ -120,10 +124,19 @@ def render_workbook_page() -> None:
     st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically using Financing/Card No. (cardnumber) for Account No.")
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
     st.caption("Product MC is converted to CARDS before grouping accounts into their designated files.")
+    if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
+        st.session_state["campaign_output_format"] = "CSV (.csv)"
+        st.session_state["campaign_csv_default_version"] = CSV_CAMPAIGN_DEFAULT_VERSION
     with st.sidebar:
         campaign_format = st.selectbox(
-            "Output files", ("Excel (.xlsx)", "CSV (.csv)"), key="campaign_output_format",
-            help="Excel preserves account digits when opening and saving. CSV is intended for direct system upload.",
+            "Output files", ("CSV (.csv)", "Excel (.xlsx)"), key="campaign_output_format",
+            help="CSV is the default for GEO and RECO uploads. Excel copies remain optional.",
+        )
+        csv_protect_ids = st.checkbox(
+            "Keep account digits in Excel", value=True, key="campaign_csv_protect_ids",
+            disabled=campaign_format == "Excel (.xlsx)",
+            help="Adds a leading tab inside account, reference and phone fields so Excel keeps all digits through CSV saves. "
+            "Amounts stay numeric. Turn off only if your upload system requires fields without that prefix.",
         )
         csv_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
@@ -381,7 +394,7 @@ def render_workbook_page() -> None:
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
         "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
-        CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format,
+        CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION, csv_protect_ids,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
@@ -426,6 +439,7 @@ def render_workbook_page() -> None:
                     "grouped": grouped,
                     "geo": geo,
                     "excel_output": excel_output,
+                    "protect_csv_identifiers": csv_protect_ids and not excel_output,
                     "count": len(mapped.records),
                     "blank_rows": mapped.blank_rows_skipped,
                     "no_contact_rows": mapped.no_contact_rows_skipped,
@@ -496,14 +510,11 @@ def render_workbook_page() -> None:
                     f"{counts[key]:,} rows need review ({labels[key]}). "
                     "They are included in a separate review file."
                 )
-    st.caption(
-        "Use Excel files to open, edit, or upload accounts to AUTOSTAT. "
-        "Numbers and dates retain their source types. Account identifiers and phone numbers use Text to preserve their digits. "
-        "Extract the Excel ZIP before opening its workbooks."
-    )
+    if excel_output:
+        st.caption("Excel copies keep account identifiers and phones as Text, with numeric balances and native dates.")
     st.download_button(
         "Download all Excel files (ZIP)" if excel_output else "Download all CSV files (ZIP)",
-        partial(build_excel_zip, files) if excel_output else result["zip_data"],
+        partial(build_excel_zip, files) if excel_output else partial(build_csv_zip, files, protect_identifiers=result["protect_csv_identifiers"]),
         Path(result["zip_filename"]).stem + "_Excel.zip" if excel_output else result["zip_filename"],
         mime="application/zip", type="primary", on_click="ignore", key="excel_zip" if excel_output else "csv_zip",
     )
@@ -516,13 +527,27 @@ def render_workbook_page() -> None:
     file = next(file for file in files if file.filename == selected_file)
     filename = Path(file.filename).with_suffix(".xlsx").name if excel_output else file.filename
     st.download_button(
-        f"Download {filename}", partial(build_export_excel, file) if excel_output else file.data,
+        f"Download {filename}", partial(build_export_excel, file) if excel_output else partial(build_export_csv, file, protect_identifiers=result["protect_csv_identifiers"]),
         filename, mime=XLSX_MIME if excel_output else "text/csv",
         key=f"excel_download_{file.key}" if excel_output else f"download_{file.key}",
         on_click="ignore", type="primary",
         help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
-        "Use CSV for direct system upload. Opening and resaving it in Excel can change account digits.",
+        "CSV identifiers include a leading tab to retain all digits in Excel." if result["protect_csv_identifiers"] else
+        "Plain CSV for upload systems that require unprefixed identifiers. Import identifier columns as Text in Excel.",
     )
+    if not excel_output:
+        with st.expander("CSV account-number protection"):
+            st.write(
+                "Keep account digits in Excel is on by default. CSV fields for primary_key, cardnumber, indexoneuid "
+                "and phone include a leading tab that keeps them as text when opened and saved in Excel. "
+                "The digits are unchanged; amounts and other columns have no added prefix. AUTOSTAT removes the "
+                "surrounding whitespace when reading account numbers."
+            )
+            st.write(
+                "For an upload system that requires fields without the tab prefix, turn this setting off. "
+                "When editing plain CSV, import the identifier columns as Text before loading; ordinary Excel opening can round them. "
+                "[Microsoft's instructions](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers)."
+            )
     show_preview(file.preview, file.count, file.headers)
 
 

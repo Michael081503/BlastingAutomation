@@ -15,7 +15,7 @@ from streamlit.testing.v1 import AppTest
 
 from automation import DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
 from autostat import SourceSelection, build_autostat_exports, inspect_contact_source
-from exports import campaign_output_files, build_excel_zip, build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
+from exports import campaign_output_files, build_export_csv, build_excel_zip, build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
 
 
 class ExcelExportTests(unittest.TestCase):
@@ -140,6 +140,7 @@ class ExcelExportTests(unittest.TestCase):
                 patch("exports.build_export_excel", wraps=build_export_excel) as excel_builder, \
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(root / "app.py")).run(timeout=20)
+            app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -182,6 +183,7 @@ class ExcelExportTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(root / "app.py")).run(timeout=20)
+            app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -232,23 +234,25 @@ class ExcelExportTests(unittest.TestCase):
                     with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
                             patch("streamlit.download_button") as download:
                         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=20)
-                        self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
+                        self.assertEqual(app.selectbox(key="campaign_output_format").value, "CSV (.csv)")
+                        self.assertTrue(app.checkbox(key="campaign_csv_protect_ids").value)
                         if not grouped:
                             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-                        for excel in (True, False):
+                        for excel, protected in ((False, True), (False, False), (True, False)):
                             download.reset_mock()
                             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
                             self.assertEqual(len(app.exception), 0)
                             self.assertEqual(len(app.error), 0)
                             result = app.session_state["result"]
                             self.assertEqual(result["excel_output"], excel)
+                            self.assertEqual(result["protect_csv_identifiers"], protected)
                             self.assertEqual(result["geo"], geo)
                             self.assertEqual(result["grouped"], grouped)
                             suffix = ".xlsx" if excel else ".csv"
                             picker = next(widget for widget in app.selectbox if widget.label == "File to preview")
                             self.assertTrue(all(name.endswith(suffix) for name in picker.options))
                             zip_call = next(call for call in download.call_args_list if call.kwargs.get("key") == ("excel_zip" if excel else "csv_zip"))
-                            zip_data = zip_call.args[1]() if excel else zip_call.args[1]
+                            zip_data = zip_call.args[1]()
                             single = next(call for call in download.call_args_list if call.kwargs.get("key", "").startswith("excel_download_" if excel else "download_"))
                             self.assertTrue(single.args[2].endswith(suffix))
                             with ZipFile(BytesIO(zip_data)) as archive:
@@ -270,13 +274,34 @@ class ExcelExportTests(unittest.TestCase):
                                         self.assertEqual(cells["EndoDate"].data_type, "d")
                                         book.close()
                                     else:
-                                        self.assertEqual((saved / filename).read_bytes(), file.data)
-                                        self.assertEqual(archive.read(filename), file.data)
-                            if excel:
-                                app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
+                                        expected_data = build_export_csv(file, protect_identifiers=protected)
+                                        self.assertEqual((saved / filename).read_bytes(), expected_data)
+                                        self.assertEqual(archive.read(filename), expected_data)
+                                        row = next(csv.DictReader(StringIO(expected_data.decode("cp1252"))))
+                                        prefix = "\t" if protected else ""
+                                        self.assertEqual((row["primary_key"], row["cardnumber"], row["indexoneuid"]), tuple(prefix + value for value in values[:3]))
+                                        self.assertEqual(row["OB"], "1234.5")
+                                        self.assertEqual(row["Product"], "CARDS")
+                                        if file.key == result["files"][0].key:
+                                            self.assertEqual(single.args[1](), expected_data)
+                            if not excel and protected:
+                                app.checkbox(key="campaign_csv_protect_ids").set_value(False).run(timeout=20)
+                                self.assertNotIn("result", app.session_state)
+                            elif not excel:
+                                app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
                                 self.assertNotIn("result", app.session_state)
                         app.button(key="clear_all_files").click().run(timeout=20)
-                        self.assertEqual(app.selectbox(key="campaign_output_format").value, "CSV (.csv)")
+                        self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
+                        self.assertFalse(app.checkbox(key="campaign_csv_protect_ids").value)
+
+    def test_previous_excel_default_migrates_to_csv_once_and_retains_later_explicit_choices(self):
+        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
+        app.session_state["campaign_output_format"] = "Excel (.xlsx)"
+        app.run(timeout=20)
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.selectbox(key="campaign_output_format").value, "CSV (.csv)")
+        app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
+        self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
 
     def test_folder_delivery_does_not_convert_csv_identifiers_or_build_excel_in_csv_mode(self):
         bundle = build_sheet_exports(create_default_csv_template(), [{

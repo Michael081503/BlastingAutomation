@@ -34,7 +34,8 @@ def workbook_bytes(headers, row, name="NEGATIVE"):
 
 class ClearUploadStateTests(unittest.TestCase):
     def test_clears_all_upload_generations_results_caches_and_source_mapping_but_keeps_settings(self):
-        settings = {"csv_file_type": "CSV UTF-8 (Comma delimited)", "campaign_output_format": "CSV (.csv)", "autostat_remark_by": "USER",
+        settings = {"csv_file_type": "CSV UTF-8 (Comma delimited)", "campaign_output_format": "CSV (.csv)",
+                    "campaign_csv_protect_ids": True, "autostat_remark_by": "USER",
                     "geo_b2_autostat_remark_by": "B2USER", "output_folder": "my-output",
                     "autostat_upload_type": "B2", "unrelated_setting": "keep"}
         file_keys = [*UPLOAD_KEYS, *FILE_STATE_KEYS, *(name + "_clear_2" for name in UPLOAD_KEYS),

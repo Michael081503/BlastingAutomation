@@ -14,6 +14,7 @@ from openpyxl import Workbook
 
 from automation import (
     AutomationError,
+    IDENTIFIER_FIELDS,
     csv_template_headers,
     excel_template_to_csv,
     fill_csv_template,
@@ -52,7 +53,9 @@ GEO_LOAN_PRODUCTS = frozenset({"csl", "pl", "sla"})
 GROUPED_SHEET_EXPORT_VERSION = 1
 EXCEL_EXPORT_VERSION = 2
 TYPED_EXCEL_EXPORT_VERSION = 1
-CAMPAIGN_OUTPUT_FORMAT_VERSION = 1
+CAMPAIGN_OUTPUT_FORMAT_VERSION = 2
+CSV_CAMPAIGN_DEFAULT_VERSION = 1
+EXCEL_SAFE_CSV_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
@@ -117,10 +120,43 @@ def build_excel_zip(files: list[ExportFile]) -> bytes:
     return output.getvalue()
 
 
-def campaign_output_files(files: list[ExportFile], *, excel: bool) -> list[tuple[str, bytes]]:
+def build_export_csv(file: ExportFile, *, protect_identifiers: bool = False) -> bytes:
+    """Keep CSV identifiers as text in Excel, including subsequent CSV saves.
+
+    A leading tab survives Excel's CSV save/reopen cycle, unlike a text formula.
+    This is part of the CSV field value; plain upload bytes remain available.
+    Only identifiers/phones are prefixed. Other cells retain their CSV values.
+    """
+    if not protect_identifiers:
+        return file.data
+    encoding = "utf-8-sig" if file.data.startswith(b"\xef\xbb\xbf") else "cp1252"
+    rows = csv.reader(StringIO(file.data.decode(encoding), newline=""))
+    output = StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\r\n")
+    headers = next(rows)
+    writer.writerow(headers)
+    fields = {normalize_header(field) for field in IDENTIFIER_FIELDS}
+    columns = [index for index, header in enumerate(headers) if normalize_header(header) in fields]
+    for row in rows:
+        for column in columns:
+            if row[column] and not row[column].startswith("\t"):
+                row[column] = "\t" + row[column]
+        writer.writerow(row)
+    return output.getvalue().encode(encoding)
+
+
+def build_csv_zip(files: list[ExportFile], *, protect_identifiers: bool = False) -> bytes:
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        for file in files:
+            archive.writestr(file.filename, build_export_csv(file, protect_identifiers=protect_identifiers))
+    return output.getvalue()
+
+
+def campaign_output_files(files: list[ExportFile], *, excel: bool, protect_csv_identifiers: bool = False) -> list[tuple[str, bytes]]:
     """Use the chosen format consistently for folder saves and downloads."""
     return [(Path(file.filename).with_suffix(".xlsx").name, build_export_excel(file)) if excel
-            else (file.filename, file.data) for file in files]
+            else (file.filename, build_export_csv(file, protect_identifiers=protect_csv_identifiers)) for file in files]
 
 
 def _level(value: Any) -> str:

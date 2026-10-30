@@ -546,6 +546,8 @@ class StartupTests(unittest.TestCase):
         self.run_isolated("""
             import exports
             del exports.CAMPAIGN_OUTPUT_FORMAT_VERSION
+            del exports.CSV_CAMPAIGN_DEFAULT_VERSION
+            del exports.EXCEL_SAFE_CSV_VERSION
             del exports.campaign_output_files
             from app_startup import refresh_application_modules
             assert 'exports' in refresh_application_modules()

@@ -32,6 +32,7 @@ from export_config import CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, OUTPUT_FILENAM
 from email_validation import validated_email
 from exports import (
     GEO_REVIEW_GROUP_KEYS, build_geo_exports, build_negative_exports, build_sheet_exports,
+    build_export_csv,
     channel_filename, export_filename, separate_channels, separate_geo, separate_negative,
 )
 from folder_output import save_files_to_folder
@@ -1079,10 +1080,8 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             saved = Path(app.session_state["result"]["saved_folder"])
             for file in result["files"]:
-                book = load_workbook(saved / Path(file.filename).with_suffix(".xlsx"))
-                self.assertEqual(book.active.max_row, file.count + 1)
-                self.assertEqual(book.active.cell(2, file.headers.index("FullName") + 1).value, "POSITIVE")
-                book.close()
+                self.assertEqual((saved / file.filename).read_bytes(), build_export_csv(file, protect_identifiers=True))
+                self.assertEqual(list(csv.DictReader(StringIO(file.data.decode("cp1252"))))[0]["FullName"], "POSITIVE")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             app.selectbox[0].select("CONTACTED").run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
@@ -1142,6 +1141,7 @@ class AppTests(unittest.TestCase):
         ), patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
+            app.checkbox(key="campaign_csv_protect_ids").set_value(False).run(timeout=20)
             app.button[0].click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -1556,18 +1556,18 @@ class AppTests(unittest.TestCase):
                 self.assertEqual(len(app.error), 0)
                 saved = Path(app.session_state["result"]["saved_folder"])
                 files = app.session_state["result"]["files"]
-                self.assertTrue(app.session_state["result"]["excel_output"])
-                self.assertEqual({path.name for path in saved.iterdir()}, {Path(file.filename).with_suffix(".xlsx").name for file in files})
+                self.assertFalse(app.session_state["result"]["excel_output"])
+                self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in files})
                 for file in files:
-                    book = load_workbook(saved / Path(file.filename).with_suffix(".xlsx"))
-                    self.assertEqual([cell.value for cell in book.active[1]], list(DEFAULT_TEMPLATE_HEADERS))
-                    self.assertEqual(book.active.max_row, file.count + 1)
-                    if file.count:
+                    saved_data = (saved / file.filename).read_bytes()
+                    self.assertEqual(saved_data, build_export_csv(file, protect_identifiers=True))
+                    self.assertEqual(csv_template_headers(saved_data), list(DEFAULT_TEMPLATE_HEADERS))
+                    data = list(csv.DictReader(StringIO(saved_data.decode("cp1252"))))
+                    self.assertEqual(len(data), file.count)
+                    for row in data:
                         for header, expected in (("primary_key", "0000000456"), ("cardnumber", "000123456789012345"), ("indexoneuid", "000123")):
-                            cell = book.active.cell(2, file.headers.index(header) + 1)
-                            self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
-                        self.assertEqual(book.active.cell(2, file.headers.index("OB") + 1).data_type, "n")
-                    book.close()
+                            self.assertEqual(row[header], "\t" + expected)
+                        self.assertEqual(row["OB"], "1250.75")
                 app.run(timeout=20)
                 self.assertEqual(list(parent.iterdir()), [saved])
 
@@ -1582,6 +1582,7 @@ class AppTests(unittest.TestCase):
             with patch("streamlit.file_uploader", side_effect=uploader):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
                 app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
+                app.checkbox(key="campaign_csv_protect_ids").set_value(False).run(timeout=20)
                 app.radio[0].set_value("All accounts in one group").run(timeout=20)
                 app.button[0].click().run(timeout=20)
                 app.text_input(key="output_folder").set_value(directory).run(timeout=20)

@@ -89,6 +89,7 @@ class GeoLoanRoutingTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
