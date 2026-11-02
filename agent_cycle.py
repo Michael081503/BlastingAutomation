@@ -44,6 +44,17 @@ def cycle_agents(cycle: AgentCycle, assignment_date: date) -> tuple[tuple[str, s
     return tuple((names[code], code) for code in codes)
 
 
+def reorder_cycle(cycle: AgentCycle, assignment_date: date, agent_codes: list[str]) -> AgentCycle:
+    """Set the displayed day's order while retaining the saved cycle start date."""
+    if not isinstance(agent_codes, list) or any(not isinstance(code, str) for code in agent_codes):
+        raise AutomationError("Choose each RECO agent exactly once in the cycle.")
+    selected = AgentCycle(cycle.start_date, tuple(agent_codes))
+    validate_cycle(selected)
+    offset = (assignment_date - cycle.start_date).days % len(selected.agent_codes)
+    codes = selected.agent_codes
+    return AgentCycle(cycle.start_date, codes[-offset:] + codes[:-offset] if offset else codes)
+
+
 def load_cycle(path: Path | None = None) -> AgentCycle:
     path = SETTINGS_PATH if path is None else path
     try:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import csv
+import json
 import unittest
 from collections import Counter
 from datetime import date, timedelta
 from io import BytesIO, StringIO
+from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -12,7 +14,7 @@ from unittest.mock import patch
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
-from agent_cycle import AgentCycle, assign_agents_to_accounts, cycle_agents, default_cycle, load_cycle, save_cycle
+from agent_cycle import AgentCycle, assign_agents_to_accounts, cycle_agents, default_cycle, load_cycle, reorder_cycle, save_cycle
 from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
 from export_config import GEO_RECO_AGENTS
 from exports import build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
@@ -34,7 +36,32 @@ def rows(file):
     return list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
 
 
+def agent_order_args(app):
+    return json.loads(app.get("component_instance")[0].proto.json_args)
+
+
+def displayed_agent_codes(app):
+    return [agent["code"] for agent in agent_order_args(app)["data"]]
+
+
 class AgentCycleTests(unittest.TestCase):
+    def test_reordering_any_day_preserves_start_date_and_rotates_from_selected_order(self):
+        cycle = default_cycle()
+        for offset in range(-2, 5):
+            selected_date = cycle.start_date + timedelta(days=offset)
+            for codes in permutations(cycle.agent_codes):
+                with self.subTest(offset=offset, codes=codes):
+                    reordered = reorder_cycle(cycle, selected_date, list(codes))
+                    self.assertEqual(reordered.start_date, cycle.start_date)
+                    for day in range(3):
+                        actual = cycle_agents(reordered, selected_date + timedelta(days=day))
+                        self.assertEqual(tuple(code for _, code in actual), codes[day:] + codes[:day])
+
+    def test_reordering_rejects_missing_duplicate_and_unknown_agents(self):
+        for codes in ([], ["APMAMARIL"] * 3, ["APMAMARIL", "ROSVINOYA", "UNKNOWN"], "APMAMARIL", [{}]):
+            with self.subTest(codes=codes), self.assertRaisesRegex(AutomationError, "exactly once"):
+                reorder_cycle(default_cycle(), TODAY, codes)
+
     def test_daily_first_agent_moves_to_last_and_repeats_with_matching_names(self):
         cycle = default_cycle()
         for offset in range(-1, 8):
@@ -151,9 +178,9 @@ class AgentCyclePageTests(unittest.TestCase):
         with patch("streamlit.file_uploader", return_value=None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.table[0].value["Terms"].tolist(), ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
+            self.assertEqual(displayed_agent_codes(app), ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
             app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(TODAY + timedelta(days=1)).run(timeout=20)
-            self.assertEqual(app.table[0].value["Terms"].tolist(), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
+            self.assertEqual(displayed_agent_codes(app), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
             self.assertFalse(self.path.exists())
 
     def test_saving_a_new_cycle_invalidates_exports_and_survives_clear_and_new_sessions(self):
@@ -182,7 +209,48 @@ class AgentCyclePageTests(unittest.TestCase):
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertEqual(load_cycle().agent_codes[0], "ROSVINOYA")
             fresh = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-            self.assertEqual(fresh.table[0].value["Terms"].tolist(), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
+            self.assertEqual(displayed_agent_codes(fresh), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
+
+    def test_dragging_for_a_rotated_date_saves_order_and_updates_reco_exports(self):
+        upload = Upload()
+        selected_date = TODAY + timedelta(days=1)
+        codes = ["JBATALLER", "ROSVINOYA", "APMAMARIL"]
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(selected_date).run(timeout=20)
+            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            self.assertIn("result", app.session_state)
+            app.session_state[agent_order_args(app)["key"]] = codes
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertNotIn("result", app.session_state)
+            self.assertEqual(load_cycle().start_date, default_cycle().start_date)
+            self.assertEqual(displayed_agent_codes(app), codes)
+            self.assertEqual([code for _, code in cycle_agents(load_cycle(), selected_date)], codes)
+            self.assertEqual(app.table[0].value.iloc[1]["First"], "ROSVINOYA")
+            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            for file in app.session_state["result"]["files"]:
+                self.assertEqual(file.records[0]["Terms"], "JBATALLER")
+                self.assertEqual(file.records[0]["Monthly"], "Jenayrine Bataller")
+            app.button(key="clear_all_files").click().run(timeout=20)
+            self.assertEqual([code for _, code in cycle_agents(load_cycle(), selected_date)], codes)
+            fresh = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            fresh.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(selected_date).run(timeout=20)
+            self.assertEqual(displayed_agent_codes(fresh), codes)
+
+    def test_failed_drag_save_blocks_prepared_downloads_and_keeps_saved_order(self):
+        upload = Upload()
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.session_state[agent_order_args(app)["key"]] = ["JBATALLER", "ROSVINOYA", "APMAMARIL"]
+            with patch("agent_cycle_page.save_cycle", side_effect=AutomationError("Could not save the agent cycle.")):
+                app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(any("Could not save" in error.value for error in app.error))
+            self.assertNotIn("result", app.session_state)
+            self.assertEqual(load_cycle(), default_cycle())
 
     def test_new_manila_day_rotates_automatically_and_clears_previous_exports(self):
         upload = Upload()
@@ -194,7 +262,7 @@ class AgentCyclePageTests(unittest.TestCase):
                 app.run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
                 self.assertNotIn("result", app.session_state)
-                self.assertEqual(app.table[0].value["Terms"].tolist(), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
+                self.assertEqual(displayed_agent_codes(app), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
                 self.assertEqual(next(widget for widget in app.date_input if widget.label == "Assignment date (Asia/Manila)").value,
                                  TODAY + timedelta(days=1))
 

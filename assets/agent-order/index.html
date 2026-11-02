@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RECO agent order</title>
+    <link rel="stylesheet" href="./reco-agent-order.css">
+</head>
+<body>
+    <ol class="agent-list" aria-label="RECO agent assignment order"></ol>
+    <p class="status" role="status" aria-live="polite"></p>
+    <script type="module">
+        import render from './reco-agent-order.js';
+
+        function send(type, payload = {}) {
+            window.parent.postMessage({ isStreamlitMessage: true, type, ...payload }, '*');
+        }
+        window.addEventListener('message', event => {
+            if (event.source !== window.parent || event.data.type !== 'streamlit:render') return;
+            const { args, theme } = event.data;
+            for (const [name, value] of Object.entries(theme || {})) {
+                const cssName = name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+                document.documentElement.style.setProperty(`--st-${cssName}`, value);
+            }
+            render({
+                data: args.data,
+                parentElement: document,
+                setTriggerValue: (_name, value) => send('streamlit:setComponentValue', { value, dataType: 'json' }),
+            });
+        });
+        new ResizeObserver(() => send('streamlit:setFrameHeight', { height: document.body.scrollHeight + 4 }))
+            .observe(document.body);
+        send('streamlit:componentReady', { apiVersion: 1 });
+    </script>
+</body>
+</html>

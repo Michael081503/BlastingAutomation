@@ -7,13 +7,15 @@ from datetime import datetime, timedelta
 
 import streamlit as st
 
-from agent_cycle import AgentCycle, cycle_agents, default_cycle, load_cycle, save_cycle
+from agent_cycle import AgentCycle, cycle_agents, default_cycle, load_cycle, reorder_cycle, save_cycle
+from agent_order import render_agent_order
 from automation import AutomationError
 from export_config import GEO_RECO_AGENTS
 from folder_output import MANILA_TIMEZONE
 
 
-AGENT_CYCLE_PAGE_VERSION = 2
+AGENT_CYCLE_PAGE_VERSION = 3
+AGENT_DRAG_ORDER_VERSION = 1
 
 
 def manila_today():
@@ -42,12 +44,24 @@ def render_agent_cycle():
             st.info("Choose an assignment date to prepare RECO files.")
             return None
         agents = cycle_agents(cycle, assignment_date)
-        st.table([{"Order": number, "Monthly": name, "Terms": code} for number, (name, code) in enumerate(agents, 1)])
+        revision = hashlib.sha256(repr(cycle).encode()).hexdigest()[:12]
+        st.caption("Drag agents into first, second and third position, or use the arrows. Changes save automatically for the selected date.")
+        selected_order = render_agent_order(agents, key=f"agent_cycle_drag_{revision}_{assignment_date.isoformat()}")
+        if selected_order is not None and selected_order != [code for _, code in agents]:
+            try:
+                save_cycle(reorder_cycle(cycle, assignment_date, selected_order))
+                st.session_state.pop("result", None)
+                st.session_state["agent_cycle_saved"] = True
+                st.rerun()
+            except AutomationError as exc:
+                st.session_state.pop("result", None)
+                st.error(str(exc))
+                return None
         st.caption(
             "Accounts in each output group are split evenly in this order, starting with the highest OB. "
             "The same account keeps its agent in Email and Viber. The first agent moves to the end each calendar day."
         )
-        st.caption("Change the saved order and start date under Change RECO agent cycle in the sidebar.")
+        st.caption("The top agent receives the first account. Names fill Monthly and codes fill Terms. Change the cycle start date in the sidebar.")
         with st.expander("See upcoming days"):
             st.table([
                 {"Date": (assignment_date + timedelta(days=day)).isoformat(),
@@ -55,7 +69,6 @@ def render_agent_cycle():
                 for day in range(3)
             ])
         with st.sidebar.expander("Change RECO agent cycle"):
-            revision = hashlib.sha256(repr(cycle).encode()).hexdigest()[:12]
             start = st.date_input("Cycle start date", cycle.start_date, key=f"agent_cycle_start_{revision}")
             codes = [code for _, code in GEO_RECO_AGENTS]
             labels = {code: f"{name} ({code})" for name, code in GEO_RECO_AGENTS}

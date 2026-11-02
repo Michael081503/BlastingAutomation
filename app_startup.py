@@ -52,7 +52,7 @@ def refresh_application_modules() -> set[str]:
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
         ), ("email_validation",)),
         ("agent_cycle", (
-            "AGENT_CYCLE_VERSION", "AgentCycle", "load_cycle", "save_cycle", "cycle_agents", "assign_agents_to_accounts",
+            "AGENT_CYCLE_VERSION", "AgentCycle", "load_cycle", "save_cycle", "cycle_agents", "assign_agents_to_accounts", "reorder_cycle",
         ), ("automation", "export_config")),
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
@@ -67,7 +67,8 @@ def refresh_application_modules() -> set[str]:
             "RECO_ONLY_AGENTS_VERSION",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
-        ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "render_agent_cycle"), ("agent_cycle", "folder_output")),
+        ("agent_order", ("AGENT_ORDER_VERSION", "render_agent_order"), ()),
+        ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "AGENT_DRAG_ORDER_VERSION", "render_agent_cycle"), ("agent_cycle", "agent_order", "folder_output")),
         ("autostat", (
             "AUTOSTAT_VERSION", "AUTOSTAT_REMARK_BY", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "build_bel_exports", "has_bel_primary_keys",
