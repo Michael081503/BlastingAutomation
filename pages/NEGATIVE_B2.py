@@ -1,4 +1,4 @@
-"""Dedicated page for B2 blasting templates."""
+"""Dedicated page for B2 and B4 account matching."""
 
 import streamlit as st
 
@@ -7,7 +7,7 @@ from b2_page import render_b2_page
 from branding import render_bank_branding
 
 render_bank_branding()
-st.title("NEGATIVE B2")
+st.title("NEGATIVE B2 & B4")
 with st.sidebar:
     csv_file_type = st.selectbox("CSV file type", list(CSV_OUTPUT_ENCODINGS), key="b2_csv_type")
 encoding = CSV_OUTPUT_ENCODINGS[csv_file_type]

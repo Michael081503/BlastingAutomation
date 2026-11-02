@@ -409,7 +409,7 @@ class B2AppTests(unittest.TestCase):
             app = AppTest.from_file(str(ROOT / 'app.py')).run(timeout=20)
             app.switch_page('pages/NEGATIVE_B2.py').run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.title[0].value, 'NEGATIVE B2')
+            self.assertEqual(app.title[0].value, 'NEGATIVE B2 & B4')
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state['b2_result']['matched']

@@ -533,7 +533,7 @@ def main() -> None:
     st.set_page_config(page_title="Security Bank | Blasting Automation", page_icon=str(BANK_ICON), layout="wide")
     page = st.navigation([
         st.Page(render_workbook_page, title="GEO & RECO", icon=":material/folder_copy:", default=True),
-        st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2", icon=":material/compare_arrows:", url_path="NEGATIVE_B2"),
+        st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2 & B4", icon=":material/compare_arrows:", url_path="NEGATIVE_B2"),
         st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", icon=":material/mark_email_read:", url_path="AUTOSTAT"),
     ])
     page.run()
