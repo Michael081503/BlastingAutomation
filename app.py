@@ -124,6 +124,7 @@ def render_workbook_page() -> None:
     st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically using Financing/Card No. (cardnumber) for Account No.")
     st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
     st.caption("Product MC is converted to CARDS before grouping accounts into their designated files.")
+    st.caption("Accounts are automatically sorted by OB, highest to lowest. Blank or invalid amounts appear last.")
     if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
         st.session_state["campaign_output_format"] = "CSV (.csv)"
         st.session_state["campaign_csv_default_version"] = CSV_CAMPAIGN_DEFAULT_VERSION

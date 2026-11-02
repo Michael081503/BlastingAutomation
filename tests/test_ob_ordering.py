@@ -4,6 +4,7 @@ import csv
 import unittest
 from decimal import Decimal
 from io import BytesIO, StringIO
+from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 
 from openpyxl import Workbook, load_workbook
@@ -13,7 +14,10 @@ from autostat import (
     EMAIL_HEADERS, VIBER_HEADERS, SourceSelection, build_autostat_excel,
     build_autostat_exports, inspect_contact_source,
 )
-from exports import build_geo_exports, build_negative_exports, build_sheet_exports
+from b2_matching import build_b2_exports, build_b4_exports
+from export_config import COLLECTION_AGENTS
+from exports import build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
+from folder_output import save_files_to_folder
 
 
 def source(name, headers, rows):
@@ -38,7 +42,67 @@ def csv_rows(file):
     return list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
 
 
+def bucket_sources(bucket, amounts):
+    database_rows, account_rows = [], []
+    for group_number, category in enumerate(("MC", "BEL")):
+        for number, (label, amount, fallback, contactable) in enumerate(amounts):
+            account = f"000{bucket}{group_number}{number:04d}"
+            contract = f"000{bucket}{group_number}{number + 1000:06d}"
+            database_rows.append([
+                account, contract, bucket, category,
+                f"{label}@example.com" if contactable else "invalid",
+                "09171234567" if contactable else None,
+                "09171234567" if contactable else None, amount, label,
+            ])
+            account_rows.append([account, contract, fallback])
+    return (
+        source(f"database-b{bucket}.xlsx", [
+            "Account Key", "Contract Number", "Bucket Code", "Product Category Code",
+            "Email (01)", "Phone (01)", "Mobile 1", "Total Outstanding", "Name",
+        ], list(reversed(database_rows))),
+        source(f"accounts-b{bucket}.xlsx", ["Account No.", "Financing/Card No.", "Amount Referred"], account_rows),
+    )
+
+
 class OBOrderingTests(unittest.TestCase):
+    def test_b2_and_b4_sort_numeric_ob_before_agent_assignment_in_all_outputs(self):
+        amounts = [
+            ("low", 9, None, True), ("high", "PHP 20,000", None, True),
+            ("blank", None, None, True), ("tie-first", "1,000.50", None, True),
+            ("tie-second", 1000.5, None, True), ("zero", 0, 99999, True),
+            ("negative", "(50.25)", None, True), ("bad", "bad", None, True),
+            ("fallback", None, "2,000", True), ("excluded", 999999, None, False),
+        ]
+        expected = ["high", "fallback", "tie-first", "tie-second", "low", "zero", "negative", "blank", "bad"]
+        values = {label: "" if amount is None and fallback is None else str(amount if amount is not None else fallback)
+                  for label, amount, fallback, _ in amounts}
+        for bucket, builder in ((2, build_b2_exports), (4, build_b4_exports)):
+            with self.subTest(bucket=bucket):
+                database, accounts = bucket_sources(bucket, amounts)
+                bundle = builder(database, accounts).bundle
+                with TemporaryDirectory() as directory, ZipFile(BytesIO(bundle.zip_data)) as archive:
+                    folder = save_files_to_folder([(file.filename, file.data) for file in bundle.files], directory,
+                                                  batch_name=f"B{bucket}")
+                    for file in bundle.files:
+                        rows = csv_rows(file)
+                        self.assertEqual([row["FullName"] for row in rows], expected)
+                        self.assertEqual([row["FullName"] for row in file.preview], expected)
+                        self.assertEqual([row["OB"] for row in rows], [values[label] for label in expected])
+                        self.assertEqual([(row["Monthly"], row["Terms"]) for row in rows],
+                                         [COLLECTION_AGENTS[index % len(COLLECTION_AGENTS)] for index in range(len(expected))])
+                        self.assertEqual(archive.read(file.filename), file.data)
+                        self.assertEqual((folder / file.filename).read_bytes(), file.data)
+
+    def test_b2_and_b4_sort_all_rows_before_limiting_the_preview(self):
+        amounts = [(f"account{index}", index, None, True) for index in range(110)]
+        expected = [f"account{index}" for index in reversed(range(110))]
+        for bucket, builder in ((2, build_b2_exports), (4, build_b4_exports)):
+            with self.subTest(bucket=bucket):
+                database, accounts = bucket_sources(bucket, amounts)
+                for file in builder(database, accounts).bundle.files:
+                    self.assertEqual([row["FullName"] for row in csv_rows(file)], expected)
+                    self.assertEqual([row["FullName"] for row in file.preview], expected[:100])
+
     def test_amount_formats_sort_numerically_with_invalid_values_after_negative_amounts(self):
         values = ["9", "1,000.50", None, "PHP 20,000", "₱ 2,000", "", "NaN",
                   "invalid", float("inf"), True, 0, "(50.25)", Decimal("10.5")]
@@ -127,6 +191,10 @@ class OBOrderingTests(unittest.TestCase):
                             self.assertEqual([row["primary_key"] for row in rows], expected)
                             self.assertEqual([row["primary_key"] for row in file.preview], expected)
                             self.assertEqual(archive.read(file.filename), file.data)
+                            workbook = load_workbook(BytesIO(build_export_excel(file)))
+                            headers = [cell.value for cell in workbook.active[1]]
+                            self.assertEqual([row[headers.index("primary_key")] for row in list(workbook.active.values)[1:]], expected)
+                            workbook.close()
                             for row in rows:
                                 original = next(record for record in records if record["primary_key"] == row["primary_key"])
                                 self.assertEqual(row["OB"], "" if original["OB"] is None else str(original["OB"]))

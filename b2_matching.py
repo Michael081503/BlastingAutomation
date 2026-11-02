@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any, Sequence
 
-from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, _identifier, normalize_header
+from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, _identifier, normalize_header, ob_sort_key
 from autostat import (
     AutostatBundle, ContactRows, ContactSheet, SourceSelection,
     _add_contact_row, _bundle, _contact_summary, _log_file, _workbook,
@@ -17,7 +17,8 @@ from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES, COLLECTI
 from exports import export_filename
 
 
-B2_MATCHING_VERSION = 6
+B2_MATCHING_VERSION = 7
+B2_B4_OB_SORT_VERSION = 1
 B2_BUCKET_DIAGNOSTICS_VERSION = 1
 B4_MATCHING_VERSION = 1
 B2_B4_AGENTS_VERSION = 1
@@ -327,7 +328,7 @@ def build_b2_exports(
         emails = {_key(account): value for account, value in contacts.emails}
         phones = {_key(account): value for account, value in contacts.phones}
         rows = []
-        for record in records[group]:
+        for record in sorted(records[group], key=lambda record: ob_sort_key(record.get("OB")), reverse=True):
             account = _key(record["cardnumber"])
             if account not in emails and account not in phones:
                 continue

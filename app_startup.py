@@ -96,6 +96,7 @@ def refresh_application_modules() -> set[str]:
             "B2_BUCKET_DIAGNOSTICS_VERSION",
             "B2_UPLOAD_ROLES_VERSION", "is_sbc_database_sheet", "validate_b2_source",
             "B4_MATCHING_VERSION", "build_b4_exports", "B2_B4_AGENTS_VERSION",
+            "B2_B4_OB_SORT_VERSION",
         ), ("autostat", "automation", "export_config")),
         ("b2_page", ("render_b2_page", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
         ("b2_autostat", (

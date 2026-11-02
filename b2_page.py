@@ -7,10 +7,10 @@ import hashlib
 import pandas as pd
 import streamlit as st
 
-from automation import AutomationError, CSV_OUTPUT_ENCODINGS, MAPPING_VERSION, WORKBOOK_READER_VERSION
+from automation import AutomationError, CSV_OUTPUT_ENCODINGS, MAPPING_VERSION, OB_SORT_VERSION, WORKBOOK_READER_VERSION
 from autostat import AUTOSTAT_VERSION, SourceSelection, inspect_contact_source
 from b2_matching import (
-    B2_MATCHING_VERSION, B2_TEMPLATE_HEADERS, B2_TEMPLATE_VERSION, B2_B4_AGENTS_VERSION,
+    B2_MATCHING_VERSION, B2_TEMPLATE_HEADERS, B2_TEMPLATE_VERSION, B2_B4_AGENTS_VERSION, B2_B4_OB_SORT_VERSION,
     B4_MATCHING_VERSION, build_b2_exports, build_b4_exports,
     is_datagrid_sheet, is_sbc_database_sheet, matching_sheet_score, validate_b2_source,
 )
@@ -46,6 +46,7 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
     result_key = prefix + "result"
     filenames = AUTOSTAT_B2_FILENAMES if bucket == 2 else AUTOSTAT_B4_FILENAMES
     st.subheader(f"NEGATIVE {bucket_label}")
+    st.caption("Accounts are automatically sorted by OB, highest to lowest. Blank or invalid amounts appear last.")
     if encoding is None:
         with st.sidebar:
             output_format = st.selectbox("CSV file type", list(CSV_OUTPUT_ENCODINGS), key=f"{prefix}csv_type")
@@ -147,7 +148,8 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
 
     signature = (tuple(signatures), encoding, B2_MATCHING_VERSION, B2_TEMPLATE_VERSION, B2_TEMPLATE_HEADERS,
                  AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION, bucket, B4_MATCHING_VERSION,
-                 B2_B4_AGENTS_VERSION, tuple(filenames.items()), B2_COMPACT_DOWNLOADS_VERSION)
+                 B2_B4_AGENTS_VERSION, B2_B4_OB_SORT_VERSION, OB_SORT_VERSION,
+                 tuple(filenames.items()), B2_COMPACT_DOWNLOADS_VERSION)
     prepared = st.session_state.get(result_key)
     if prepared is None or prepared["signature"] != signature:
         st.session_state.pop(result_key, None)
