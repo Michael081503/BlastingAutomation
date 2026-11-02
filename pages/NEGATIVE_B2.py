@@ -15,8 +15,8 @@ encoding = CSV_OUTPUT_ENCODINGS[csv_file_type]
 render_b2_page(encoding=encoding)
 st.divider()
 render_b2_page(encoding=encoding, bucket=4)
-with st.expander("B4 AutoStat — Email, SMS and Viber"):
-    render_b4_autostat_uploads(encoding=encoding)
 with st.expander("B2 AutoStat — Email, SMS and Viber"):
     st.subheader("B2 files")
     render_b2_autostat_uploads(encoding=encoding)
+with st.expander("B4 AutoStat — Email, SMS and Viber"):
+    render_b4_autostat_uploads(encoding=encoding)
