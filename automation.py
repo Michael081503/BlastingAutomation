@@ -52,6 +52,7 @@ MAPPING_VERSION = 8
 PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 OB_SORT_VERSION = 1
+RECO_DOCLASS_WRITER_VERSION = 1
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 DERIVED_TEMPLATE_HEADERS = ("doclass",)
 ASSIGNMENT_TEMPLATE_HEADERS = ("Monthly", "Terms")
@@ -555,6 +556,7 @@ def write_text_csv_sheet(workbook: Workbook, data: bytes, title: str):
 
 def write_typed_template_sheet(
     workbook: Workbook, records: list[dict[str, Any]], headers: list[str], title: str,
+    *, doclass: str | None = None,
 ):
     """Keep source cell types and apply Text format only to identifiers and phones."""
     positions = _column_lookup(headers, template=True)
@@ -570,7 +572,7 @@ def write_typed_template_sheet(
     for record in records:
         cells = [WriteOnlyCell(sheet) for _ in headers]
         for target, position in positions.items():
-            value = geo_doclass(record.get("AREA")) if target == "doclass" else record.get(target)
+            value = (doclass if doclass is not None else geo_doclass(record.get("AREA"))) if target == "doclass" else record.get(target)
             if target in IDENTIFIER_FIELDS:
                 value = _identifier(value, "General")
             cell = cells[position]
@@ -604,6 +606,7 @@ def excel_template_to_csv(template: bytes, sheet_name: str, header_row: int) -> 
 
 def fill_csv_template(
     template: bytes, records: list[dict[str, Any]], *, encoding: str = "cp1252",
+    doclass: str | None = None,
 ) -> bytes:
     """Always write comma-delimited CSV, regardless of the template delimiter."""
     headers, _ = _csv_contents(template)
@@ -614,7 +617,7 @@ def fill_csv_template(
     for record in records:
         row = [""] * len(headers)
         for target, position in positions.items():
-            value = geo_doclass(record.get("AREA")) if target == "doclass" else record.get(target)
+            value = (doclass if doclass is not None else geo_doclass(record.get("AREA"))) if target == "doclass" else record.get(target)
             if isinstance(value, (date, datetime)):
                 value = value.isoformat(sep=" ") if isinstance(value, datetime) else value.isoformat()
             row[position] = "" if value is None else value

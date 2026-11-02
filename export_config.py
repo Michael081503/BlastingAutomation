@@ -44,6 +44,13 @@ GEO_ZIP_FILENAME = "GEO_AREA_CHRISTMAS_AMNESTY_FILES.zip"
 
 
 # ==================== STANDARD NEGATIVE FILENAMES ====================
+# RECO doclass follows the first matching filename label, in this order.
+RECO_DOCLASS_BY_FILENAME = {
+    "L1": "SBC Cards L1",
+    "L6": "SBC Cards L6",
+    "PL": "PL Recovery",
+}
+
 OUTPUT_FILENAMES = {
     "qualified_cards_level_1": "CS AMNESTY NEGA CARDS - L1",
     "qualified_cards_level_6": "CS AMNESTY NEGA CARDS - L6",

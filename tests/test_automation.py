@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import unittest
 from datetime import datetime
 from io import BytesIO, StringIO
@@ -606,7 +607,7 @@ class SeparationTests(unittest.TestCase):
         bundle = build_negative_exports(template, records, "", 1, ".csv")
         for file in bundle.files:
             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
-            self.assertEqual(rows[0], headers)
+            self.assertEqual(rows[0], [*headers, "doclass"])
             self.assertEqual(rows[1][headers.index("ChristmasAmnesty")], "" if file.group_key.startswith("blank_") else "QUALIFIED")
             self.assertEqual(rows[1][headers.index("phone" if file.channel == "email" else "email")], "")
             self.assertTrue(file.filename.endswith(".csv"))
@@ -1372,7 +1373,7 @@ class AppTests(unittest.TestCase):
                 "source_NEGATIVE_filled_Email.csv", "source_NEGATIVE_filled_Viber.csv",
             ])
             preview = app.main.dataframe[-1].value
-            self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms"])
+            self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms", "doclass"])
             self.assertEqual(preview.loc[0, "Custom Field"], "")
             self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
             upload = FakeUpload("bad.xlsx", source_file(headers=[header for header in FIELD_MAPPING if header != "phone_1"]))
@@ -1413,7 +1414,7 @@ class AppTests(unittest.TestCase):
                     result = app.session_state["result"]
                     self.assertEqual(len(result["files"]), 2)
                     preview = app.main.dataframe[-1].value
-                    self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms"])
+                    self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms", "doclass"])
                     self.assertEqual(preview.loc[0, "Extra"], "")
                     self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
                     self.assertEqual(preview.loc[0, "endodate"], "2026-10-26 00:00:00")
@@ -1423,7 +1424,7 @@ class AppTests(unittest.TestCase):
                             self.assertTrue(file.filename.endswith(".csv"))
                             self.assertEqual(archive.read(file.filename), file.data)
                             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
-                            self.assertEqual(rows[0], [*headers, "Monthly", "Terms"])
+                            self.assertEqual(rows[0], [*headers, "Monthly", "Terms", "doclass"])
                             self.assertEqual(len(rows), 2)
                             values = dict(zip(headers, rows[1]))
                             self.assertEqual(values["Extra"], "")
@@ -1460,19 +1461,23 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.session_state["result"]["files"]), 14)
+            first_agent = json.loads(app.get("component_instance")[0].proto.json_args)["data"][0]
             for file in app.session_state["result"]["files"]:
                 self.assertEqual(csv_template_headers(file.data), list(DEFAULT_TEMPLATE_HEADERS))
                 rows = list(csv.DictReader(StringIO(file.data.decode("utf-8-sig"))))
                 for row in rows:
-                    for header in ("doclass", "AREA", "NewEndo"):
+                    expected_class = ("SBC Cards L1" if file.group_key.endswith("level_1") else
+                                      "SBC Cards L6" if file.group_key.endswith("level_6") else "PL Recovery")
+                    self.assertEqual(row["doclass"], expected_class)
+                    for header in ("AREA", "NewEndo"):
                         self.assertEqual(row[header], "")
                     self.assertEqual((row["Monthly"], row["Terms"]),
-                                     tuple(app.table[0].value.loc[0, ["Monthly", "Terms"]]))
+                                     (first_agent["name"], first_agent["code"]))
             preview = app.main.dataframe[-1].value
             self.assertEqual(list(preview.columns), list(DEFAULT_TEMPLATE_HEADERS))
             self.assertEqual(preview.loc[0, "Level"], "Level 1")
             self.assertEqual(preview.loc[0, "Product"], "CARDS")
-            self.assertEqual(preview.loc[0, "Monthly"], app.table[0].value.loc[0, "Monthly"])
+            self.assertEqual(preview.loc[0, "Monthly"], first_agent["name"])
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
             self.assertEqual(len(app.get("download_button")), 7)

@@ -102,7 +102,7 @@ class ExcelExportTests(unittest.TestCase):
                         self.assertEqual(first["FullName"].data_type, "s")
                         for header in ("FullName", "Product", "AREA", "doclass", "email"):
                             self.assertEqual(first[header].number_format, "General")
-                        self.assertEqual(first["doclass"].value, "SBC GEO Mindanao")
+                        self.assertEqual(first["doclass"].value, "SBC GEO Mindanao" if builder is build_geo_exports else "SBC Cards L1")
                         if file.channel == "viber":
                             self.assertEqual((first["phone"].value, first["phone"].data_type, first["phone"].number_format),
                                              ("09171234567", "s", "@"))

@@ -382,6 +382,31 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
+    def test_cached_modules_refresh_for_reco_filename_doclass_in_csv_and_excel(self):
+        self.run_isolated("""
+            import csv
+            from io import BytesIO, StringIO
+            from openpyxl import load_workbook
+            import automation, export_config, exports
+            del export_config.RECO_DOCLASS_BY_FILENAME
+            del automation.RECO_DOCLASS_WRITER_VERSION
+            del exports.RECO_DOCLASS_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'automation', 'export_config', 'exports'} <= refreshed
+            assert exports.fill_csv_template is automation.fill_csv_template
+            assert exports.write_typed_template_sheet is automation.write_typed_template_sheet
+            bundle = exports.build_negative_exports(automation.create_default_csv_template(),
+                [{'email': 'one@example.com', 'product': 'CARDS', 'level': 1}], '', 1, '.csv')
+            file = bundle.files[0]
+            assert list(csv.DictReader(StringIO(file.data.decode('cp1252'))))[0]['doclass'] == 'SBC Cards L1'
+            workbook = load_workbook(BytesIO(exports.build_export_excel(file)))
+            assert workbook.active.cell(2, file.headers.index('doclass') + 1).value == 'SBC Cards L1'
+            workbook.close()
+            assert refresh_application_modules() == set()
+        """)
+
+
     def test_cached_exports_refresh_for_grouping_other_source_sheets(self):
         self.run_isolated("""
             import automation, exports, folder_output

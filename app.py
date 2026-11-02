@@ -19,13 +19,14 @@ importlib.reload(app_startup).refresh_application_modules()
 from branding import BANK_ICON, render_bank_branding
 from export_config import (
     CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
-    OUTPUT_FILENAMES, OUTPUT_FOLDER, ZIP_FILENAME,
+    OUTPUT_FILENAMES, OUTPUT_FOLDER, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
     GROUPED_SHEET_EXPORT_VERSION,
     EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
+    RECO_DOCLASS_VERSION,
     campaign_output_files, build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
@@ -331,6 +332,7 @@ def render_workbook_page() -> None:
     geo = source_info.has_area
     assignment_date, agents = None, None
     if not geo:
+        st.caption("RECO doclass follows the filename: L1 → SBC Cards L1; L6 → SBC Cards L6; PL → PL Recovery.")
         agent_plan = render_agent_cycle()
         if agent_plan is None:
             st.session_state.pop("result", None)
@@ -397,6 +399,7 @@ def render_workbook_page() -> None:
         EXCEL_EXPORT_VERSION,
         CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION, csv_protect_ids,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
+        (RECO_DOCLASS_VERSION, tuple(RECO_DOCLASS_BY_FILENAME.items())) if not geo else None,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
     previous_result = st.session_state.get("result")
@@ -427,7 +430,7 @@ def render_workbook_page() -> None:
                         bundle = build_sheet_exports(
                             template_bytes, mapped.records, template_sheet, template_header,
                             base_name=output_filename(source_file.name, source_sheet),
-                            label=source_sheet, template_extension=template_extension, encoding=encoding, agents=agents,
+                            label=source_sheet, template_extension=template_extension, encoding=encoding, agents=agents, reco=not geo,
                         )
                     export_result = {
                         "files": bundle.files,

@@ -35,6 +35,7 @@ def refresh_application_modules() -> set[str]:
             "GEO_LOANS_FILENAMES_VERSION",
             "AUTOSTAT_B2_FILENAMES", "AUTOSTAT_B4_FILENAMES", "COLLECTION_AGENTS",
             "GEO_RECO_AGENTS", "GEO_RECO_CYCLE_START",
+            "RECO_DOCLASS_BY_FILENAME",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (
@@ -47,6 +48,7 @@ def refresh_application_modules() -> set[str]:
             "SheetInfo.headers", "source_column_positions", "preview_source_rows",
             "WORKBOOK_READER_VERSION",
             "OB_SORT_VERSION", "ob_sort_key",
+            "RECO_DOCLASS_WRITER_VERSION",
             "write_text_csv_sheet",
             "write_typed_template_sheet",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
@@ -65,6 +67,7 @@ def refresh_application_modules() -> set[str]:
             "EXCEL_SAFE_CSV_VERSION", "build_export_csv", "build_csv_zip",
             "AGENT_ASSIGNMENT_EXPORT_VERSION",
             "RECO_ONLY_AGENTS_VERSION",
+            "RECO_DOCLASS_VERSION", "reco_doclass", "ExportFile.__dataclass_fields__.doclass",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("agent_order", ("AGENT_ORDER_VERSION", "AGENT_ORDER_CALLBACK_VERSION", "render_agent_order"), ()),

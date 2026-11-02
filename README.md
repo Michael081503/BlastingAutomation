@@ -191,6 +191,18 @@ Validation runs locally without DNS queries, sending messages, or contacting mai
 
 ## Worksheet separation
 
+### RECO doclass by filename
+
+RECO fills `doclass` from the generated output filename:
+
+| Filename label | doclass |
+| --- | --- |
+| L1 | SBC Cards L1 |
+| L6 | SBC Cards L6 |
+| PL | PL Recovery |
+
+Matching ignores capitalization and checks whole labels in L1, L6, PL order. Both Email and Viber receive the same class. This also applies to renamed outputs, previews, CSV and Excel downloads, ZIPs, folder saves and RECO's all-accounts mode. The mapping is configurable in `RECO_DOCLASS_BY_FILENAME` in `export_config.py`. Filenames without these labels leave `doclass` blank. A missing `doclass` template column is appended automatically. GEO continues to use its Area-based class, and B2/B4 retain their bucket classes.
+
 ### Daily RECO agent cycle
 
 The **RECO agent cycle** panel shows the assignment date, agent names for `Monthly`, codes for `Terms`, and the upcoming three-day order. It appears before uploading files and when a RECO worksheet is selected. GEO does not use this three-agent split or rotation. Starting **30 October 2026**, the saved default order is:
@@ -307,13 +319,13 @@ Keep the keys on the left unchanged. Edit the base names in `GEO_OUTPUT_FILENAME
 | phone_1 | phone |
 | Christmas Amnesty | ChristmasAmnesty |
 | Area (optional) | AREA |
-| Area (calculated) | doclass |
+| GEO Area / RECO filename (calculated) | doclass |
 
 Header matching ignores capitalization, whitespace, and punctuation. Source files accept both the original source names and the template names, including `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `EndoDate`, `email`, and `phone`. `Product Type` is also accepted for `product`, and `OB` is accepted for `OB (Masterlist)`. Phone aliases include `Phone number`, `Mobile`, `Mobile number`, and `Contact number`. GEO aliases are listed above.
 
 Source files need an account identifier column (`Account no.` / `primary_key` or `financing/Card no.` / `cardnumber`) and at least one email or phone column. Other missing source fields stay blank in the template, and the app lists them before export. It never copies one identifier into a different identifier field or invents missing values. **Source columns** shows the actual headers and sample values. Select **Map source columns manually** to map differently named columns or resolve ambiguous headers; the controls open automatically when account/contact columns are not recognized. Mapping changes clear previous downloads. Account identifiers and contacts must use separate columns. Standard grouping requires Christmas Amnesty, product, and level; GEO grouping requires Area, Christmas Amnesty, and product. When grouping columns are missing, the app prepares a single Email file and a single Viber file with the available values. Uploaded templates still require the eleven mapped destination headers. Header detection scans the first 50 rows; change the header row manually when headers appear later. A usable account/contact sheet is preferred over summary sheets when choosing the default.
 
-The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. `Monthly` and `Terms` come from the daily RECO agent cycle for RECO exports and stay blank for GEO; `NewEndo` remains blank. AREA is filled when present in the source and otherwise stays blank. `doclass` is calculated from Area for Mindanao and R3; other or missing Areas leave it blank. No source doclass column is required. Uploaded templates keep their own header labels and order; missing Monthly/Terms columns are appended for RECO agent assignment. When they include a doclass header, it is filled by the same rule. Export previews show all file headers, including columns with blank values and channels with no rows.
+The built-in template uses your original 16-column layout: `email`, `primary_key`, `indexoneuid`, `cardnumber`, `FullName`, `phone`, `OB`, `Monthly`, `Terms`, `doclass`, `Level`, `Product`, `EndoDate`, `AREA`, `ChristmasAmnesty`, and `NewEndo`. `Monthly` and `Terms` come from the daily RECO agent cycle for RECO exports and stay blank for GEO; `NewEndo` remains blank. AREA is filled when present in the source and otherwise stays blank. GEO calculates `doclass` from Area for Mindanao and R3; other or missing Areas leave it blank. RECO uses its filename's L1, L6 or PL label. No source doclass column is required. Uploaded templates keep their own header labels and order; missing Monthly/Terms and doclass columns are appended for RECO. Export previews show all file headers, including columns with blank values and channels with no rows.
 
 ## Output behavior
 

@@ -28,7 +28,7 @@ from automation import (
 )
 from export_config import (
     CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
-    OUTPUT_FILENAMES, ZIP_FILENAME,
+    OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from email_validation import validated_email
 from agent_cycle import assign_agents_to_accounts
@@ -58,6 +58,7 @@ CSV_CAMPAIGN_DEFAULT_VERSION = 1
 EXCEL_SAFE_CSV_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
+RECO_DOCLASS_VERSION = 1
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
     "qualified_cards": "QUALIFIED / CARDS",
@@ -90,6 +91,7 @@ class ExportFile:
     headers: list[str]
     preview: list[dict[str, Any]]
     records: list[dict[str, Any]]
+    doclass: str | None = None
 
 
 @dataclass
@@ -104,7 +106,7 @@ class ExportBundle:
 def build_export_excel(file: ExportFile) -> bytes:
     """Create the complete export with native cell types and text identifiers."""
     workbook = Workbook(write_only=True)
-    write_typed_template_sheet(workbook, file.records, file.headers, "Accounts")
+    write_typed_template_sheet(workbook, file.records, file.headers, "Accounts", doclass=file.doclass)
     output = BytesIO()
     workbook.save(output)
     workbook.close()
@@ -263,6 +265,12 @@ def channel_filename(base_name: str, channel: str, extension: str) -> str:
     return export_filename(base[:-len(extension)] + suffix, extension)
 
 
+def reco_doclass(filename: str) -> str:
+    """Match whole filename labels in L1, L6, PL priority order."""
+    labels = set(re.findall(r"[a-z0-9]+", Path(filename).stem.casefold()))
+    return next((value for label, value in RECO_DOCLASS_BY_FILENAME.items() if label.casefold() in labels), "")
+
+
 def _build_channel_files(
     template: bytes,
     records: list[dict[str, Any]],
@@ -272,23 +280,28 @@ def _build_channel_files(
     group_label: str,
     encoding: str,
     agents: tuple[tuple[str, str], ...] | None = None,
+    reco: bool = False,
 ) -> list[ExportFile]:
     if not records:
         return []
     records = sorted(records, key=lambda record: ob_sort_key(record.get("OB")), reverse=True)
     if agents is not None:
         records = assign_agents_to_accounts(records, agents)
-        headers = csv_template_headers(template)
-        missing = [header for header in ("Monthly", "Terms") if normalize_header(header) not in {normalize_header(value) for value in headers}]
-        if missing:
-            output = StringIO(newline="")
-            csv.writer(output).writerow([*headers, *missing])
-            template = output.getvalue().encode("utf-8-sig")
+    headers = csv_template_headers(template)
+    required = (("Monthly", "Terms") if agents is not None else ()) + (("doclass",) if reco else ())
+    missing = [header for header in required if normalize_header(header) not in {normalize_header(value) for value in headers}]
+    if missing:
+        output = StringIO(newline="")
+        csv.writer(output).writerow([*headers, *missing])
+        template = output.getvalue().encode("utf-8-sig")
     headers = csv_template_headers(template)
     files = []
     for channel, rows in separate_channels(records).items():
         filename = channel_filename(base_name, channel, ".csv")
-        data = fill_csv_template(template, rows, encoding=encoding)
+        doclass = reco_doclass(filename) if reco else None
+        if reco:
+            rows = [{**row, "doclass": doclass} for row in rows]
+        data = fill_csv_template(template, rows, encoding=encoding, doclass=doclass)
         files.append(ExportFile(
             key=f"{group_key}_{channel}",
             group_key=group_key,
@@ -301,6 +314,7 @@ def _build_channel_files(
             headers=headers,
             preview=rows[:100],
             records=rows,
+            doclass=doclass,
         ))
     return files
 
@@ -339,13 +353,14 @@ def build_sheet_exports(
     template_extension: str = ".xlsx",
     encoding: str = "cp1252",
     agents: tuple[tuple[str, str], ...] | None = None,
+    reco: bool = False,
 ) -> ExportBundle:
     """Export CSV channels using an Excel or CSV template's headers."""
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     contactable = [record for record in records if has_contact_details(record)]
     files = _build_channel_files(
         template, contactable, base_name=base_name,
-        group_key="all", group_label=label, encoding=encoding, agents=agents,
+        group_key="all", group_label=label, encoding=encoding, agents=agents, reco=reco,
     )
     return _bundle(
         files, {"all": len(contactable)}, export_filename(base_name, ".zip"),
@@ -369,6 +384,7 @@ def build_negative_exports(
         template, records, sheet_name, header_row, template_extension,
         groups=separate_negative(records), labels=GROUP_LABELS, names=OUTPUT_FILENAMES,
         zip_name=ZIP_FILENAME, encoding=encoding, source_sheet=source_sheet, agents=agents,
+        reco=True,
     )
 
 
@@ -403,6 +419,7 @@ def _build_grouped_exports(
     labels: dict[str, str], names: dict[str, str], zip_name: str, encoding: str,
     source_sheet: str = "NEGATIVE",
     agents: tuple[tuple[str, str], ...] | None = None,
+    reco: bool = False,
 ) -> ExportBundle:
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     counts = {key: len(rows) for key, rows in groups.items()}
@@ -422,7 +439,7 @@ def _build_grouped_exports(
             continue
         files.extend(_build_channel_files(
             template, rows, base_name=filenames[key],
-            group_key=key, group_label=labels[key], encoding=encoding, agents=agents,
+            group_key=key, group_label=labels[key], encoding=encoding, agents=agents, reco=reco,
         ))
     return _bundle(
         files, counts, zip_name,
