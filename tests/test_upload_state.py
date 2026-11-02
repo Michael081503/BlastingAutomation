@@ -112,7 +112,7 @@ class ClearUploadPageTests(unittest.TestCase):
                 app.run(timeout=20)
                 self.assertNotIn(prefix + "result", app.session_state)
 
-    def test_negative_b2_clears_database_account_list_activity_uploads_and_all_results(self):
+    def test_negative_page_clears_both_buckets_matching_uploads_and_results(self):
         database = Upload("SBC.xlsx", workbook_bytes(
             ["Account Key", "Contract Number", "Bucket Code", "Product Category Code", "EMAIL (01)", "Mobile 1"],
             ["00001", "CARD1", 2, "MC", "one@example.com", "09171234567"], "SBC",
@@ -120,8 +120,15 @@ class ClearUploadPageTests(unittest.TestCase):
         grid = Upload("DataGrid.xlsx", workbook_bytes(
             ["Account No.", "Financing/Card No.", "Name"], ["00001", "CARD1", "Person"], "DataGrid",
         ))
-        activity = Upload("NEGATIVE B2.csv", b"primary_key,email,phone\n00002,two@example.com,09181234567\n")
-        uploads = {"b2_database_upload": database, "b2_grid_upload": grid, "geo_b2_autostat_uploads": [activity]}
+        b4_database = Upload("B4.xlsx", workbook_bytes(
+            ["Account Key", "Contract Number", "Bucket Code", "Product Category Code", "Email (01)", "Phone (01)"],
+            ["00004", "CARD4", 4, "MC", "four@example.com", "09181234567"],
+        ))
+        b4_grid = Upload("B4-list.xlsx", workbook_bytes(
+            ["Account No.", "Financing/Card No."], ["00004", "CARD4"],
+        ))
+        uploads = {"b2_database_upload": database, "b2_grid_upload": grid,
+                   "b4_database_upload": b4_database, "b4_grid_upload": b4_grid}
         seen = []
 
         def uploader(label, **kwargs):
@@ -130,26 +137,28 @@ class ClearUploadPageTests(unittest.TestCase):
 
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
             self.assertIn("b2_result", app.session_state)
-            self.assertIn("geo_b2_autostat_result", app.session_state)
-            app.text_input(key="geo_b2_autostat_remark_by").set_value("CUSTOM").run(timeout=20)
+            self.assertIn("b4_result", app.session_state)
+            self.assertEqual(set(seen), set(uploads))
+            self.assertFalse(any("AutoStat" in panel.label for panel in app.expander))
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertNotIn("b2_result", app.session_state)
-            self.assertNotIn("geo_b2_autostat_result", app.session_state)
+            self.assertNotIn("b4_result", app.session_state)
             self.assertEqual(app.session_state["b2_source_info"], {})
+            self.assertEqual(app.session_state["b4_source_info"], {})
             self.assertTrue({name + "_clear_1" for name in uploads} <= set(seen))
             self.assertEqual(len(app.get("download_button")), 0)
             app.run(timeout=20)
             self.assertNotIn("b2_result", app.session_state)
-            uploads["geo_b2_autostat_uploads_clear_1"] = [activity]
+            uploads["b2_database_upload_clear_1"] = database
+            uploads["b2_grid_upload_clear_1"] = grid
             app.run(timeout=20)
-            self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.text_input(key="geo_b2_autostat_remark_by").value, "MBURGOS")
-            self.assertIn("geo_b2_autostat_result", app.session_state)
-            app.button(key="clear_all_files").click().run(timeout=20)
-            self.assertNotIn("geo_b2_autostat_result", app.session_state)
-            self.assertIn("geo_b2_autostat_uploads_clear_2", seen)
+            self.assertEqual(len(app.error), 0)
+            self.assertIn("b2_result", app.session_state)
+            self.assertNotIn("b4_result", app.session_state)
 
 
 if __name__ == "__main__":

@@ -113,8 +113,7 @@ def refresh_application_modules() -> set[str]:
         ), ("autostat", "automation")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
-            "B2_UPLOAD_VERSION", "B2_ACTIVITY_PANEL_VERSION", "render_b2_autostat_uploads", "upload_widget_key",
-            "B4_ACTIVITY_PANEL_VERSION", "render_b4_autostat_uploads",
+            "B2_UPLOAD_VERSION", "DEDICATED_BUCKET_UPLOADS_VERSION", "upload_widget_key",
             "AUTOSTAT_AUTOMATIC_UPLOADS_VERSION",
         ), ("autostat", "autostat_downloads", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
     )

@@ -267,7 +267,7 @@ class StartupTests(unittest.TestCase):
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
             assert autostat.AUTOSTAT_VERSION == 14
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 12
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 13
             assert refresh_application_modules() == set()
         """)
 
@@ -511,7 +511,7 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'autostat_page' in refreshed
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 12
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 13
             assert autostat_page.render_autostat.__name__ == 'render_autostat'
             assert refresh_application_modules() == set()
         """)
@@ -546,15 +546,15 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
-    def test_cached_geo_financing_mapping_and_negative_b2_upload_panel_refresh(self):
+    def test_cached_geo_financing_mapping_and_dedicated_bucket_uploads_refresh(self):
         self.run_isolated("""
             import geo_autostat, autostat_page
             del geo_autostat.GEO_FINANCING_ACCOUNT_VERSION
-            del autostat_page.B2_ACTIVITY_PANEL_VERSION
+            del autostat_page.DEDICATED_BUCKET_UPLOADS_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'geo_autostat', 'autostat_page'} <= refreshed
-            assert callable(autostat_page.render_b2_autostat_uploads)
+            assert callable(autostat_page.render_autostat)
             source = geo_autostat.mapped_contact_source('source.csv', b'', 'CSV', 1, 3,
                 {'primary_key': 0, 'cardnumber': 1, 'email': 2})
             assert source.sheet.account_column == 1
@@ -739,16 +739,16 @@ class StartupTests(unittest.TestCase):
         self.run_isolated("""
             import b2_autostat, autostat_page, upload_state
             del b2_autostat.B4_AUTOSTAT_VERSION
-            del autostat_page.B4_ACTIVITY_PANEL_VERSION
+            del autostat_page.DEDICATED_BUCKET_UPLOADS_VERSION
             del upload_state.B4_AUTOSTAT_UPLOADS_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'b2_autostat', 'autostat_page', 'upload_state'} <= refreshed
             assert callable(b2_autostat.build_b4_autostat_exports)
-            assert callable(autostat_page.render_b4_autostat_uploads)
+            assert autostat_page.build_b4_autostat_exports is b2_autostat.build_b4_autostat_exports
             assert {'autostat_b4_uploads', 'b4_autostat_uploads'} <= set(upload_state.UPLOAD_KEYS)
             assert {'autostat_b4_result', 'b4_autostat_result'} <= upload_state.FILE_STATE_KEYS
-            assert autostat_page.AUTOSTAT_PAGE_VERSION == 12
+            assert autostat_page.AUTOSTAT_PAGE_VERSION == 13
             assert refresh_application_modules() == set()
         """)
 

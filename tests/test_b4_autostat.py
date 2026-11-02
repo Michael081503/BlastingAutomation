@@ -86,30 +86,32 @@ class B4AutostatTests(unittest.TestCase):
 
 
 class B4AutostatPageTests(unittest.TestCase):
-    def test_negative_page_prepares_b4_downloads_automatically_with_compact_options(self):
-        uploads = {"b4_autostat_uploads": [Upload()]}
+    def test_standalone_b4_prepares_downloads_automatically_with_compact_options(self):
+        uploads = {"autostat_b4_uploads": [Upload()]}
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
                 patch("autostat_page.build_b4_autostat_exports", wraps=build_b4_autostat_exports) as prepare, \
                 patch("streamlit.download_button") as download:
-            app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            app.radio(key="autostat_upload_type").set_value("B4").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(prepare.call_count, 1)
             self.assertEqual(len(app.metric), 0)
-            self.assertFalse(any(widget.key == "b4_autostat_prepare" for widget in app.button))
+            self.assertFalse(any(widget.key == "autostat_b4_prepare" for widget in app.button))
             self.assertTrue(all(not panel.proto.expanded for panel in app.expander))
-            bundle = app.session_state["b4_autostat_result"]["bundle"]
+            bundle = app.session_state["autostat_b4_result"]["bundle"]
             self.assertEqual([file.count for file in bundle.files], [2, 2, 2])
             calls = {call.kwargs.get("key"): call for call in download.call_args_list}
-            self.assertEqual(calls["b4_autostat_excel"].args[2], "AUTOSTAT_B4.xlsx")
-            self.assertEqual(calls["b4_autostat_download_0"].args[2], "AUTOSTAT_B4_Email.xlsx")
-            with ZipFile(BytesIO(calls["b4_autostat_zip"].args[1]())) as archive:
+            self.assertEqual(calls["autostat_b4_excel"].args[2], "AUTOSTAT_B4.xlsx")
+            self.assertEqual(calls["autostat_b4_download_0"].args[2], "AUTOSTAT_B4_Email.xlsx")
+            self.assertEqual(calls["autostat_b4_zip"].args[2], "AUTOSTAT_B4_FILES_Excel.zip")
+            with ZipFile(BytesIO(calls["autostat_b4_zip"].args[1]())) as archive:
                 self.assertEqual(archive.namelist(), ["AUTOSTAT_B4_Email.xlsx", "AUTOSTAT_B4_SMS.xlsx", "AUTOSTAT_B4_Viber.xlsx"])
             app.run(timeout=20)
             self.assertEqual(prepare.call_count, 1)
-            app.selectbox(key="b4_autostat_output_format").select("CSV (.csv)").run(timeout=20)
+            app.selectbox(key="autostat_b4_output_format").select("CSV (.csv)").run(timeout=20)
             self.assertEqual(prepare.call_count, 2)
-            self.assertEqual(download.call_args_list[-1].kwargs.get("key"), "b4_autostat_download_2")
+            self.assertEqual(download.call_args_list[-1].kwargs.get("key"), "autostat_b4_download_2")
             self.assertEqual(download.call_args_list[-1].args[2], "AUTOSTAT_B4_Viber.csv")
 
     def test_standalone_b4_mode_is_separate_from_b2_and_clears_all_uploads(self):
@@ -127,29 +129,33 @@ class B4AutostatPageTests(unittest.TestCase):
             self.assertNotIn("autostat_b4_result", app.session_state)
             self.assertEqual(len(app.get("download_button")), 0)
 
-    def test_b2_and_b4_panels_do_not_mix_and_b4_replacement_and_clear_refresh_logs(self):
-        uploads = {"geo_b2_autostat_uploads": [Upload(DATA.replace(b"000000000000000001", b"B2-ACCOUNT"), "B2.csv")],
-                   "b4_autostat_uploads": [Upload()]}
+    def test_bucket_modes_do_not_mix_and_b4_replacement_and_clear_refresh_logs(self):
+        uploads = {"autostat_b2_uploads": [Upload(DATA.replace(b"000000000000000001", b"B2-ACCOUNT"), "B2.csv")],
+                   "autostat_b4_uploads": [Upload()]}
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])):
-            app = AppTest.from_file(str(ROOT / "pages" / "NEGATIVE_B2.py")).run(timeout=20)
-            b2 = app.session_state["geo_b2_autostat_result"]
-            self.assertEqual([file.count for file in app.session_state["b4_autostat_result"]["bundle"].files], [2, 2, 2])
-            uploads["b4_autostat_uploads"][0] = Upload(DATA.replace(b"000000000000000001", b"NEW-B4-ACCOUNT"))
+            app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+            app.radio(key="autostat_upload_type").set_value("B2").run(timeout=20)
+            b2 = app.session_state["autostat_b2_result"]
+            app.radio(key="autostat_upload_type").set_value("B4").run(timeout=20)
+            self.assertEqual([file.count for file in app.session_state["autostat_b4_result"]["bundle"].files], [2, 2, 2])
+            self.assertTrue(all(file.filename.startswith("AUTOSTAT_B4_") for file in app.session_state["autostat_b4_result"]["bundle"].files))
+            uploads["autostat_b4_uploads"][0] = Upload(DATA.replace(b"000000000000000001", b"NEW-B4-ACCOUNT"))
             app.run(timeout=20)
-            self.assertIn("NEW-B4-ACCOUNT", {row["Account No."] for row in rows(app.session_state["b4_autostat_result"]["bundle"].files[0])})
-            self.assertEqual(app.session_state["geo_b2_autostat_result"]["timestamp"], b2["timestamp"])
-            app.session_state["b4_autostat_remark_by"] = "B4USER"
+            self.assertIn("NEW-B4-ACCOUNT", {row["Account No."] for row in rows(app.session_state["autostat_b4_result"]["bundle"].files[0])})
+            self.assertEqual(app.session_state["autostat_b2_result"]["timestamp"], b2["timestamp"])
+            self.assertIn("B2-ACCOUNT", {row["Account No."] for row in rows(app.session_state["autostat_b2_result"]["bundle"].files[0])})
+            app.session_state["autostat_b4_remark_by"] = "B4USER"
             app.run(timeout=20)
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertNotIn("b4_autostat_result", app.session_state)
-            self.assertNotIn("geo_b2_autostat_result", app.session_state)
+            self.assertNotIn("autostat_b4_result", app.session_state)
+            self.assertNotIn("autostat_b2_result", app.session_state)
             self.assertEqual(len(app.get("download_button")), 0)
-            uploads["b4_autostat_uploads_clear_1"] = [Upload()]
+            uploads["autostat_b4_uploads_clear_1"] = [Upload()]
             app.run(timeout=20)
-            self.assertEqual(app.text_input(key="b4_autostat_remark_by").value, "MBURGOS")
-            self.assertTrue(app.text_input(key="b4_autostat_remark_by").proto.disabled)
-            self.assertIn("b4_autostat_result", app.session_state)
+            self.assertEqual(app.text_input(key="autostat_b4_remark_by").value, "MBURGOS")
+            self.assertTrue(app.text_input(key="autostat_b4_remark_by").proto.disabled)
+            self.assertIn("autostat_b4_result", app.session_state)
 
 
 if __name__ == "__main__":
