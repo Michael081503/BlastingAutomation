@@ -6,7 +6,6 @@ from dataclasses import replace
 from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zipfile import ZipFile
 
@@ -846,7 +845,7 @@ class AutostatAppTests(unittest.TestCase):
             Upload('BEL CARDS BLASTING.xlsx.csv', data),
             Upload('cardnumber-only.csv', b'cardnumber,email,phone\n00009999,extra@example.com,09191234567\n'),
         ]
-        with patch('streamlit.file_uploader', return_value=uploads), TemporaryDirectory(prefix='autostat-bel-test-') as directory:
+        with patch('streamlit.file_uploader', return_value=uploads):
             app = AppTest.from_file(str(ROOT / 'pages' / 'AUTOSTAT.py')).run(timeout=20)
             app.selectbox(key="autostat_output_format").select("CSV (.csv)").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
@@ -861,13 +860,6 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual([file.headers for file in result['bundle'].files], [EMAIL_HEADERS, VIBER_HEADERS])
             self.assertEqual(len(app.get('download_button')), 4)
             self.assertEqual(app.dataframe[-1].value.loc[0, 'Account No.'], '@BEL-1')
-            app.text_input(key='autostat_output_folder').set_value(directory).run(timeout=20)
-            app.button(key='autostat_save').click().run(timeout=20)
-            self.assertEqual(len(app.error), 0)
-            saved = Path(app.session_state['autostat_result']['saved_folder'])
-            self.assertEqual({path.name for path in saved.iterdir()}, {'AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'})
-            for file in result['bundle'].files:
-                self.assertEqual((saved / file.filename).read_bytes(), file.data)
             with ZipFile(BytesIO(result['bundle'].zip_data)) as archive:
                 self.assertEqual(set(archive.namelist()), {'AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv'})
 
@@ -890,15 +882,15 @@ class AutostatAppTests(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(app.title[0].value, "AUTOSTAT")
 
-    def test_multiple_uploads_preview_download_folder_and_input_invalidation(self):
+    def test_multiple_uploads_preview_download_and_input_invalidation(self):
         uploads = [Upload("source.xlsx", workbook_bytes()), Upload("extra.csv", b"Account,email,phone\n00999,extra@example.com,09191234567\n")]
         def uploader(label, **kwargs):
             return uploads if kwargs.get("key") == "autostat_uploads" else None
 
-        with patch("streamlit.file_uploader", side_effect=uploader), TemporaryDirectory(prefix="autostat-test-") as directory:
+        with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual([panel.label for panel in app.expander], ["Log settings", "Edit source columns", "Save to a folder", "Preview"])
+            self.assertEqual([panel.label for panel in app.expander], ["Log settings", "Edit source columns", "Preview"])
             source_panel = app.expander[1]
             self.assertFalse(source_panel.proto.expanded)
             self.assertEqual(len(source_panel.multiselect), 8)
@@ -914,21 +906,8 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual(len(result['bundle'].summary), 3)
             self.assertEqual(len(app.get("download_button")), 4)
             self.assertEqual(sum(row["Viber rows"] for row in result["bundle"].summary), 5)
-            self.assertFalse(Path(directory).joinpath("AUTOSTAT").exists())
             app.run(timeout=20)
             self.assertEqual(app.session_state["autostat_result"]["timestamp"], result["timestamp"])
-            app.text_input(key="autostat_output_folder").set_value(directory).run(timeout=20)
-            app.button(key="autostat_save").click().run(timeout=20)
-            self.assertEqual(len(app.exception), 0)
-            self.assertEqual(len(app.error), 0)
-            saved = Path(app.session_state["autostat_result"]["saved_folder"])
-            self.assertEqual({path.name for path in saved.iterdir()}, {Path(file.filename).with_suffix(".xlsx").name for file in result["bundle"].files})
-            for file in result["bundle"].files:
-                workbook = load_workbook(saved / Path(file.filename).with_suffix(".xlsx").name)
-                self.assertEqual([cell.value for cell in workbook.active["B"][1:]],
-                                 [row["Account No."] for row in exported_rows(file)])
-                self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in workbook.active["B"][1:]))
-                workbook.close()
             app.session_state["autostat_remark_by"] = "USER2"
             app.run(timeout=20)
             self.assertEqual(app.text_input(key="autostat_remark_by").value, "MBURGOS")

@@ -19,7 +19,7 @@ importlib.reload(app_startup).refresh_application_modules()
 from branding import BANK_ICON, render_bank_branding
 from export_config import (
     CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
-    OUTPUT_FILENAMES, OUTPUT_FOLDER, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
+    OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
@@ -27,10 +27,9 @@ from exports import (
     EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
     RECO_DOCLASS_VERSION,
-    campaign_output_files, build_excel_zip, build_export_excel,
+    build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
-from folder_output import save_files_to_folder
 from email_validation import EMAIL_VALIDATION_VERSION
 from geo_autostat import render_geo_autostat
 from upload_state import upload_widget_key
@@ -93,32 +92,6 @@ def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
     st.caption(f"Showing the first {min(count, 100):,} rows. The file contains all {count:,} rows.")
 
 
-def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
-    st.subheader("Save to a folder")
-    output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key="output_folder")
-    st.caption(
-        f"Saves {'Excel (.xlsx)' if result['excel_output'] else 'CSV (.csv)'} files directly to the computer running this app. "
-        "Each export creates a new folder with its date and time inside the location above. "
-        "When hosted online, the folder is on the server; use the downloads to save files on your PC."
-    )
-    if st.button("Save files to folder", type="primary", key="save_to_folder"):
-        try:
-            output_files = campaign_output_files(
-                result["files"], excel=result["excel_output"], protect_csv_identifiers=result["protect_csv_identifiers"],
-            )
-            folder = save_files_to_folder(
-                output_files, output_folder, batch_name=f"{Path(source_name).stem}_{sheet_name}",
-            )
-            result["saved_folder"] = str(folder)
-            result["saved_file_count"] = len(output_files)
-            st.session_state["result"] = result
-        except AutomationError as exc:
-            st.error(str(exc))
-    if result.get("saved_folder"):
-        st.success(f"Saved {result['saved_file_count']} file(s) to this folder:")
-        st.code(result["saved_folder"], language=None)
-
-
 def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
@@ -163,7 +136,7 @@ def render_workbook_page() -> None:
             mime="text/csv",
             on_click="ignore",
         )
-        st.caption("Save outputs to a folder or download them. Your original files are never overwritten.")
+        st.caption("Download the ZIP or individual files to your computer.")
 
     source_file = st.file_uploader("Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
     download_area = st.container()
@@ -496,7 +469,6 @@ def render_workbook_page() -> None:
         if not result["count"]:
             return
         files = result["files"]
-        show_folder_save(result, source_file.name, source_sheet)
         counts = result["group_counts"]
         labels = (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet}
         review_keys = GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS

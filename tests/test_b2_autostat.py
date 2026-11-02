@@ -5,7 +5,6 @@ import unittest
 from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zipfile import ZipFile
 
@@ -251,12 +250,12 @@ class B2AutostatPageTests(unittest.TestCase):
             self.assertEqual(email["Collector"], "AGENT1")
             self.assertEqual(email["REMARKS"], "one@example.com | EMAIL SENT | AGENT1")
 
-    def test_b2_upload_prepare_download_save_invalidation_and_switching(self):
+    def test_b2_upload_prepare_download_invalidation_and_switching(self):
         uploads = [Upload(b"cardnumber,FullName,email,phone,Collector\n00001,Sample,one@example.com,09171234567,COLLECTOR\n")]
         def uploader(label, **kwargs):
             return uploads if kwargs.get("key") == "autostat_b2_uploads" else []
 
-        with patch("streamlit.file_uploader", side_effect=uploader), TemporaryDirectory(prefix="b2-autostat-test-") as directory:
+        with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             app.radio(key="autostat_upload_type").set_value("B2").run(timeout=20)
@@ -274,15 +273,6 @@ class B2AutostatPageTests(unittest.TestCase):
             self.assertEqual(result["timestamp"].tzinfo, MANILA_TIMEZONE)
             app.run(timeout=20)
             self.assertEqual(app.session_state["autostat_b2_result"]["timestamp"], result["timestamp"])
-            app.text_input(key="autostat_b2_output_folder").set_value(directory).run(timeout=20)
-            app.button(key="autostat_b2_save").click().run(timeout=20)
-            self.assertEqual(len(app.error), 0)
-            saved = Path(app.session_state["autostat_b2_result"]["saved_folder"])
-            self.assertEqual(len(list(saved.iterdir())), 3)
-            for file in result["bundle"].files:
-                book = load_workbook(saved / Path(file.filename).with_suffix(".xlsx").name)
-                self.assertEqual(tuple(cell.value for cell in book.active[1]), file.headers)
-                book.close()
             app.checkbox(key="autostat_b2_blank_time").set_value(True).run(timeout=20)
             self.assertIsNone(app.session_state["autostat_b2_result"]["timestamp"])
             app.selectbox(key="autostat_b2_output_format").select("CSV (.csv)").run(timeout=20)

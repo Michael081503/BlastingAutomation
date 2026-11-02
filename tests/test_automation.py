@@ -1058,7 +1058,7 @@ class AppTests(unittest.TestCase):
             for row in rows:
                 sheet.append([name if header == "Name" else row.get(header) for header in FIELD_MAPPING])
         upload = FakeUpload("accounts.xlsx", save(workbook))
-        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None), TemporaryDirectory(prefix="other-sheet-test-") as directory:
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             self.assertEqual(app.selectbox[0].value, "NEGATIVE")
             app.run(timeout=20)
@@ -1076,13 +1076,6 @@ class AppTests(unittest.TestCase):
             self.assertEqual([file.filename for file in result["files"]], ["POSITIVE - " + file.filename for file in baseline["files"]])
             self.assertTrue(all(row["FullName"] == "POSITIVE" for file in result["files"] for row in file.preview))
             self.assertEqual(app.main.dataframe[-1].value.loc[0, "FullName"], "POSITIVE")
-            app.text_input(key="output_folder").set_value(directory).run(timeout=20)
-            app.button(key="save_to_folder").click().run(timeout=20)
-            self.assertEqual(len(app.error), 0)
-            saved = Path(app.session_state["result"]["saved_folder"])
-            for file in result["files"]:
-                self.assertEqual((saved / file.filename).read_bytes(), build_export_csv(file, protect_identifiers=True))
-                self.assertEqual(list(csv.DictReader(StringIO(file.data.decode("cp1252"))))[0]["FullName"], "POSITIVE")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             app.selectbox[0].select("CONTACTED").run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
@@ -1127,7 +1120,7 @@ class AppTests(unittest.TestCase):
                             for row in file.preview:
                                 self.assertEqual(row["doclass"], "SBC GEO Mindanao" if row["AREA"] == "Mindanao" else "SBC GEO R3")
 
-    def test_configured_geo_names_apply_to_downloads_preview_and_folder(self):
+    def test_configured_geo_names_apply_to_downloads_and_preview(self):
         upload = FakeUpload("GEO.xlsx", geo_source_file([
             sample_row(Area="Mindanao", product="CARDS", **{"Christmas Amnesty": "QUALIFIED"}),
             sample_row(Area="Region 3", product="BEL"),
@@ -1137,7 +1130,7 @@ class AppTests(unittest.TestCase):
             return upload if kwargs.get("key") == "source_upload" else None
 
         names = {"mindanao_qualified_cards": "My Mindanao Cards", "r3_blank_bel": "My R3 BEL.csv"}
-        with TemporaryDirectory(prefix="blasting-config-test-") as directory, patch.dict(
+        with patch.dict(
             GEO_OUTPUT_FILENAMES, names,
         ), patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
@@ -1161,22 +1154,10 @@ class AppTests(unittest.TestCase):
                     self.assertEqual(archive.read(file.filename), file.data)
             app.main.selectbox[-1].select("My R3 BEL_Email.csv").run(timeout=20)
             self.assertEqual(app.main.dataframe[-1].value.loc[0, "AREA"], "Region 3")
-            app.text_input(key="output_folder").set_value(directory).run(timeout=20)
-            app.button(key="save_to_folder").click().run(timeout=20)
-            self.assertEqual(len(app.exception), 0)
-            self.assertEqual(len(app.error), 0)
-            saved = Path(app.session_state["result"]["saved_folder"])
-            self.assertEqual({path.name for path in saved.iterdir()}, set(expected))
-            for file in files:
-                self.assertEqual((saved / file.filename).read_bytes(), build_export_csv(file))
-            app.run(timeout=20)
-            self.assertEqual(app.session_state["result"]["saved_folder"], str(saved))
             GEO_OUTPUT_FILENAMES["mindanao_qualified_cards"] = "Updated Mindanao"
             app.run(timeout=20)
-            self.assertNotIn("saved_folder", app.session_state["result"])
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["files"][0].filename, "Updated Mindanao_Email.csv")
-            self.assertTrue((saved / expected[0]).exists())
 
     def test_geo_email_validation_counts_every_account_in_all_product_groups(self):
         rows = []
@@ -1541,68 +1522,6 @@ class AppTests(unittest.TestCase):
                 self.assertEqual(len(app.get("download_button")), 1)
                 self.assertIn("No accounts remain", app.warning[0].value)
 
-    def test_grouped_files_saved_to_folder_only_when_clicked(self):
-        rows = [
-            sample_row(product="CARDS", level="Level 1", **{"Christmas Amnesty": "QUALIFIED"}),
-            sample_row(product="PL", level="Level 6"),
-        ]
-        upload = FakeUpload("source.xlsx", source_file(rows))
-
-        def uploader(label, **kwargs):
-            return upload if kwargs.get("key") == "source_upload" else None
-
-        with TemporaryDirectory(prefix="blasting-app-folder-test-") as directory:
-            parent = Path(directory).resolve()
-            with patch("streamlit.file_uploader", side_effect=uploader):
-                app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-                app.run(timeout=20)
-                app.text_input(key="output_folder").set_value(str(parent)).run(timeout=20)
-                self.assertEqual(list(parent.iterdir()), [])
-                app.button(key="save_to_folder").click().run(timeout=20)
-                self.assertEqual(len(app.exception), 0)
-                self.assertEqual(len(app.error), 0)
-                saved = Path(app.session_state["result"]["saved_folder"])
-                files = app.session_state["result"]["files"]
-                self.assertFalse(app.session_state["result"]["excel_output"])
-                self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in files})
-                for file in files:
-                    saved_data = (saved / file.filename).read_bytes()
-                    self.assertEqual(saved_data, build_export_csv(file, protect_identifiers=True))
-                    self.assertEqual(csv_template_headers(saved_data), list(DEFAULT_TEMPLATE_HEADERS))
-                    data = list(csv.DictReader(StringIO(saved_data.decode("cp1252"))))
-                    self.assertEqual(len(data), file.count)
-                    for row in data:
-                        for header, expected in (("primary_key", "0000000456"), ("cardnumber", "000123456789012345"), ("indexoneuid", "000123")):
-                            self.assertEqual(row[header], "\t" + expected)
-                        self.assertEqual(row["OB"], "1250.75")
-                app.run(timeout=20)
-                self.assertEqual(list(parent.iterdir()), [saved])
-
-    def test_single_csv_saved_to_folder(self):
-        upload = FakeUpload("source.xlsx", source_file())
-        template = FakeUpload("template.csv", (",".join(TARGET_HEADERS) + "\n").encode())
-
-        def uploader(label, **kwargs):
-            return upload if kwargs.get("key") == "source_upload" else template if kwargs.get("key") == "template_upload" else None
-
-        with TemporaryDirectory(prefix="blasting-app-folder-test-") as directory:
-            with patch("streamlit.file_uploader", side_effect=uploader):
-                app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-                app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
-                app.session_state["campaign_csv_protect_ids"] = False
-                app.run(timeout=20)
-                app.radio[0].set_value("All accounts in one group").run(timeout=20)
-                app.run(timeout=20)
-                app.text_input(key="output_folder").set_value(directory).run(timeout=20)
-                app.button(key="save_to_folder").click().run(timeout=20)
-                self.assertEqual(len(app.exception), 0)
-                self.assertEqual(len(app.error), 0)
-                result = app.session_state["result"]
-                saved = Path(result["saved_folder"])
-                self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in result["files"]})
-                self.assertEqual(len(result["files"]), 2)
-                for file in result["files"]:
-                    self.assertEqual((saved / file.filename).read_bytes(), build_export_csv(file))
 
 
 if __name__ == "__main__":

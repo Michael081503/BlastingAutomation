@@ -5,7 +5,6 @@ import unittest
 from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zipfile import ZipFile
 
@@ -92,7 +91,7 @@ class WorkflowPageTests(unittest.TestCase):
 
     def test_autostat_bucket_modes_compile_multiple_files_and_deliver_all_channels(self):
         for bucket in (2, 4):
-            with self.subTest(bucket=bucket), TemporaryDirectory(prefix="bucket-autostat-test-") as directory:
+            with self.subTest(bucket=bucket):
                 prefix = f"autostat_b{bucket}_"
                 csv_upload = Upload(
                     b"cardnumber,primary_key,FullName,email,phone,Terms,OB\n"
@@ -154,11 +153,6 @@ class WorkflowPageTests(unittest.TestCase):
                                     book.close()
                                 else:
                                     self.assertEqual(archive.read(name), single.args[1])
-                        app.text_input(key=prefix + "output_folder").set_value(directory).run(timeout=20)
-                        app.button(key=prefix + "save").click().run(timeout=20)
-                        self.assertEqual(len(app.error), 0)
-                        saved = Path(app.session_state[prefix + "result"]["saved_folder"])
-                        self.assertEqual({path.name for path in saved.iterdir()}, set(expected_names))
                     replacement = Upload(b"cardnumber,primary_key,email,phone\nCARD9,000009,updated@example.com,09191234567\n")
                     replacement.name = csv_upload.name
                     files[0] = replacement

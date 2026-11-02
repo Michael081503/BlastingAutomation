@@ -14,14 +14,14 @@ from b2_matching import (
     B4_MATCHING_VERSION, build_b2_exports, build_b4_exports,
     is_datagrid_sheet, is_sbc_database_sheet, matching_sheet_score, validate_b2_source,
 )
-from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES, OUTPUT_FOLDER
-from folder_output import save_files_to_folder
+from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES
 from upload_state import upload_widget_key
 
 
 B4_PAGE_VERSION = 2
 B2_COMPACT_DOWNLOADS_VERSION = 1
 ZIP_FORMAT_VERSION = 1
+BROWSER_DOWNLOADS_ONLY_VERSION = 1
 
 
 def no_matching_rows_message(result, *, bucket: int) -> str:
@@ -186,19 +186,6 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
             st.dataframe(pd.DataFrame(result.audit), hide_index=True, width="stretch")
         st.caption("Account No. matches Account Key; Financing/Card No. matches Contract Number. Both must agree when supplied.")
         st.caption("Monthly and Terms alternate Almera Ranceli / AMRANCELI and Kyarill Palima / KPALIMA within each CARDS/BEL output.")
-        st.subheader("Save to a folder")
-        output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key=f"{prefix}output_folder")
-        if nonempty and st.button(f"Save {bucket_label} files to folder", key=f"{prefix}save"):
-            try:
-                folder = save_files_to_folder(
-                    [(file.filename, file.data) for file in nonempty], output_folder, batch_name=f"NEGATIVE {bucket_label}",
-                )
-                prepared["saved_folder"] = str(folder)
-                st.session_state[result_key] = prepared
-            except AutomationError as exc:
-                st.error(str(exc))
-        if prepared.get("saved_folder"):
-            st.code(prepared["saved_folder"], language=None)
         selected = st.selectbox(f"{bucket_label} file to preview", [file.filename for file in bundle.files], key=f"{prefix}preview_{hash(signature)}")
         file = next(file for file in bundle.files if file.filename == selected)
         st.dataframe(pd.DataFrame(file.preview, columns=file.headers), hide_index=True, width="stretch")

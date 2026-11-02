@@ -6,7 +6,6 @@ import unittest
 from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -401,12 +400,12 @@ class B2AppTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertNotIn('b2_result', app.session_state)
 
-    def test_matching_workflow_downloads_two_files_saves_and_invalidates(self):
+    def test_matching_workflow_downloads_two_files_and_invalidates(self):
         raw, grid = fixtures()
         database, accounts = Upload('database.xlsx', raw), Upload('DataGrid.xlsx', grid)
         def uploader(label, **kwargs):
             return database if kwargs.get('key') == 'b2_database_upload' else accounts if kwargs.get('key') == 'b2_grid_upload' else None
-        with patch('streamlit.file_uploader', side_effect=uploader), TemporaryDirectory(prefix='b2-matching-test-') as directory:
+        with patch('streamlit.file_uploader', side_effect=uploader):
             app = AppTest.from_file(str(ROOT / 'app.py')).run(timeout=20)
             app.switch_page('pages/NEGATIVE_B2.py').run(timeout=20)
             self.assertEqual(len(app.exception), 0)
@@ -416,16 +415,8 @@ class B2AppTests(unittest.TestCase):
             result = app.session_state['b2_result']['matched']
             self.assertEqual(len(result.bundle.files), 2)
             self.assertEqual(len(app.get('download_button')), 3)
-            app.text_input(key='b2_output_folder').set_value(directory).run(timeout=20)
-            app.button(key='b2_save').click().run(timeout=20)
-            self.assertEqual(len(app.error), 0)
-            saved = Path(app.session_state['b2_result']['saved_folder'])
-            self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in result.bundle.files})
-            for file in result.bundle.files:
-                self.assertEqual((saved / file.filename).read_bytes(), file.data)
             app.selectbox(key='b2_csv_type').set_value('CSV UTF-8 (Comma delimited)').run(timeout=20)
             self.assertTrue(app.session_state['b2_result']['matched'].bundle.files[0].data.startswith(b'\xef\xbb\xbf'))
-            self.assertNotIn('saved_folder', app.session_state['b2_result'])
 
 
 if __name__ == '__main__':

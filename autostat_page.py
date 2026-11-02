@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 from automation import AutomationError, CSV_OUTPUT_ENCODINGS, OB_SORT_VERSION, normalize_header
 from autostat import (
     AUTOSTAT_VERSION, AUTOSTAT_REMARK_BY, COMPILED_OUTPUT_VERSION, EMAIL_HEADERS, VIBER_HEADERS, SourceSelection,
-    autostat_source_excluded, build_autostat_exports, inspect_contact_source, build_autostat_channel_excel,
+    autostat_source_excluded, build_autostat_exports, inspect_contact_source,
 )
 from autostat_downloads import render_autostat_downloads
 from b2_autostat import (
@@ -22,8 +22,7 @@ from b2_autostat import (
     b2_account_sheet, b2_metadata_columns, build_b2_autostat_exports, build_b4_autostat_exports, B4_AUTOSTAT_VERSION,
 )
 from email_validation import EMAIL_VALIDATION_VERSION
-from export_config import OUTPUT_FOLDER
-from folder_output import MANILA_TIMEZONE, save_files_to_folder
+from folder_output import MANILA_TIMEZONE
 from upload_state import upload_widget_key
 
 
@@ -33,6 +32,7 @@ DEDICATED_BUCKET_UPLOADS_VERSION = 1
 B2_UPLOAD_VERSION = 1
 COMPACT_SUMMARY_VERSION = 1
 GROUPED_SOURCE_SETTINGS_VERSION = 1
+BROWSER_DOWNLOADS_ONLY_VERSION = 1
 
 
 def render_autostat() -> None:
@@ -300,22 +300,6 @@ def _render_autostat_uploads(
         )
     if not excel_output and not compact:
         st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use the Excel download for viewing and editing.")
-    with options.expander("Save to a folder") if compact else st.expander("Save to a folder"):
-        output_folder = st.text_input("Output folder", value=OUTPUT_FOLDER, key=f"{state_prefix}output_folder")
-        if st.button("Save AUTOSTAT files to folder", key=f"{state_prefix}save"):
-            try:
-                folder = save_files_to_folder(
-                    [(Path(file.filename).with_suffix(".xlsx").name, build_autostat_channel_excel(file))
-                     if excel_output else (file.filename, file.data) for file in bundle.files],
-                    output_folder, batch_name=workbook_name,
-                )
-                result["saved_folder"] = str(folder)
-                st.session_state[result_key] = result
-            except AutomationError as exc:
-                st.error(str(exc))
-        if result.get("saved_folder"):
-            st.success(f"Saved {len(bundle.files)} files:")
-            st.code(result["saved_folder"], language=None)
     with options.expander("Preview") if compact else st.expander("Preview"):
         filename = st.selectbox(
             "File to preview", [file.filename for file in bundle.files],

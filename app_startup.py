@@ -103,7 +103,7 @@ def refresh_application_modules() -> set[str]:
             "B4_MATCHING_VERSION", "build_b4_exports", "B2_B4_AGENTS_VERSION",
             "B2_B4_OB_SORT_VERSION",
         ), ("autostat", "automation", "export_config")),
-        ("b2_page", ("render_b2_page", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
+        ("b2_page", ("render_b2_page", "BROWSER_DOWNLOADS_ONLY_VERSION", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
         ("b2_autostat", (
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",
@@ -114,7 +114,7 @@ def refresh_application_modules() -> set[str]:
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
             "B2_UPLOAD_VERSION", "DEDICATED_BUCKET_UPLOADS_VERSION", "upload_widget_key",
-            "AUTOSTAT_AUTOMATIC_UPLOADS_VERSION",
+            "AUTOSTAT_AUTOMATIC_UPLOADS_VERSION", "BROWSER_DOWNLOADS_ONLY_VERSION",
         ), ("autostat", "autostat_downloads", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
     )
     refreshed = set()

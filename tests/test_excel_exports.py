@@ -6,7 +6,6 @@ from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO, StringIO
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zipfile import ZipFile
 
@@ -213,10 +212,10 @@ class ExcelExportTests(unittest.TestCase):
                 self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
             reopened.close()
 
-    def test_geo_reco_format_controls_downloads_zip_and_folder_and_clears_stale_results(self):
+    def test_geo_reco_format_controls_downloads_and_zip_and_clears_stale_results(self):
         for geo in (True, False):
             for grouped in (True, False):
-                with self.subTest(geo=geo, grouped=grouped), TemporaryDirectory() as directory:
+                with self.subTest(geo=geo, grouped=grouped):
                     workbook = Workbook()
                     workbook.active.title = "NEGATIVE"
                     headers = ["Account No.", "Financing/Card No.", "Old I.C.", "Debtor Email", "Phone 1",
@@ -270,16 +269,10 @@ class ExcelExportTests(unittest.TestCase):
                             self.assertTrue(single.args[2].endswith(suffix))
                             with ZipFile(BytesIO(zip_data)) as archive:
                                 self.assertTrue(all(name.endswith(suffix) for name in archive.namelist()))
-                                app.text_input(key="output_folder").set_value(directory).run(timeout=20)
-                                app.button(key="save_to_folder").click().run(timeout=20)
-                                self.assertEqual(len(app.exception), 0)
-                                self.assertEqual(len(app.error), 0)
-                                saved = Path(app.session_state["result"]["saved_folder"])
-                                self.assertEqual({path.name for path in saved.iterdir()}, set(archive.namelist()))
                                 for file in result["files"]:
                                     filename = Path(file.filename).with_suffix(suffix).name
                                     if excel:
-                                        book = load_workbook(saved / filename)
+                                        book = load_workbook(BytesIO(archive.read(filename)))
                                         cells = dict(zip([cell.value for cell in book.active[1]], book.active[2]))
                                         for header, value in (("primary_key", values[0]), ("cardnumber", values[1]), ("indexoneuid", values[2])):
                                             self.assertEqual((cells[header].value, cells[header].data_type, cells[header].number_format), (value, "s", "@"))
@@ -288,7 +281,6 @@ class ExcelExportTests(unittest.TestCase):
                                         book.close()
                                     else:
                                         expected_data = build_export_csv(file, protect_identifiers=protected)
-                                        self.assertEqual((saved / filename).read_bytes(), expected_data)
                                         self.assertEqual(archive.read(filename), expected_data)
                                         row = next(csv.DictReader(StringIO(expected_data.decode("cp1252"))))
                                         prefix = "\t" if protected else ""
@@ -300,7 +292,6 @@ class ExcelExportTests(unittest.TestCase):
                             if not excel:
                                 app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
                                 self.assertTrue(app.session_state["result"]["excel_output"])
-                                self.assertNotIn("saved_folder", app.session_state["result"])
                         app.button(key="clear_all_files").click().run(timeout=20)
                         self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
                         self.assertFalse(any(widget.key == "campaign_csv_protect_ids" for widget in app.checkbox))
