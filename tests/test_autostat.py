@@ -750,6 +750,8 @@ class AutostatAppTests(unittest.TestCase):
                 self.assertEqual([cell.value for cell in workbook.active["B"][1:]], expected)
                 self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in workbook.active["B"][1:]))
                 workbook.close()
+            self.assertEqual(calls["autostat_zip"].args[0], "Download AUTOSTAT Excel ZIP (.xlsx workbooks)")
+            self.assertEqual(calls["autostat_zip"].args[2], "AUTOSTAT_FILES_Excel.zip")
             with ZipFile(BytesIO(calls["autostat_zip"].args[1]())) as archive:
                 self.assertEqual(archive.namelist(), ["AUTOSTAT_Email.xlsx", "AUTOSTAT_Viber.xlsx"])
                 for name in archive.namelist():
@@ -761,6 +763,8 @@ class AutostatAppTests(unittest.TestCase):
             self.assertIn("autostat_result", app.session_state)
             calls = {call.kwargs.get("key"): call for call in download.call_args_list}
             self.assertTrue(calls["autostat_download_0"].args[2].endswith(".csv"))
+            self.assertEqual(calls["autostat_zip"].args[0], "Download AUTOSTAT CSV ZIP (.csv files)")
+            self.assertEqual(calls["autostat_zip"].args[2], "AUTOSTAT_FILES_CSV.zip")
             with ZipFile(BytesIO(calls["autostat_zip"].args[1])) as archive:
                 self.assertEqual(archive.namelist(), ["AUTOSTAT_Email.csv", "AUTOSTAT_Viber.csv"])
 

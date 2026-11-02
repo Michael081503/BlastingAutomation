@@ -377,6 +377,7 @@ class B2AppTests(unittest.TestCase):
             self.assertIn('first@example.com', {row['email'] for row in csv_rows(files[0])})
             self.assertFalse(any(widget.key == 'b2_remark_by' for widget in app.text_input))
             downloads = [widget.proto.label for widget in app.get('download_button')]
+            self.assertIn('Download B2 CSV ZIP (.csv files)', downloads)
             self.assertIn('Download NEGATIVE B2 - CARDS.csv', downloads)
             self.assertIn('Download NEGATIVE B2 - BEL.csv', downloads)
             self.assertFalse(any('_filled_' in label for label in downloads))

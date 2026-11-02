@@ -642,9 +642,11 @@ class StartupTests(unittest.TestCase):
         self.run_isolated("""
             import geo_autostat, autostat, autostat_downloads
             del geo_autostat.GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION
+            del autostat_downloads.ZIP_FORMAT_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert 'geo_autostat' in refreshed
+            assert 'autostat_downloads' in refreshed
             assert geo_autostat.render_autostat_downloads is autostat_downloads.render_autostat_downloads
             assert autostat_downloads.build_autostat_excel_zip is autostat.build_autostat_excel_zip
             assert geo_autostat.GEO_AUTOSTAT_VERSION == 5

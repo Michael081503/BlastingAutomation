@@ -21,6 +21,7 @@ from upload_state import upload_widget_key
 
 B4_PAGE_VERSION = 2
 B2_COMPACT_DOWNLOADS_VERSION = 1
+ZIP_FORMAT_VERSION = 1
 
 
 def no_matching_rows_message(result, *, bucket: int) -> str:
@@ -46,7 +47,6 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
     result_key = prefix + "result"
     filenames = AUTOSTAT_B2_FILENAMES if bucket == 2 else AUTOSTAT_B4_FILENAMES
     st.subheader(f"NEGATIVE {bucket_label}")
-    st.caption("Accounts are automatically sorted by OB, highest to lowest. Blank or invalid amounts appear last.")
     if encoding is None:
         with st.sidebar:
             output_format = st.selectbox("CSV file type", list(CSV_OUTPUT_ENCODINGS), key=f"{prefix}csv_type")
@@ -173,7 +173,7 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
         st.error(no_matching_rows_message(result, bucket=bucket))
     else:
         if len(nonempty) == len(bundle.files):
-            st.download_button(f"Download {bucket_label} files (ZIP)", bundle.zip_data, f"NEGATIVE {bucket_label}.zip",
+            st.download_button(f"Download {bucket_label} CSV ZIP (.csv files)", bundle.zip_data, f"NEGATIVE {bucket_label}_CSV.zip",
                                mime="application/zip", key=f"{prefix}zip", on_click="ignore")
         for index, file in enumerate(bundle.files):
             if file.count:

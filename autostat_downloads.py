@@ -14,6 +14,7 @@ from autostat import (
 
 
 AUTOSTAT_DOWNLOADS_VERSION = 1
+ZIP_FORMAT_VERSION = 1
 
 
 def render_autostat_downloads(
@@ -34,10 +35,12 @@ def render_autostat_downloads(
         )
 
     def archive():
+        zip_format = "Excel" if excel_output else "CSV"
+        zip_contents = ".xlsx workbooks" if excel_output else ".csv files"
         st.download_button(
-            f"Download {'both' if len(bundle.files) == 2 else 'all three'} AUTOSTAT files (ZIP)",
+            f"Download {workbook_name.replace('_', ' ')} {zip_format} ZIP ({zip_contents})",
             partial(build_autostat_excel_zip, bundle) if excel_output else bundle.zip_data,
-            f"{workbook_name}_FILES.zip", mime="application/zip", on_click="ignore",
+            f"{workbook_name}_FILES_{zip_format}.zip", mime="application/zip", on_click="ignore",
             key=f"{state_prefix}zip",
         )
 

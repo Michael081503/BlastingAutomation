@@ -258,6 +258,11 @@ class ExcelExportTests(unittest.TestCase):
                             self.assertTrue(all(name.endswith(suffix) for name in picker.options))
                             zip_call = next(call for call in download.call_args_list if call.kwargs.get("key") == ("excel_zip" if excel else "csv_zip"))
                             zip_data = zip_call.args[1]()
+                            workflow = "GEO" if geo else "RECO"
+                            zip_format = "Excel" if excel else "CSV"
+                            zip_contents = ".xlsx workbooks" if excel else ".csv files"
+                            self.assertEqual(zip_call.args[0], f"Download {workflow} {zip_format} ZIP ({zip_contents})")
+                            self.assertTrue(zip_call.args[2].endswith(f"_{zip_format}.zip"))
                             single = next(call for call in download.call_args_list if call.kwargs.get("key", "").startswith("excel_download_" if excel else "download_"))
                             self.assertTrue(single.args[2].endswith(suffix))
                             with ZipFile(BytesIO(zip_data)) as archive:

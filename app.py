@@ -122,10 +122,7 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
 def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
-    st.write("Upload your GEO or RECO workbook and choose a sheet. AUTOSTAT is prepared automatically using Financing/Card No. (cardnumber) for Account No.")
-    st.caption("GEO separates Mindanao and R3. RECO uses the existing product and level groups. B2 uploads and matching are on NEGATIVE B2.")
-    st.caption("Product MC is converted to CARDS before grouping accounts into their designated files.")
-    st.caption("Accounts are automatically sorted by OB, highest to lowest. Blank or invalid amounts appear last.")
+    st.write("Upload your GEO or RECO workbook and choose a sheet.")
     if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
         st.session_state["campaign_output_format"] = "CSV (.csv)"
         st.session_state["campaign_csv_default_version"] = CSV_CAMPAIGN_DEFAULT_VERSION
@@ -511,10 +508,13 @@ def render_workbook_page() -> None:
                 )
     if excel_output:
         st.caption("Excel copies keep account identifiers and phones as Text, with numeric balances and native dates.")
+    zip_format = "Excel" if excel_output else "CSV"
+    zip_contents = ".xlsx workbooks" if excel_output else ".csv files"
+    workflow = "GEO" if result["geo"] else "RECO"
     st.download_button(
-        "Download all Excel files (ZIP)" if excel_output else "Download all CSV files (ZIP)",
+        f"Download {workflow} {zip_format} ZIP ({zip_contents})",
         partial(build_excel_zip, files) if excel_output else partial(build_csv_zip, files, protect_identifiers=result["protect_csv_identifiers"]),
-        Path(result["zip_filename"]).stem + "_Excel.zip" if excel_output else result["zip_filename"],
+        f"{Path(result['zip_filename']).stem}_{zip_format}.zip",
         mime="application/zip", type="primary", on_click="ignore", key="excel_zip" if excel_output else "csv_zip",
     )
     st.subheader("Download and preview an export")

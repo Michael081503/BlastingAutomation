@@ -87,7 +87,7 @@ def refresh_application_modules() -> set[str]:
             "build_autostat_channel_excel", "build_autostat_excel_zip",
             "ContactRows.__dataclass_fields__.email_ob_values", "ContactRows.__dataclass_fields__.phone_ob_values",
         ), ("automation", "email_validation", "export_config", "exports")),
-        ("autostat_downloads", ("AUTOSTAT_DOWNLOADS_VERSION", "render_autostat_downloads"), ("autostat", "automation")),
+        ("autostat_downloads", ("AUTOSTAT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "render_autostat_downloads"), ("autostat", "automation")),
         ("geo_autostat", (
             "GEO_AUTOSTAT_VERSION", "GEO_FINANCING_ACCOUNT_VERSION", "mapped_contact_source", "render_geo_autostat",
             "GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION",
@@ -102,7 +102,7 @@ def refresh_application_modules() -> set[str]:
             "B4_MATCHING_VERSION", "build_b4_exports", "B2_B4_AGENTS_VERSION",
             "B2_B4_OB_SORT_VERSION",
         ), ("autostat", "automation", "export_config")),
-        ("b2_page", ("render_b2_page", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
+        ("b2_page", ("render_b2_page", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
         ("b2_autostat", (
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",
