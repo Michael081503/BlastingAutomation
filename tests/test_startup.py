@@ -223,7 +223,8 @@ class StartupTests(unittest.TestCase):
         self.run_isolated("""
             from io import BytesIO
             from openpyxl import load_workbook
-            import autostat, autostat_page, autostat_downloads
+            import automation, autostat, autostat_page, autostat_downloads
+            del automation.AUTOSTAT_COLUMN_FORMAT_VERSION
             del autostat.ACCOUNT_TEXT_EXPORT_VERSION
             del autostat.build_autostat_excel
             from app_startup import refresh_application_modules
@@ -237,6 +238,9 @@ class StartupTests(unittest.TestCase):
             workbook = load_workbook(BytesIO(autostat_downloads.build_autostat_excel(bundle)))
             assert workbook['Email']['B2'].value == '5156041234567897'
             assert workbook['Email']['B2'].data_type == 's'
+            assert workbook['Email']['B2'].number_format == '@'
+            assert workbook['Email']['B1'].number_format == 'General'
+            assert workbook['Email']['E2'].number_format == 'General'
             workbook.close()
             assert refresh_application_modules() == set()
         """)

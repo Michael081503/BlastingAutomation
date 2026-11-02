@@ -209,6 +209,11 @@ class B2AutostatTests(unittest.TestCase):
         workbook = load_workbook(BytesIO(build_autostat_excel(bundle)))
         self.assertEqual(workbook.sheetnames, ["B2_Email", "B2_SMS", "B2_Viber"])
         for sheet in workbook:
+            self.assertTrue(all(cell.number_format == "General" for cell in sheet[1]))
+            for row in sheet.iter_rows(min_row=2):
+                for header, cell in zip(sheet[1], row):
+                    self.assertEqual(cell.number_format,
+                                     "@" if header.value in {"Account No.", "Account number", "Mobile Number"} else "General")
             account_column = "B" if sheet.title == "B2_Email" else "A"
             cell = sheet[f"{account_column}2"]
             self.assertEqual((cell.value, cell.data_type, cell.number_format), ("0005156041234567897", "s", "@"))

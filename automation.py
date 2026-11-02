@@ -53,6 +53,7 @@ PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 OB_SORT_VERSION = 1
 RECO_DOCLASS_WRITER_VERSION = 1
+AUTOSTAT_COLUMN_FORMAT_VERSION = 1
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 DERIVED_TEMPLATE_HEADERS = ("doclass",)
 ASSIGNMENT_TEMPLATE_HEADERS = ("Monthly", "Terms")
@@ -537,18 +538,25 @@ def _encode_csv(text: str, encoding: str) -> bytes:
 
 
 def write_text_csv_sheet(workbook: Workbook, data: bytes, title: str):
-    """Write literal text cells so Excel cannot round or evaluate exported values."""
+    """Keep CSV values literal and apply Text format only to identifiers and phones."""
     sheet = workbook.create_sheet(title)
     sheet.freeze_panes = "A2"
     encoding = "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "cp1252"
+    identifier_headers = {alias for source, target in FIELD_MAPPING.items() if target in IDENTIFIER_FIELDS
+                          for alias in _source_aliases(source)}
+    identifier_headers.add(normalize_header("Dialed Number"))
+    text_columns = set()
     for row_index, row in enumerate(csv.reader(StringIO(data.decode(encoding), newline=""))):
+        if row_index == 0:
+            text_columns = {column for column, header in enumerate(row, 1) if normalize_header(header) in identifier_headers}
         cells = []
         for column, value in enumerate(row, 1):
             if row_index == 0:
                 sheet.column_dimensions[get_column_letter(column)].width = 24
             cell = WriteOnlyCell(sheet, value=value)
             cell.data_type = "s"
-            cell.number_format = "@"
+            if row_index > 0 and column in text_columns:
+                cell.number_format = "@"
             cells.append(cell)
         sheet.append(cells)
     return sheet

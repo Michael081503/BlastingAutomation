@@ -161,10 +161,14 @@ class AutostatTests(unittest.TestCase):
                     self.assertEqual(result.sheetnames, ["Email", "Viber"])
                     for sheet, file in zip(result, bundle.files):
                         self.assertEqual([cell.value for cell in sheet[1]], list(file.headers))
+                        self.assertTrue(all(cell.number_format == "General" for cell in sheet[1]))
+                        text_columns = {cell.column for cell in sheet[1] if cell.value in {"Account No.", "Dialed Number"}}
                         self.assertEqual([cell.value for cell in sheet["B"][1:]], accounts)
                         self.assertEqual(sheet.max_row, len(accounts) + 1)
                         for row in sheet.iter_rows(min_row=2):
                             self.assertEqual(row[1].data_type, "s")
+                            for cell in row:
+                                self.assertEqual(cell.number_format, "@" if cell.column in text_columns else "General")
                             self.assertEqual(row[1].number_format, "@")
                             self.assertEqual(row[4].value, "MBURGOS")
                             self.assertIsNone(row[0].value)

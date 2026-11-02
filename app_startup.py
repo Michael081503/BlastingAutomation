@@ -49,6 +49,7 @@ def refresh_application_modules() -> set[str]:
             "WORKBOOK_READER_VERSION",
             "OB_SORT_VERSION", "ob_sort_key",
             "RECO_DOCLASS_WRITER_VERSION",
+            "AUTOSTAT_COLUMN_FORMAT_VERSION",
             "write_text_csv_sheet",
             "write_typed_template_sheet",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
