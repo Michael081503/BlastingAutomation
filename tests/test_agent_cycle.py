@@ -10,6 +10,7 @@ from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
@@ -42,6 +43,16 @@ def agent_order_args(app):
 
 def displayed_agent_codes(app):
     return [agent["code"] for agent in agent_order_args(app)["data"]]
+
+
+def change_agent_order(app, codes, *, revision=None):
+    args = agent_order_args(app)
+    states = app._tree.get_widget_states()
+    states.widgets.add(
+        id=app.get("component_instance")[0].proto.id,
+        json_value=json.dumps({"order": codes, "revision": revision or args["revision"], "event_id": str(uuid4())}),
+    )
+    return app._run(widget_state=states, timeout=20)
 
 
 class AgentCycleTests(unittest.TestCase):
@@ -220,13 +231,15 @@ class AgentCyclePageTests(unittest.TestCase):
             app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(selected_date).run(timeout=20)
             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
             self.assertIn("result", app.session_state)
-            app.session_state[agent_order_args(app)["key"]] = codes
-            app.run(timeout=20)
+            component_id = app.get("component_instance")[0].proto.id
+            with patch("agent_cycle_page.st.rerun", side_effect=AssertionError("Reordering should not force another rerun")):
+                change_agent_order(app, codes)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertNotIn("result", app.session_state)
             self.assertEqual(load_cycle().start_date, default_cycle().start_date)
             self.assertEqual(displayed_agent_codes(app), codes)
+            self.assertEqual(app.get("component_instance")[0].proto.id, component_id)
             self.assertEqual([code for _, code in cycle_agents(load_cycle(), selected_date)], codes)
             self.assertEqual(app.table[0].value.iloc[1]["First"], "ROSVINOYA")
             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
@@ -244,13 +257,45 @@ class AgentCyclePageTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
-            app.session_state[agent_order_args(app)["key"]] = ["JBATALLER", "ROSVINOYA", "APMAMARIL"]
             with patch("agent_cycle_page.save_cycle", side_effect=AutomationError("Could not save the agent cycle.")):
-                app.run(timeout=20)
+                change_agent_order(app, ["JBATALLER", "ROSVINOYA", "APMAMARIL"])
             self.assertEqual(len(app.exception), 0)
             self.assertTrue(any("Could not save" in error.value for error in app.error))
             self.assertNotIn("result", app.session_state)
             self.assertEqual(load_cycle(), default_cycle())
+            change_agent_order(app, ["JBATALLER", "ROSVINOYA", "APMAMARIL"])
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(displayed_agent_codes(app), ["JBATALLER", "ROSVINOYA", "APMAMARIL"])
+
+    def test_saved_drag_event_does_not_reapply_on_reruns_or_sidebar_changes(self):
+        with patch("streamlit.file_uploader", return_value=None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            with patch("agent_cycle_page.save_cycle", wraps=save_cycle) as save:
+                change_agent_order(app, ["JBATALLER", "APMAMARIL", "ROSVINOYA"])
+                app.run(timeout=20)
+                self.assertEqual(save.call_count, 1)
+            save_cycle(default_cycle())
+            app.run(timeout=20)
+            self.assertEqual(displayed_agent_codes(app), ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
+            change_agent_order(app, ["JBATALLER", "APMAMARIL", "ROSVINOYA"])
+            self.assertEqual(displayed_agent_codes(app), ["JBATALLER", "APMAMARIL", "ROSVINOYA"])
+            self.assertEqual(load_cycle().agent_codes[0], "JBATALLER")
+
+    def test_stale_drag_event_keeps_the_newer_saved_cycle_and_can_be_retried(self):
+        with patch("streamlit.file_uploader", return_value=None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            old_revision = agent_order_args(app)["revision"]
+            newer_cycle = AgentCycle(TODAY, ("ROSVINOYA", "APMAMARIL", "JBATALLER"))
+            save_cycle(newer_cycle)
+            change_agent_order(app, ["JBATALLER", "APMAMARIL", "ROSVINOYA"], revision=old_revision)
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(any("cycle changed" in error.value for error in app.error))
+            self.assertEqual(load_cycle(), newer_cycle)
+            self.assertEqual(displayed_agent_codes(app), list(newer_cycle.agent_codes))
+            change_agent_order(app, ["JBATALLER", "APMAMARIL", "ROSVINOYA"])
+            self.assertEqual(len(app.error), 0)
+            self.assertEqual(load_cycle().agent_codes[0], "JBATALLER")
 
     def test_new_manila_day_rotates_automatically_and_clears_previous_exports(self):
         upload = Upload()

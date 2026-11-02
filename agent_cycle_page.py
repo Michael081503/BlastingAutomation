@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta
+from functools import partial
 
 import streamlit as st
 
@@ -14,12 +15,31 @@ from export_config import GEO_RECO_AGENTS
 from folder_output import MANILA_TIMEZONE
 
 
-AGENT_CYCLE_PAGE_VERSION = 3
+AGENT_CYCLE_PAGE_VERSION = 4
 AGENT_DRAG_ORDER_VERSION = 1
+AGENT_STABLE_ORDER_VERSION = 1
 
 
 def manila_today():
     return datetime.now(MANILA_TIMEZONE).date()
+
+
+def _cycle_revision(cycle):
+    return hashlib.sha256(repr(cycle).encode()).hexdigest()[:12]
+
+
+def _save_agent_order(key, assignment_date):
+    """Save the widget event before rendering, without a second page rerun."""
+    st.session_state.pop("agent_cycle_order_error", None)
+    st.session_state.pop("result", None)
+    try:
+        cycle = load_cycle()
+        change = st.session_state.get(key)
+        if not isinstance(change, dict) or change.get("revision") != _cycle_revision(cycle):
+            raise AutomationError("The RECO agent cycle changed. Please reorder the updated list.")
+        save_cycle(reorder_cycle(cycle, assignment_date, change.get("order")))
+    except AutomationError as exc:
+        st.session_state["agent_cycle_order_error"] = {"key": key, "message": str(exc)}
 
 
 def render_agent_cycle():
@@ -30,6 +50,7 @@ def render_agent_cycle():
         if st.button("Reset agent cycle to defaults", key="agent_cycle_reset"):
             try:
                 save_cycle(default_cycle())
+                st.session_state.pop("agent_cycle_order_error", None)
                 st.rerun()
             except AutomationError as error:
                 st.error(str(error))
@@ -44,19 +65,18 @@ def render_agent_cycle():
             st.info("Choose an assignment date to prepare RECO files.")
             return None
         agents = cycle_agents(cycle, assignment_date)
-        revision = hashlib.sha256(repr(cycle).encode()).hexdigest()[:12]
+        revision = _cycle_revision(cycle)
         st.caption("Drag agents into first, second and third position, or use the arrows. Changes save automatically for the selected date.")
-        selected_order = render_agent_order(agents, key=f"agent_cycle_drag_{revision}_{assignment_date.isoformat()}")
-        if selected_order is not None and selected_order != [code for _, code in agents]:
-            try:
-                save_cycle(reorder_cycle(cycle, assignment_date, selected_order))
-                st.session_state.pop("result", None)
-                st.session_state["agent_cycle_saved"] = True
-                st.rerun()
-            except AutomationError as exc:
-                st.session_state.pop("result", None)
-                st.error(str(exc))
-                return None
+        component_key = f"agent_cycle_drag_{assignment_date.isoformat()}"
+        error = st.session_state.get("agent_cycle_order_error", {})
+        save_error = error.get("message") if error.get("key") == component_key else None
+        render_agent_order(
+            agents, key=component_key, revision=revision, save_error=save_error,
+            on_change=partial(_save_agent_order, component_key, assignment_date),
+        )
+        if save_error:
+            st.error(save_error)
+            return None
         st.caption(
             "Accounts in each output group are split evenly in this order, starting with the highest OB. "
             "The same account keeps its agent in Email and Viber. The first agent moves to the end each calendar day."
@@ -85,6 +105,7 @@ def render_agent_cycle():
             if st.button("Save agent cycle", key="agent_cycle_save", disabled=not valid):
                 try:
                     save_cycle(AgentCycle(start, tuple(selected)))
+                    st.session_state.pop("agent_cycle_order_error", None)
                     st.session_state["agent_cycle_saved"] = True
                     st.rerun()
                 except AutomationError as exc:

@@ -646,7 +646,7 @@ class StartupTests(unittest.TestCase):
                 [{'primary_key': '0001', 'email': 'one@example.com', 'product': 'CARDS', 'AREA': 'Mindanao'}],
                 '', 1, '.csv', agents=agents)
             assert all('Terms' not in row and 'Monthly' not in row for file in geo.files for row in file.preview)
-            assert agent_cycle_page.AGENT_CYCLE_PAGE_VERSION == 3
+            assert agent_cycle_page.AGENT_CYCLE_PAGE_VERSION == 4
             assert refresh_application_modules() == set()
         """)
 
@@ -657,9 +657,11 @@ class StartupTests(unittest.TestCase):
             import agent_cycle, agent_cycle_page, agent_order
             del agent_cycle.reorder_cycle
             del agent_cycle_page.AGENT_DRAG_ORDER_VERSION
+            del agent_cycle_page.AGENT_STABLE_ORDER_VERSION
+            del agent_order.AGENT_ORDER_CALLBACK_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
-            assert {'agent_cycle', 'agent_cycle_page'} <= refreshed
+            assert {'agent_cycle', 'agent_cycle_page', 'agent_order'} <= refreshed
             assert agent_cycle_page.render_agent_order is agent_order.render_agent_order
             cycle = agent_cycle.reorder_cycle(agent_cycle.default_cycle(), date(2026, 10, 31),
                 ['JBATALLER', 'APMAMARIL', 'ROSVINOYA'])
