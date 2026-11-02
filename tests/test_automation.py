@@ -1001,7 +1001,7 @@ class AppTests(unittest.TestCase):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
                 self.assertEqual(app.radio[0].options, ['All accounts in one group'])
-                app.button[0].click().run(timeout=20)
+                app.run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
                 self.assertEqual(len(app.error), 0)
                 result = app.session_state['result']
@@ -1022,7 +1022,7 @@ class AppTests(unittest.TestCase):
                 upload = FakeUpload('partial-grouped.xlsx', source_file([row], headers=list(row)))
                 with patch('streamlit.file_uploader', side_effect=lambda label, **kwargs: upload if kwargs.get('key') == 'source_upload' else None):
                     app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-                    app.button[0].click().run(timeout=20)
+                    app.run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     self.assertEqual(len(app.error), 0)
                     result = app.session_state['result']
@@ -1040,7 +1040,7 @@ class AppTests(unittest.TestCase):
             field = next(widget for widget in app.number_input if widget.label == 'Source header row')
             field.set_value(60).run(timeout=20)
             self.assertEqual(app.radio[0].value, 'Separate Christmas Amnesty groups')
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state['result']['count'], 1)
@@ -1061,12 +1061,12 @@ class AppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None), TemporaryDirectory(prefix="other-sheet-test-") as directory:
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             self.assertEqual(app.selectbox[0].value, "NEGATIVE")
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             baseline = app.session_state["result"]
             app.selectbox[0].select("POSITIVE").run(timeout=20)
-            self.assertNotIn("result", app.session_state)
+            self.assertNotEqual(app.session_state["result"]["signature"], baseline["signature"])
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]
@@ -1086,11 +1086,11 @@ class AppTests(unittest.TestCase):
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             app.selectbox[0].select("CONTACTED").run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertTrue(all(file.filename.startswith("CONTACTED - ") for file in app.session_state["result"]["files"]))
             app.selectbox[0].select("POSITIVE").run(timeout=20)
             self.assertEqual(app.radio[0].value, "All accounts in one group")
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertFalse(app.session_state["result"]["grouped"])
             self.assertEqual(len(app.session_state["result"]["files"]), 2)
 
@@ -1112,7 +1112,7 @@ class AppTests(unittest.TestCase):
                     name = "ACTIVE GEO" if geo else "PROMISE TO PAY"
                     self.assertEqual(app.selectbox[0].value, name)
                     self.assertEqual(app.radio[0].value, "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups")
-                    app.button[0].click().run(timeout=20)
+                    app.run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     self.assertEqual(len(app.error), 0)
                     result = app.session_state["result"]
@@ -1144,7 +1144,7 @@ class AppTests(unittest.TestCase):
             app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
             app.session_state["campaign_csv_protect_ids"] = False
             app.run(timeout=20)
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]
@@ -1173,8 +1173,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.session_state["result"]["saved_folder"], str(saved))
             GEO_OUTPUT_FILENAMES["mindanao_qualified_cards"] = "Updated Mindanao"
             app.run(timeout=20)
-            self.assertNotIn("result", app.session_state)
-            app.button[0].click().run(timeout=20)
+            self.assertNotIn("saved_folder", app.session_state["result"])
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["files"][0].filename, "Updated Mindanao_Email.csv")
             self.assertTrue((saved / expected[0]).exists())
@@ -1195,7 +1194,7 @@ class AppTests(unittest.TestCase):
 
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]
@@ -1233,7 +1232,7 @@ class AppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Area and Christmas Amnesty groups")
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]
@@ -1248,8 +1247,8 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.main.dataframe[-1].value.loc[0, "AREA"], "Region 3")
             self.assertEqual(app.main.dataframe[-1].value.loc[0, "doclass"], "SBC GEO R3")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            self.assertEqual(len(app.get("download_button")), 5)
-            app.button[0].click().run(timeout=20)
+            self.assertEqual(len(app.get("download_button")), 7)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.session_state["result"]["files"]), 2)
@@ -1274,8 +1273,8 @@ class AppTests(unittest.TestCase):
             ):
                 with self.subTest(output_format=output_format):
                     app.selectbox(key="csv_file_type").set_value(output_format).run(timeout=20)
-                    self.assertEqual(len(app.get("download_button")), 5)
-                    app.button[0].click().run(timeout=20)
+                    self.assertEqual(len(app.get("download_button")), 7)
+                    app.run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     self.assertEqual(len(app.error), 0)
                     result = app.session_state["result"]
@@ -1305,7 +1304,7 @@ class AppTests(unittest.TestCase):
                     with patch("streamlit.file_uploader", side_effect=uploader):
                         app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
                         app.radio[0].set_value(mode).run(timeout=20)
-                        app.button[0].click().run(timeout=20)
+                        app.run(timeout=20)
                         self.assertEqual(len(app.exception), 0)
                         self.assertEqual(len(app.error), 0)
                         result = app.session_state["result"]
@@ -1341,7 +1340,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.selectbox[0].value, "NEGATIVE")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state["result"]["count"], 1)
@@ -1354,8 +1353,9 @@ class AppTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertEqual(app.session_state["result"]["count"], 1)
             app.selectbox[0].select("NEXT").run(timeout=20)
-            self.assertEqual(len(app.success), 0)
-            self.assertEqual(len(app.get("download_button")), 5)
+            self.assertEqual(app.main.dataframe[-1].value.iloc[0]["FullName"], "Next person")
+            self.assertEqual(len(app.success), 1)
+            self.assertEqual(len(app.get("download_button")), 7)
 
     def test_uploaded_csv_template_and_optional_missing_phone_header(self):
         upload = FakeUpload("source.xlsx", source_file())
@@ -1368,7 +1368,7 @@ class AppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual([file.filename for file in app.session_state["result"]["files"]], [
                 "source_NEGATIVE_filled_Email.csv", "source_NEGATIVE_filled_Viber.csv",
@@ -1380,7 +1380,7 @@ class AppTests(unittest.TestCase):
             upload = FakeUpload("bad.xlsx", source_file(headers=[header for header in FIELD_MAPPING if header != "phone_1"]))
             app.run(timeout=20)
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual([file.count for file in app.session_state['result']['files']], [1, 0])
@@ -1409,7 +1409,7 @@ class AppTests(unittest.TestCase):
             for mode in ("Separate Christmas Amnesty groups", "All accounts in one group"):
                 with self.subTest(mode=mode):
                     app.radio[0].set_value(mode).run(timeout=20)
-                    app.button[0].click().run(timeout=20)
+                    app.run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     self.assertEqual(len(app.error), 0)
                     result = app.session_state["result"]
@@ -1458,7 +1458,7 @@ class AppTests(unittest.TestCase):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
             self.assertTrue(any("export_config.py" in caption.value for caption in app.caption))
-            app.button[0].click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.session_state["result"]["files"]), 14)
@@ -1486,8 +1486,9 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.session_state["result"]["count"], 7)
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            self.assertEqual(len(app.success), 0)
-            self.assertEqual(len(app.get("download_button")), 5)
+            self.assertFalse(app.session_state["result"]["grouped"])
+            self.assertEqual(len(app.success), 1)
+            self.assertEqual(len(app.get("download_button")), 7)
 
     def test_default_headers_refresh_cached_template_and_remain_in_empty_channel(self):
         upload = FakeUpload("source.xlsx", source_file([
@@ -1508,7 +1509,7 @@ class AppTests(unittest.TestCase):
             for mode in ("Separate Christmas Amnesty groups", "All accounts in one group"):
                 with self.subTest(mode=mode):
                     app.radio[0].set_value(mode).run(timeout=20)
-                    app.button[0].click().run(timeout=20)
+                    app.run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     self.assertEqual(len(app.error), 0)
                     files = app.session_state["result"]["files"]
@@ -1532,7 +1533,7 @@ class AppTests(unittest.TestCase):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             for mode in ("Separate Christmas Amnesty groups", "All accounts in one group"):
                 app.radio[0].set_value(mode).run(timeout=20)
-                app.button[0].click().run(timeout=20)
+                app.run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
                 self.assertEqual(len(app.error), 0)
                 self.assertEqual(app.session_state["result"]["count"], 0)
@@ -1554,7 +1555,7 @@ class AppTests(unittest.TestCase):
             parent = Path(directory).resolve()
             with patch("streamlit.file_uploader", side_effect=uploader):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-                app.button[0].click().run(timeout=20)
+                app.run(timeout=20)
                 app.text_input(key="output_folder").set_value(str(parent)).run(timeout=20)
                 self.assertEqual(list(parent.iterdir()), [])
                 app.button(key="save_to_folder").click().run(timeout=20)
@@ -1591,7 +1592,7 @@ class AppTests(unittest.TestCase):
                 app.session_state["campaign_csv_protect_ids"] = False
                 app.run(timeout=20)
                 app.radio[0].set_value("All accounts in one group").run(timeout=20)
-                app.button[0].click().run(timeout=20)
+                app.run(timeout=20)
                 app.text_input(key="output_folder").set_value(directory).run(timeout=20)
                 app.button(key="save_to_folder").click().run(timeout=20)
                 self.assertEqual(len(app.exception), 0)

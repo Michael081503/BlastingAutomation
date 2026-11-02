@@ -143,7 +143,7 @@ class RecoDoclassTests(unittest.TestCase):
         with TemporaryDirectory() as directory, patch("agent_cycle.SETTINGS_PATH", Path(directory) / "cycle.json"), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             for file in app.session_state["result"]["files"]:
@@ -151,11 +151,10 @@ class RecoDoclassTests(unittest.TestCase):
             self.assertEqual(app.main.dataframe[-1].value.iloc[0]["doclass"], "SBC Cards L1")
             with patch.dict(OUTPUT_FILENAMES, {"qualified_cards_level_1": "Renamed campaign - PL"}):
                 app.run(timeout=20)
-                self.assertNotIn("result", app.session_state)
-                next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+                self.assertEqual(app.session_state["result"]["files"][0].doclass, "PL Recovery")
                 self.assertEqual(app.main.dataframe[-1].value.iloc[0]["doclass"], "PL Recovery")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             for file in app.session_state["result"]["files"]:
                 self.assertTrue(all(row["doclass"] == "SBC Cards L1" for row in csv_rows(file.data)))

@@ -122,7 +122,7 @@ def show_folder_save(result: dict, source_name: str, sheet_name: str) -> None:
 def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
-    st.write("Upload your GEO or RECO workbook and choose a sheet.")
+    st.write("Upload your GEO or RECO workbook. Your output ZIP is prepared automatically.")
     if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
         st.session_state["campaign_output_format"] = "CSV (.csv)"
         st.session_state["campaign_csv_default_version"] = CSV_CAMPAIGN_DEFAULT_VERSION
@@ -165,9 +165,9 @@ def render_workbook_page() -> None:
         )
         st.caption("Save outputs to a folder or download them. Your original files are never overwritten.")
 
-    upload_left, upload_right = st.columns(2)
-    with upload_left:
-        source_file = st.file_uploader("1. Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
+    source_file = st.file_uploader("Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
+    download_area = st.container()
+    settings = st.expander("Optional settings", expanded=False)
     if source_file is not None:
         source_bytes = source_file.getvalue()
         try:
@@ -177,9 +177,9 @@ def render_workbook_page() -> None:
             st.session_state.pop("geo_autostat_result", None)
             st.error(str(exc))
             return
-    with upload_right:
+    with settings:
         template_file = st.file_uploader(
-            "2. Template (optional)",
+            "Template (optional)",
             type=["xlsx", "csv"],
             key=upload_widget_key("template_upload"),
             help="Upload your template, or use the built-in template with all 16 campaign headers.",
@@ -188,9 +188,9 @@ def render_workbook_page() -> None:
     if source_file is None:
         st.session_state.pop("result", None)
         st.session_state.pop("geo_autostat_result", None)
-        render_agent_cycle()
-        st.info("Upload a source workbook to begin. NEGATIVE will be selected automatically if it exists.")
-        st.caption("Every worksheet uses the same separation rules. GEO worksheets separate Mindanao and R3 first.")
+        with settings:
+            render_agent_cycle()
+        st.info("Upload a source workbook to prepare your files.")
         return
 
     template_bytes = template_file.getvalue() if template_file is not None else blank_template
@@ -205,189 +205,182 @@ def render_workbook_page() -> None:
         if template_extension == ".csv":
             csv_template_headers(template_bytes)
     except AutomationError as exc:
+        st.session_state.pop("result", None)
         st.error(str(exc))
         return
 
-    st.subheader("Choose the sheet to process")
-    sheet_left, sheet_right = st.columns(2)
-    source_names = [sheet.name for sheet in source_sheets]
-    with sheet_left:
-        source_sheet = st.selectbox(
-            "Source sheet",
-            source_names,
-            index=source_names.index(default_sheet),
-            key=f"source_sheet_{source_digest}",
-        )
-        source_info = next(sheet for sheet in source_sheets if sheet.name == source_sheet)
-        st.caption("Start with NEGATIVE, then choose another sheet. The same grouping rules apply to every sheet.")
-    with sheet_right:
-        if template_sheets:
-            best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
-            template_names = [sheet.name for sheet in template_sheets]
-            template_sheet = st.selectbox(
-                "Template sheet",
-                template_names,
-                index=template_names.index(best_template.name),
-                key=f"template_sheet_{template_digest}",
+    with settings:
+        st.subheader("Choose the sheet to process")
+        sheet_left, sheet_right = st.columns(2)
+        source_names = [sheet.name for sheet in source_sheets]
+        with sheet_left:
+            source_sheet = st.selectbox(
+                "Source sheet",
+                source_names,
+                index=source_names.index(default_sheet),
+                key=f"source_sheet_{source_digest}",
             )
-            template_info = next(sheet for sheet in template_sheets if sheet.name == template_sheet)
-        else:
-            template_sheet = ""
-            template_info = None
-            st.caption("Outputs keep the template's column order. CSV output separates columns with commas.")
+            source_info = next(sheet for sheet in source_sheets if sheet.name == source_sheet)
+        with sheet_right:
+            if template_sheets:
+                best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
+                template_names = [sheet.name for sheet in template_sheets]
+                template_sheet = st.selectbox(
+                    "Template sheet",
+                    template_names,
+                    index=template_names.index(best_template.name),
+                    key=f"template_sheet_{template_digest}",
+                )
+                template_info = next(sheet for sheet in template_sheets if sheet.name == template_sheet)
+            else:
+                template_sheet = ""
+                template_info = None
+                st.caption("Outputs keep the template's column order. CSV output separates columns with commas.")
 
-    if not any(normalize_header(sheet.name) == "negative" for sheet in source_sheets):
-        st.info("No NEGATIVE sheet was found. Choose the sheet you want to process.")
-    if template_file is None:
-        st.caption("Using the built-in CSV template with all 16 campaign headers. Upload your template to use its column layout.")
-    else:
-        st.caption(
-            "Outputs use the selected file format, template headers and column order. "
-            "Additional template columns will be blank."
-        )
+        with st.expander("Header rows", expanded=False):
+            st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
+            header_left, header_right = st.columns(2)
+            with header_left:
+                source_header = int(st.number_input(
+                    "Source header row",
+                    min_value=1,
+                    max_value=1_048_575,
+                    value=source_info.header_row,
+                    step=1,
+                    key=f"source_header_{source_digest}_{source_sheet}",
+                ))
+            with header_right:
+                template_header = int(st.number_input(
+                    "Template header row",
+                    min_value=1,
+                    max_value=1_048_575,
+                    value=template_info.header_row if template_info is not None else 1,
+                    step=1,
+                    disabled=template_extension == ".csv",
+                    key=f"template_header_{template_digest}_{template_sheet}",
+                ))
+        if source_header != source_info.header_row:
+            try:
+                source_info = inspect_source_sheet(source_bytes, source_sheet, source_header)
+            except AutomationError as exc:
+                st.session_state.pop("result", None)
+                st.error(str(exc))
+                return
 
-    with st.expander("Header rows", expanded=False):
-        st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
-        header_left, header_right = st.columns(2)
-        with header_left:
-            source_header = int(st.number_input(
-                "Source header row",
-                min_value=1,
-                max_value=1_048_575,
-                value=source_info.header_row,
-                step=1,
-                key=f"source_header_{source_digest}_{source_sheet}",
-            ))
-        with header_right:
-            template_header = int(st.number_input(
-                "Template header row",
-                min_value=1,
-                max_value=1_048_575,
-                value=template_info.header_row if template_info is not None else 1,
-                step=1,
-                disabled=template_extension == ".csv",
-                key=f"template_header_{template_digest}_{template_sheet}",
-            ))
-    if source_header != source_info.header_row:
-        try:
-            source_info = inspect_source_sheet(source_bytes, source_sheet, source_header)
-        except AutomationError as exc:
-            st.error(str(exc))
-            return
+        defaults = source_column_positions(source_info.headers)
+        missing_contact = not {"email", "phone"}.intersection(defaults)
+        missing_account = not {"primary_key", "cardnumber"}.intersection(defaults)
+        source_columns = None
+        with st.expander("Source columns", expanded=missing_contact or missing_account):
+            st.caption("Check the actual column names and sample values. Change Header rows above if the labels are on a different row.")
+            preview_key = (source_digest, source_sheet, source_header, MAPPING_VERSION)
+            previews = st.session_state.setdefault("source_previews", {})
+            if preview_key not in previews:
+                previews[preview_key] = preview_source_rows(source_bytes, source_sheet, source_header)
+            labels = [f"{get_column_letter(index + 1)}: {header or '(blank header)'}"
+                      for index, header in enumerate(source_info.headers)]
+            sample_rows = [list(row[:len(labels)]) + [None] * max(0, len(labels) - len(row)) for row in previews[preview_key]]
+            sample = pd.DataFrame(sample_rows, columns=labels, dtype=object)
+            st.dataframe(sample.map(lambda value: "" if value is None else str(value)), hide_index=True, width="stretch")
+            manual = st.checkbox(
+                "Map source columns manually", value=missing_contact or missing_account,
+                key=f"manual_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
+            )
+            if manual:
+                st.caption("Choose which source column supplies each template field. Leave fields without a source as Not available.")
+                source_columns = {}
+                options = [None, *range(len(source_info.headers))]
+                fields = st.columns(3)
 
-    defaults = source_column_positions(source_info.headers)
-    missing_contact = not {"email", "phone"}.intersection(defaults)
-    missing_account = not {"primary_key", "cardnumber"}.intersection(defaults)
-    source_columns = None
-    with st.expander("Source columns", expanded=missing_contact or missing_account):
-        st.caption("Check the actual column names and sample values. Change Header rows above if the labels are on a different row.")
-        preview_key = (source_digest, source_sheet, source_header, MAPPING_VERSION)
-        previews = st.session_state.setdefault("source_previews", {})
-        if preview_key not in previews:
-            previews[preview_key] = preview_source_rows(source_bytes, source_sheet, source_header)
-        labels = [f"{get_column_letter(index + 1)}: {header or '(blank header)'}"
-                  for index, header in enumerate(source_info.headers)]
-        sample_rows = [list(row[:len(labels)]) + [None] * max(0, len(labels) - len(row)) for row in previews[preview_key]]
-        sample = pd.DataFrame(sample_rows, columns=labels, dtype=object)
-        st.dataframe(sample.map(lambda value: "" if value is None else str(value)), hide_index=True, width="stretch")
-        manual = st.checkbox(
-            "Map source columns manually", value=missing_contact or missing_account,
-            key=f"manual_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
-        )
-        if manual:
-            st.caption("Choose which source column supplies each template field. Leave fields without a source as Not available.")
-            source_columns = {}
-            options = [None, *range(len(source_info.headers))]
-            fields = st.columns(3)
+                def column_label(index, choices=labels):
+                    return "Not available" if index is None else choices[index]
 
-            def column_label(index, choices=labels):
-                return "Not available" if index is None else choices[index]
+                for number, target in enumerate((*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values())):
+                    with fields[number % 3]:
+                        source_columns[target] = st.selectbox(
+                            f"Source column for {target}", options, index=options.index(defaults.get(target)),
+                            format_func=column_label,
+                            key=f"source_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}_{target}",
+                        )
+                available = tuple(target for target, column in source_columns.items() if column is not None)
+                source_info = replace(source_info, available_fields=available, has_area="AREA" in available)
 
-            for number, target in enumerate((*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values())):
-                with fields[number % 3]:
-                    source_columns[target] = st.selectbox(
-                        f"Source column for {target}", options, index=options.index(defaults.get(target)),
-                        format_func=column_label,
-                        key=f"source_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}_{target}",
-                    )
-            available = tuple(target for target, column in source_columns.items() if column is not None)
-            source_info = replace(source_info, available_fields=available, has_area="AREA" in available)
-
-    can_prepare = bool({"email", "phone"}.intersection(source_info.available_fields)
-                       and {"primary_key", "cardnumber"}.intersection(source_info.available_fields))
-    if not can_prepare:
-        st.info("Select an email or phone column and an account-number column under Source columns to prepare the template.")
-        st.session_state.pop("result", None)
-    missing_fields = [target for target in TARGET_HEADERS if target not in source_info.available_fields]
-    if missing_fields:
-        st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
-    geo = source_info.has_area
-    assignment_date, agents = None, None
-    if not geo:
-        st.caption("RECO doclass follows the filename: L1 → SBC Cards L1; L6 → SBC Cards L6; PL → PL Recovery.")
-        agent_plan = render_agent_cycle()
-        if agent_plan is None:
+        can_prepare = bool({"email", "phone"}.intersection(source_info.available_fields)
+                           and {"primary_key", "cardnumber"}.intersection(source_info.available_fields))
+        if not can_prepare:
+            st.info("Select an email or phone column and an account-number column under Source columns to prepare the template.")
             st.session_state.pop("result", None)
-            return
-        assignment_date, agents = agent_plan
-    if geo:
-        st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
-    st.caption("Accounts are excluded when they have neither a valid email address nor a phone number.")
-    st.caption(
-        "Every group produces Email and Viber CSV files using the same headers. "
-        "Accounts with both contact details appear in both files."
-    )
-    st.caption(
-        "Invalid email formats are removed from Email files. Spaces around valid addresses are trimmed. "
-        "This checks the address format; it does not confirm that a mailbox exists or can receive mail."
-    )
-    grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
-    grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
-    if not geo:
-        grouping_fields["level"] = "level"
-    missing_grouping = [label for field, label in grouping_fields.items() if field not in source_info.available_fields]
-    output_modes = ["All accounts in one group"] if missing_grouping else [grouped_label, "All accounts in one group"]
-    if missing_grouping:
-        st.caption("Grouping columns are missing: " + ", ".join(missing_grouping) + ". All available accounts will be prepared as Email and Viber files.")
-    saved_modes = st.session_state.setdefault("sheet_output_modes", {})
-    mode_key = (source_digest, source_sheet, source_header)
-    previous_mode = saved_modes.get(mode_key, output_modes[0])
-    output_mode = st.radio(
-        "Output files",
-        output_modes,
-        index=output_modes.index(previous_mode) if previous_mode in output_modes else 0,
-        key=f"output_mode_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
-    )
-    saved_modes[mode_key] = output_mode
-    grouped = output_mode == grouped_label
-    if grouped:
+        missing_fields = [target for target in TARGET_HEADERS if target not in source_info.available_fields]
+        if missing_fields:
+            st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
+        geo = source_info.has_area
+        assignment_date, agents = None, None
+        if not geo:
+            agent_plan = render_agent_cycle()
+            if agent_plan is None:
+                st.session_state.pop("result", None)
+                st.session_state.pop("geo_autostat_result", None)
+                download_area.error("Check the RECO agent settings in Optional settings before files can be prepared.")
+                return
+            assignment_date, agents = agent_plan
         if geo:
-            st.caption(
-                "Mindanao and R3 (Region 3) are separated first. "
-                "Other or missing Area values go to separate review files. AREA retains its source value."
-            )
-            st.caption(
-                "CSL, PL and SLA go directly to GEO NEGA LOANS for their Area, at every Christmas Amnesty status. "
-                "CARDS and BEL are separated by QUALIFIED or BLANK status. "
-                "Each product group combines all levels. Empty groups produce no file. "
-                "Unrecognized qualified products go to a separate review group."
-            )
-        else:
-            st.caption(
-                "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
-                "BLANK: the same three groups, plus other products. Empty groups produce no file."
-            )
-        if normalize_header(source_sheet) != "negative":
-            st.caption("Grouped filenames include the selected worksheet name before the configured group name.")
-    st.caption("Output filenames are set in export_config.py. Edit the quoted names there, then prepare the files again.")
+            st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
+        st.caption("Accounts are excluded when they have neither a valid email address nor a phone number.")
+        st.caption(
+            "Every group produces Email and Viber CSV files using the same headers. "
+            "Accounts with both contact details appear in both files."
+        )
+        st.caption(
+            "Invalid email formats are removed from Email files. Spaces around valid addresses are trimmed. "
+            "This checks the address format; it does not confirm that a mailbox exists or can receive mail."
+        )
+        grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
+        grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
+        if not geo:
+            grouping_fields["level"] = "level"
+        missing_grouping = [label for field, label in grouping_fields.items() if field not in source_info.available_fields]
+        output_modes = ["All accounts in one group"] if missing_grouping else [grouped_label, "All accounts in one group"]
+        if missing_grouping:
+            st.caption("Grouping columns are missing: " + ", ".join(missing_grouping) + ". All available accounts will be prepared as Email and Viber files.")
+        saved_modes = st.session_state.setdefault("sheet_output_modes", {})
+        mode_key = (source_digest, source_sheet, source_header)
+        previous_mode = saved_modes.get(mode_key, output_modes[0])
+        output_mode = st.radio(
+            "Output files",
+            output_modes,
+            index=output_modes.index(previous_mode) if previous_mode in output_modes else 0,
+            key=f"output_mode_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
+        )
+        saved_modes[mode_key] = output_mode
+        grouped = output_mode == grouped_label
+        if grouped:
+            if geo:
+                st.caption(
+                    "Mindanao and R3 (Region 3) are separated first. "
+                    "Other or missing Area values go to separate review files. AREA retains its source value."
+                )
+                st.caption(
+                    "CSL, PL and SLA go directly to GEO NEGA LOANS for their Area, at every Christmas Amnesty status. "
+                    "CARDS and BEL are separated by QUALIFIED or BLANK status. "
+                    "Each product group combines all levels. Empty groups produce no file. "
+                    "Unrecognized qualified products go to a separate review group."
+                )
+            else:
+                st.caption(
+                    "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
+                    "BLANK: the same three groups, plus other products. Empty groups produce no file."
+                )
+            if normalize_header(source_sheet) != "negative":
+                st.caption("Grouped filenames include the selected worksheet name before the configured group name.")
+        st.caption("Output filenames are set in export_config.py. Edits are applied automatically.")
 
     signature = (
-        source_digest, template_digest, source_sheet, source_header,
+        source_digest, source_file.name, template_digest, source_sheet, source_header,
         template_sheet, template_header, template_extension,
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
-        "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
+        "automatic-preparation-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
         CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
@@ -398,12 +391,12 @@ def render_workbook_page() -> None:
     if previous_result is not None and previous_result["signature"] != signature:
         st.session_state.pop("result", None)
 
-    render_geo_autostat(
-        source_file.name, source_bytes, source_sheet, source_header, len(source_info.headers),
-        source_columns if source_columns is not None else defaults, encoding=encoding,
-    )
+    if not can_prepare:
+        st.session_state.pop("geo_autostat_result", None)
+        st.warning("Open Optional settings > Source columns and select a contact column and an account-number column.")
+        return
 
-    if st.button("Preview and prepare files", type="primary", disabled=not can_prepare):
+    if st.session_state.get("result") is None:
         st.session_state.pop("result", None)
         try:
             with st.spinner(f"Reading {source_sheet} and filling the template…"):
@@ -447,106 +440,121 @@ def render_workbook_page() -> None:
                     **export_result,
                 }
         except AutomationError as exc:
-            st.error(str(exc))
+            st.session_state["result"] = {"signature": signature, "error": str(exc)}
         except Exception:
-            st.error(
-                "The workbook could not be processed. Check for unsupported Excel features "
-                "or damaged cells, and try saving a fresh .xlsx copy in Excel."
-            )
+            st.session_state["result"] = {
+                "signature": signature,
+                "error": "The workbook could not be processed. Check for unsupported Excel features "
+                         "or damaged cells, and try saving a fresh .xlsx copy in Excel.",
+            }
 
     result = st.session_state.get("result")
     if result is None:
         return
+    if result.get("error"):
+        st.error(result["error"])
+        return
     if result["count"]:
-        st.success(f"Ready: {result['count']:,} accounts from {source_sheet}, in {len(result['files'])} files.")
+        download_area.success(f"Ready: {result['count']:,} accounts from {source_sheet}, in {len(result['files'])} files.")
     else:
         st.warning("No accounts remain to export. Check the source rows and excluded-account count below.")
-    count_col, blank_col, excluded_col, email_col = st.columns(4)
-    count_col.metric("Accounts included", f"{result['count']:,}")
-    blank_col.metric("Empty rows skipped", f"{result['blank_rows']:,}")
-    excluded_col.metric("Removed: no valid email or phone", f"{result['no_contact_rows']:,}")
-    email_col.metric("Phone-only accounts", f"{result['missing_emails']:,}")
-    checked_col, valid_col, invalid_col, missing_col = st.columns(4)
-    checked_col.metric("Accounts checked for email", f"{result['emails_checked']:,}")
-    valid_col.metric("Valid email formats", f"{result['valid_emails']:,}")
-    invalid_col.metric("Invalid emails removed", f"{result['invalid_emails']:,}")
-    missing_col.metric("Missing emails", f"{result['missing_email_rows']:,}")
-    if result["invalid_emails"]:
-        st.info(
-            f"Removed {result['invalid_emails']:,} invalid email address(es) from Email exports. "
-            "Accounts with a phone number are still included in Viber exports."
+    if result["count"]:
+        files = result["files"]
+        zip_format = "Excel" if excel_output else "CSV"
+        zip_contents = ".xlsx workbooks" if excel_output else ".csv files"
+        workflow = "GEO" if result["geo"] else "RECO"
+        with download_area:
+            st.download_button(
+                f"Download {workflow} {zip_format} ZIP ({zip_contents})",
+                partial(build_excel_zip, files) if excel_output else partial(build_csv_zip, files, protect_identifiers=result["protect_csv_identifiers"]),
+                f"{Path(result['zip_filename']).stem}_{zip_format}.zip",
+                mime="application/zip", type="primary", on_click="ignore", key="excel_zip" if excel_output else "csv_zip",
+            )
+
+    with st.expander("AUTOSTAT logs (optional)", expanded=False):
+        render_geo_autostat(
+            source_file.name, source_bytes, source_sheet, source_header, len(source_info.headers),
+            source_columns if source_columns is not None else defaults, encoding=encoding,
         )
-    if not result["count"]:
-        return
-    files = result["files"]
-    show_folder_save(result, source_file.name, source_sheet)
-    counts = result["group_counts"]
-    labels = (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet}
-    review_keys = GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS
-    by_channel = {(file.group_key, file.channel): file for file in files}
-    st.subheader("Separated files")
-    st.dataframe(pd.DataFrame([
-        {
-            "Group": label,
-            "Accounts": counts[key],
-            "Email rows": by_channel[(key, "email")].count if (key, "email") in by_channel else 0,
-            "Viber rows": by_channel[(key, "viber")].count if (key, "viber") in by_channel else 0,
-        }
-        for key, label in labels.items()
-        if key not in review_keys or counts[key]
-    ]), hide_index=True, width="stretch")
-    st.caption(
-        "Accounts with both contact details are counted once under Accounts and appear in both files. "
-        "Email files leave phone blank; Viber files leave email blank. All headers are retained."
-    )
-    if result["grouped"]:
-        for key in labels:
-            if key in review_keys and counts[key]:
-                st.warning(
-                    f"{counts[key]:,} rows need review ({labels[key]}). "
-                    "They are included in a separate review file."
+
+    with st.expander("Preview and other downloads", expanded=False):
+        count_col, blank_col, excluded_col, email_col = st.columns(4)
+        count_col.metric("Accounts included", f"{result['count']:,}")
+        blank_col.metric("Empty rows skipped", f"{result['blank_rows']:,}")
+        excluded_col.metric("Removed: no valid email or phone", f"{result['no_contact_rows']:,}")
+        email_col.metric("Phone-only accounts", f"{result['missing_emails']:,}")
+        checked_col, valid_col, invalid_col, missing_col = st.columns(4)
+        checked_col.metric("Accounts checked for email", f"{result['emails_checked']:,}")
+        valid_col.metric("Valid email formats", f"{result['valid_emails']:,}")
+        invalid_col.metric("Invalid emails removed", f"{result['invalid_emails']:,}")
+        missing_col.metric("Missing emails", f"{result['missing_email_rows']:,}")
+        if result["invalid_emails"]:
+            st.info(
+                f"Removed {result['invalid_emails']:,} invalid email address(es) from Email exports. "
+                "Accounts with a phone number are still included in Viber exports."
+            )
+        if not result["count"]:
+            return
+        files = result["files"]
+        show_folder_save(result, source_file.name, source_sheet)
+        counts = result["group_counts"]
+        labels = (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet}
+        review_keys = GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS
+        by_channel = {(file.group_key, file.channel): file for file in files}
+        st.subheader("Separated files")
+        st.dataframe(pd.DataFrame([
+            {
+                "Group": label,
+                "Accounts": counts[key],
+                "Email rows": by_channel[(key, "email")].count if (key, "email") in by_channel else 0,
+                "Viber rows": by_channel[(key, "viber")].count if (key, "viber") in by_channel else 0,
+            }
+            for key, label in labels.items()
+            if key not in review_keys or counts[key]
+        ]), hide_index=True, width="stretch")
+        st.caption(
+            "Accounts with both contact details are counted once under Accounts and appear in both files. "
+            "Email files leave phone blank; Viber files leave email blank. All headers are retained."
+        )
+        if result["grouped"]:
+            for key in labels:
+                if key in review_keys and counts[key]:
+                    st.warning(
+                        f"{counts[key]:,} rows need review ({labels[key]}). "
+                        "They are included in a separate review file."
+                    )
+        if excel_output:
+            st.caption("Excel copies keep account identifiers and phones as Text, with numeric balances and native dates.")
+        st.subheader("Download and preview an export")
+        selected_file = st.selectbox(
+            "File to preview", [file.filename for file in files],
+            format_func=(lambda name: Path(name).with_suffix(".xlsx").name) if excel_output else str,
+            key=f"preview_file_{hash(signature)}",
+        )
+        file = next(file for file in files if file.filename == selected_file)
+        filename = Path(file.filename).with_suffix(".xlsx").name if excel_output else file.filename
+        st.download_button(
+            f"Download {filename}", partial(build_export_excel, file) if excel_output else partial(build_export_csv, file, protect_identifiers=result["protect_csv_identifiers"]),
+            filename, mime=XLSX_MIME if excel_output else "text/csv",
+            key=f"excel_download_{file.key}" if excel_output else f"download_{file.key}",
+            on_click="ignore", type="primary",
+            help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
+            "CSV identifiers include a leading tab to retain all digits in Excel.",
+        )
+        if not excel_output:
+            with st.expander("CSV account-number protection"):
+                st.write(
+                    "Account-number protection is always on for GEO and RECO CSV exports. Fields for primary_key, cardnumber, indexoneuid "
+                    "and phone include a leading tab that keeps them as text when opened and saved in Excel. "
+                    "The digits are unchanged; amounts and other columns have no added prefix. AUTOSTAT removes the "
+                    "surrounding whitespace when reading account numbers."
                 )
-    if excel_output:
-        st.caption("Excel copies keep account identifiers and phones as Text, with numeric balances and native dates.")
-    zip_format = "Excel" if excel_output else "CSV"
-    zip_contents = ".xlsx workbooks" if excel_output else ".csv files"
-    workflow = "GEO" if result["geo"] else "RECO"
-    st.download_button(
-        f"Download {workflow} {zip_format} ZIP ({zip_contents})",
-        partial(build_excel_zip, files) if excel_output else partial(build_csv_zip, files, protect_identifiers=result["protect_csv_identifiers"]),
-        f"{Path(result['zip_filename']).stem}_{zip_format}.zip",
-        mime="application/zip", type="primary", on_click="ignore", key="excel_zip" if excel_output else "csv_zip",
-    )
-    st.subheader("Download and preview an export")
-    selected_file = st.selectbox(
-        "File to preview", [file.filename for file in files],
-        format_func=(lambda name: Path(name).with_suffix(".xlsx").name) if excel_output else str,
-        key=f"preview_file_{hash(signature)}",
-    )
-    file = next(file for file in files if file.filename == selected_file)
-    filename = Path(file.filename).with_suffix(".xlsx").name if excel_output else file.filename
-    st.download_button(
-        f"Download {filename}", partial(build_export_excel, file) if excel_output else partial(build_export_csv, file, protect_identifiers=result["protect_csv_identifiers"]),
-        filename, mime=XLSX_MIME if excel_output else "text/csv",
-        key=f"excel_download_{file.key}" if excel_output else f"download_{file.key}",
-        on_click="ignore", type="primary",
-        help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
-        "CSV identifiers include a leading tab to retain all digits in Excel.",
-    )
-    if not excel_output:
-        with st.expander("CSV account-number protection"):
-            st.write(
-                "Account-number protection is always on for GEO and RECO CSV exports. Fields for primary_key, cardnumber, indexoneuid "
-                "and phone include a leading tab that keeps them as text when opened and saved in Excel. "
-                "The digits are unchanged; amounts and other columns have no added prefix. AUTOSTAT removes the "
-                "surrounding whitespace when reading account numbers."
-            )
-            st.write(
-                "Keep account columns as text when editing. Converting them to numbers or removing their protective prefix "
-                "can let Excel remove leading zeros or round long numbers. Digits already missing from the source cannot be restored. "
-                "[Microsoft's instructions](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers)."
-            )
-    show_preview(file.preview, file.count, file.headers)
+                st.write(
+                    "Keep account columns as text when editing. Converting them to numbers or removing their protective prefix "
+                    "can let Excel remove leading zeros or round long numbers. Digits already missing from the source cannot be restored. "
+                    "[Microsoft's instructions](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers)."
+                )
+        show_preview(file.preview, file.count, file.headers)
 
 
 def main() -> None:

@@ -61,11 +61,11 @@ class SourceMappingTests(unittest.TestCase):
         with patch('streamlit.file_uploader', side_effect=lambda label, **kw: upload if kw.get('key') == 'source_upload' else None):
             app = AppTest.from_file(str(ROOT / 'app.py')).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertTrue(app.button[0].disabled)
+            self.assertNotIn("result", app.session_state)
             for target, column in [('primary_key', 0), ('email', 1), ('phone', 2), ('FullName', 3)]:
                 next(widget for widget in app.selectbox if widget.label == f'Source column for {target}').select(column).run(timeout=20)
-            self.assertFalse(app.button[0].disabled)
-            app.button[0].click().run(timeout=20)
+            self.assertIn("result", app.session_state)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state['result']
@@ -74,7 +74,7 @@ class SourceMappingTests(unittest.TestCase):
             self.assertEqual(values['primary_key'], '00001')
             self.assertEqual(values['FullName'], 'First person')
             next(widget for widget in app.selectbox if widget.label == 'Source column for email').select(None).run(timeout=20)
-            self.assertNotIn('result', app.session_state)
+            self.assertEqual([file.count for file in app.session_state['result']['files']], [0, 1])
 
 
 if __name__ == '__main__':

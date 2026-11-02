@@ -184,7 +184,7 @@ class WorkflowPageTests(unittest.TestCase):
 
             source.select("GEO").run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Area and Christmas Amnesty groups")
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]
@@ -211,9 +211,10 @@ class WorkflowPageTests(unittest.TestCase):
             self.assert_no_embedded_b2(app)
 
             next(widget for widget in app.selectbox if widget.label == "Source sheet").select("NEGATIVE").run(timeout=20)
-            self.assertNotIn("result", app.session_state)
+            self.assertFalse(app.session_state["result"]["geo"])
+            self.assertNotEqual(app.session_state["result"]["signature"], result["signature"])
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]

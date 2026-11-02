@@ -144,7 +144,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
-            self.assertNotIn("result", app.session_state)  # Campaign Prepare has not been clicked.
+            self.assertEqual(app.session_state["result"]["count"], 4)  # Campaign files also prepare on upload.
             result = app.session_state["geo_autostat_result"]
             self.assertEqual(prepare.call_count, 1)
             excel.assert_not_called()

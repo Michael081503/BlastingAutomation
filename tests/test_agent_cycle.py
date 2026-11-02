@@ -198,7 +198,7 @@ class AgentCyclePageTests(unittest.TestCase):
         upload = Upload()
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertIn("result", app.session_state)
             choices = [widget for widget in app.selectbox if widget.key.startswith("agent_cycle_order_")]
             choices[0].select("ROSVINOYA").run(timeout=20)
@@ -210,9 +210,9 @@ class AgentCyclePageTests(unittest.TestCase):
             app.button(key="agent_cycle_save").click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
-            self.assertNotIn("result", app.session_state)
+            self.assertEqual(app.session_state["result"]["files"][0].records[0]["Terms"], "ROSVINOYA")
             self.assertEqual(load_cycle().agent_codes, ("ROSVINOYA", "JBATALLER", "APMAMARIL"))
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             for file in app.session_state["result"]["files"]:
                 self.assertEqual(file.records[0]["Terms"], "ROSVINOYA")
             self.assertTrue(all(value in {name for name, _ in GEO_RECO_AGENTS}
@@ -229,20 +229,20 @@ class AgentCyclePageTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(selected_date).run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertIn("result", app.session_state)
             component_id = app.get("component_instance")[0].proto.id
             with patch("agent_cycle_page.st.rerun", side_effect=AssertionError("Reordering should not force another rerun")):
                 change_agent_order(app, codes)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
-            self.assertNotIn("result", app.session_state)
+            self.assertEqual(app.session_state["result"]["files"][0].records[0]["Terms"], "JBATALLER")
             self.assertEqual(load_cycle().start_date, default_cycle().start_date)
             self.assertEqual(displayed_agent_codes(app), codes)
             self.assertEqual(app.get("component_instance")[0].proto.id, component_id)
             self.assertEqual([code for _, code in cycle_agents(load_cycle(), selected_date)], codes)
             self.assertEqual(app.table[0].value.iloc[1]["First"], "ROSVINOYA")
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             for file in app.session_state["result"]["files"]:
                 self.assertEqual(file.records[0]["Terms"], "JBATALLER")
                 self.assertEqual(file.records[0]["Monthly"], "Jenayrine Bataller")
@@ -256,7 +256,7 @@ class AgentCyclePageTests(unittest.TestCase):
         upload = Upload()
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             with patch("agent_cycle_page.save_cycle", side_effect=AutomationError("Could not save the agent cycle.")):
                 change_agent_order(app, ["JBATALLER", "ROSVINOYA", "APMAMARIL"])
             self.assertEqual(len(app.exception), 0)
@@ -297,16 +297,16 @@ class AgentCyclePageTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(load_cycle().agent_codes[0], "JBATALLER")
 
-    def test_new_manila_day_rotates_automatically_and_clears_previous_exports(self):
+    def test_new_manila_day_rotates_automatically_and_rebuilds_exports(self):
         upload = Upload()
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertIn("result", app.session_state)
             with patch("agent_cycle_page.manila_today", return_value=TODAY + timedelta(days=1)):
                 app.run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
-                self.assertNotIn("result", app.session_state)
+                self.assertEqual(app.session_state["result"]["files"][0].records[0]["Terms"], "ROSVINOYA")
                 self.assertEqual(displayed_agent_codes(app), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
                 self.assertEqual(next(widget for widget in app.date_input if widget.label == "Assignment date (Asia/Manila)").value,
                                  TODAY + timedelta(days=1))
@@ -335,7 +335,7 @@ class AgentCyclePageTests(unittest.TestCase):
             for mode in ("Separate Area and Christmas Amnesty groups", "All accounts in one group"):
                 with self.subTest(mode=mode):
                     app.radio[0].set_value(mode).run(timeout=20)
-                    next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+                    app.run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
                     self.assertEqual(len(app.error), 0)
                     result = app.session_state["result"]

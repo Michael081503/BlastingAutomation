@@ -90,7 +90,7 @@ class GeoLoanRoutingTests(unittest.TestCase):
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertTrue(app.session_state["result"]["geo"])

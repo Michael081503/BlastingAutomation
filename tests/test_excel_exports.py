@@ -141,7 +141,8 @@ class ExcelExportTests(unittest.TestCase):
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(root / "app.py")).run(timeout=20)
             app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            download.reset_mock()
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             zip_builder.assert_not_called()
@@ -184,7 +185,8 @@ class ExcelExportTests(unittest.TestCase):
                 patch("streamlit.download_button") as download:
             app = AppTest.from_file(str(root / "app.py")).run(timeout=20)
             app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            download.reset_mock()
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             picker = next(widget for widget in app.selectbox if widget.label == "File to preview")
@@ -240,12 +242,13 @@ class ExcelExportTests(unittest.TestCase):
                         self.assertFalse(any(widget.key == "campaign_csv_protect_ids" for widget in app.checkbox))
                         app.session_state["result"] = {"signature": ("old-unprotected",), "protect_csv_identifiers": False}
                         app.run(timeout=20)
-                        self.assertNotIn("result", app.session_state)
+                        self.assertNotEqual(app.session_state["result"]["signature"], ("old-unprotected",))
+                        self.assertTrue(app.session_state["result"]["protect_csv_identifiers"])
                         if not grouped:
                             app.radio[0].set_value("All accounts in one group").run(timeout=20)
                         for excel, protected in ((False, True), (True, False)):
                             download.reset_mock()
-                            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+                            app.run(timeout=20)
                             self.assertEqual(len(app.exception), 0)
                             self.assertEqual(len(app.error), 0)
                             result = app.session_state["result"]
@@ -296,7 +299,8 @@ class ExcelExportTests(unittest.TestCase):
                                             self.assertEqual(single.args[1](), expected_data)
                             if not excel:
                                 app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
-                                self.assertNotIn("result", app.session_state)
+                                self.assertTrue(app.session_state["result"]["excel_output"])
+                                self.assertNotIn("saved_folder", app.session_state["result"])
                         app.button(key="clear_all_files").click().run(timeout=20)
                         self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
                         self.assertFalse(any(widget.key == "campaign_csv_protect_ids" for widget in app.checkbox))

@@ -70,7 +70,7 @@ class ClearUploadPageTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
+            app.run(timeout=20)
             self.assertEqual(len(app.error), 0)
             for key in ("result", "geo_autostat_result"):
                 self.assertIn(key, app.session_state)
