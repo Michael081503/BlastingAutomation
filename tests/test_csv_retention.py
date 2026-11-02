@@ -9,7 +9,7 @@ from zipfile import ZipFile
 
 from automation import DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
 from autostat import SourceSelection, build_autostat_exports, inspect_contact_source
-from exports import build_csv_zip, build_export_csv, build_geo_exports, build_negative_exports
+from exports import build_csv_zip, build_export_csv, build_geo_exports, build_negative_exports, campaign_output_files
 
 
 class ProtectedCsvTests(unittest.TestCase):
@@ -53,9 +53,27 @@ class ProtectedCsvTests(unittest.TestCase):
                             self.assertEqual([row['Account No.'] for row in rows], [card for _, card in accounts])
                             self.assertTrue(all(row['Account No.'] == row['Account No.'].strip() for row in rows))
                     self.assertEqual([file.data for file in bundle.files], originals)
-                    with ZipFile(BytesIO(build_csv_zip(bundle.files))) as archive:
+                    with ZipFile(BytesIO(build_csv_zip(bundle.files, protect_identifiers=False))) as archive:
                         for file in bundle.files:
                             self.assertEqual(archive.read(file.filename), file.data)
+
+    def test_all_csv_delivery_helpers_protect_account_numbers_by_default(self):
+        records = [dict(primary_key='00001234567890123456', cardnumber='5156041234567897',
+                        indexoneuid='000019', email='one@example.com', phone='09171234567',
+                        product='MC', level=1, AREA='Mindanao')]
+        for builder in (build_geo_exports, build_negative_exports):
+            with self.subTest(builder=builder.__name__):
+                files = builder(create_default_csv_template(), records, '', 1, '.csv').files
+                saved = dict(campaign_output_files(files, excel=False))
+                with ZipFile(BytesIO(build_csv_zip(files))) as archive:
+                    for file in files:
+                        data = build_export_csv(file)
+                        self.assertEqual(archive.read(file.filename), data)
+                        self.assertEqual(saved[file.filename], data)
+                        row = list(csv.DictReader(StringIO(data.decode('cp1252'))))[0]
+                        self.assertEqual(row['primary_key'], '\t00001234567890123456')
+                        self.assertEqual(row['cardnumber'], '\t5156041234567897')
+                        self.assertEqual(row['indexoneuid'], '\t000019')
 
     def test_empty_channels_keep_only_the_unmodified_csv_headers(self):
         bundle = build_negative_exports(create_default_csv_template(),

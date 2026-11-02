@@ -233,12 +233,17 @@ class ExcelExportTests(unittest.TestCase):
                     upload.name = "GEO.xlsx" if geo else "RECO.xlsx"
                     with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \
                             patch("streamlit.download_button") as download:
-                        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=20)
+                        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
+                        app.session_state["campaign_csv_protect_ids"] = False  # Legacy sessions cannot disable protection.
+                        app.run(timeout=20)
                         self.assertEqual(app.selectbox(key="campaign_output_format").value, "CSV (.csv)")
-                        self.assertTrue(app.checkbox(key="campaign_csv_protect_ids").value)
+                        self.assertFalse(any(widget.key == "campaign_csv_protect_ids" for widget in app.checkbox))
+                        app.session_state["result"] = {"signature": ("old-unprotected",), "protect_csv_identifiers": False}
+                        app.run(timeout=20)
+                        self.assertNotIn("result", app.session_state)
                         if not grouped:
                             app.radio[0].set_value("All accounts in one group").run(timeout=20)
-                        for excel, protected in ((False, True), (False, False), (True, False)):
+                        for excel, protected in ((False, True), (True, False)):
                             download.reset_mock()
                             next(button for button in app.button if button.label == "Preview and prepare files").click().run(timeout=20)
                             self.assertEqual(len(app.exception), 0)
@@ -284,15 +289,12 @@ class ExcelExportTests(unittest.TestCase):
                                         self.assertEqual(row["Product"], "CARDS")
                                         if file.key == result["files"][0].key:
                                             self.assertEqual(single.args[1](), expected_data)
-                            if not excel and protected:
-                                app.checkbox(key="campaign_csv_protect_ids").set_value(False).run(timeout=20)
-                                self.assertNotIn("result", app.session_state)
-                            elif not excel:
+                            if not excel:
                                 app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
                                 self.assertNotIn("result", app.session_state)
                         app.button(key="clear_all_files").click().run(timeout=20)
                         self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
-                        self.assertFalse(app.checkbox(key="campaign_csv_protect_ids").value)
+                        self.assertFalse(any(widget.key == "campaign_csv_protect_ids" for widget in app.checkbox))
 
     def test_previous_excel_default_migrates_to_csv_once_and_retains_later_explicit_choices(self):
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
@@ -303,13 +305,13 @@ class ExcelExportTests(unittest.TestCase):
         app.selectbox(key="campaign_output_format").set_value("Excel (.xlsx)").run(timeout=20)
         self.assertEqual(app.selectbox(key="campaign_output_format").value, "Excel (.xlsx)")
 
-    def test_folder_delivery_does_not_convert_csv_identifiers_or_build_excel_in_csv_mode(self):
+    def test_folder_delivery_protects_csv_identifiers_without_building_excel(self):
         bundle = build_sheet_exports(create_default_csv_template(), [{
             "primary_key": "00001234567890123456", "cardnumber": "5156041234567897", "email": "one@example.com",
         }], "", 1, base_name="RECO", label="RECO", template_extension=".csv")
         with patch("exports.build_export_excel") as excel_builder:
             self.assertEqual(campaign_output_files(bundle.files, excel=False),
-                             [(file.filename, file.data) for file in bundle.files])
+                             [(file.filename, build_export_csv(file)) for file in bundle.files])
             excel_builder.assert_not_called()
 
 

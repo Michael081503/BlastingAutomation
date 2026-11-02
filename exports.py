@@ -55,7 +55,8 @@ EXCEL_EXPORT_VERSION = 2
 TYPED_EXCEL_EXPORT_VERSION = 1
 CAMPAIGN_OUTPUT_FORMAT_VERSION = 2
 CSV_CAMPAIGN_DEFAULT_VERSION = 1
-EXCEL_SAFE_CSV_VERSION = 1
+EXCEL_SAFE_CSV_VERSION = 2
+REQUIRED_CSV_PROTECTION_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
 RECO_DOCLASS_VERSION = 1
@@ -122,7 +123,7 @@ def build_excel_zip(files: list[ExportFile]) -> bytes:
     return output.getvalue()
 
 
-def build_export_csv(file: ExportFile, *, protect_identifiers: bool = False) -> bytes:
+def build_export_csv(file: ExportFile, *, protect_identifiers: bool = True) -> bytes:
     """Keep CSV identifiers as text in Excel, including subsequent CSV saves.
 
     A leading tab survives Excel's CSV save/reopen cycle, unlike a text formula.
@@ -147,7 +148,7 @@ def build_export_csv(file: ExportFile, *, protect_identifiers: bool = False) -> 
     return output.getvalue().encode(encoding)
 
 
-def build_csv_zip(files: list[ExportFile], *, protect_identifiers: bool = False) -> bytes:
+def build_csv_zip(files: list[ExportFile], *, protect_identifiers: bool = True) -> bytes:
     output = BytesIO()
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         for file in files:
@@ -155,7 +156,7 @@ def build_csv_zip(files: list[ExportFile], *, protect_identifiers: bool = False)
     return output.getvalue()
 
 
-def campaign_output_files(files: list[ExportFile], *, excel: bool, protect_csv_identifiers: bool = False) -> list[tuple[str, bytes]]:
+def campaign_output_files(files: list[ExportFile], *, excel: bool, protect_csv_identifiers: bool = True) -> list[tuple[str, bytes]]:
     """Use the chosen format consistently for folder saves and downloads."""
     return [(Path(file.filename).with_suffix(".xlsx").name, build_export_excel(file)) if excel
             else (file.filename, build_export_csv(file, protect_identifiers=protect_csv_identifiers)) for file in files]

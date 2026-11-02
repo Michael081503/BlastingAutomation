@@ -601,11 +601,14 @@ class StartupTests(unittest.TestCase):
             del exports.CAMPAIGN_OUTPUT_FORMAT_VERSION
             del exports.CSV_CAMPAIGN_DEFAULT_VERSION
             del exports.EXCEL_SAFE_CSV_VERSION
+            del exports.REQUIRED_CSV_PROTECTION_VERSION
             del exports.campaign_output_files
             from app_startup import refresh_application_modules
             assert 'exports' in refresh_application_modules()
             import app
             assert app.campaign_output_files is exports.campaign_output_files
+            assert exports.EXCEL_SAFE_CSV_VERSION == 2
+            assert exports.REQUIRED_CSV_PROTECTION_VERSION == 1
             assert refresh_application_modules() == set()
         """)
 

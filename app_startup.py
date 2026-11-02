@@ -65,6 +65,7 @@ def refresh_application_modules() -> set[str]:
             "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",
             "CAMPAIGN_OUTPUT_FORMAT_VERSION", "CSV_CAMPAIGN_DEFAULT_VERSION", "campaign_output_files",
             "EXCEL_SAFE_CSV_VERSION", "build_export_csv", "build_csv_zip",
+            "REQUIRED_CSV_PROTECTION_VERSION",
             "AGENT_ASSIGNMENT_EXPORT_VERSION",
             "RECO_ONLY_AGENTS_VERSION",
             "RECO_DOCLASS_VERSION", "reco_doclass", "ExportFile.__dataclass_fields__.doclass",

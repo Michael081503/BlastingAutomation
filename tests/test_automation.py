@@ -1142,7 +1142,8 @@ class AppTests(unittest.TestCase):
         ), patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
-            app.checkbox(key="campaign_csv_protect_ids").set_value(False).run(timeout=20)
+            app.session_state["campaign_csv_protect_ids"] = False
+            app.run(timeout=20)
             app.button[0].click().run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
@@ -1167,7 +1168,7 @@ class AppTests(unittest.TestCase):
             saved = Path(app.session_state["result"]["saved_folder"])
             self.assertEqual({path.name for path in saved.iterdir()}, set(expected))
             for file in files:
-                self.assertEqual((saved / file.filename).read_bytes(), file.data)
+                self.assertEqual((saved / file.filename).read_bytes(), build_export_csv(file))
             app.run(timeout=20)
             self.assertEqual(app.session_state["result"]["saved_folder"], str(saved))
             GEO_OUTPUT_FILENAMES["mindanao_qualified_cards"] = "Updated Mindanao"
@@ -1587,7 +1588,8 @@ class AppTests(unittest.TestCase):
             with patch("streamlit.file_uploader", side_effect=uploader):
                 app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
                 app.selectbox(key="campaign_output_format").set_value("CSV (.csv)").run(timeout=20)
-                app.checkbox(key="campaign_csv_protect_ids").set_value(False).run(timeout=20)
+                app.session_state["campaign_csv_protect_ids"] = False
+                app.run(timeout=20)
                 app.radio[0].set_value("All accounts in one group").run(timeout=20)
                 app.button[0].click().run(timeout=20)
                 app.text_input(key="output_folder").set_value(directory).run(timeout=20)
@@ -1599,7 +1601,7 @@ class AppTests(unittest.TestCase):
                 self.assertEqual({path.name for path in saved.iterdir()}, {file.filename for file in result["files"]})
                 self.assertEqual(len(result["files"]), 2)
                 for file in result["files"]:
-                    self.assertEqual((saved / file.filename).read_bytes(), file.data)
+                    self.assertEqual((saved / file.filename).read_bytes(), build_export_csv(file))
 
 
 if __name__ == "__main__":

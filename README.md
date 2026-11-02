@@ -135,7 +135,7 @@ On Community Cloud, **Save files to folder** writes to the cloud server, so it c
 ## Use
 
 1. Upload your source `.xlsx` workbook.
-2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template with all 16 campaign headers. **Output files** defaults to **CSV (.csv)** for both GEO and RECO. Individual downloads, ZIP contents and folder saves all follow this setting. **Keep account digits in Excel** is on by default: nonempty `primary_key`, `cardnumber`, `indexoneuid` and `phone` fields receive a leading tab so Excel treats them as text through CSV open/save cycles. Amounts and other columns have no added prefix. Excel copies remain optional.
+2. Upload your template (`.xlsx` or `.csv`), or use the built-in blank CSV template with all 16 campaign headers. **Output files** defaults to **CSV (.csv)** for both GEO and RECO. Individual downloads, ZIP contents and folder saves all follow this setting. Account-number protection is automatic and always on: nonempty `primary_key`, `cardnumber`, `indexoneuid` and `phone` fields receive a leading tab so Excel treats them as text through CSV open/save cycles. Amounts and other columns have no added prefix. Excel copies remain optional.
    **CSV file type** defaults to **CSV (Comma delimited)**, using Windows-1252 without a UTF-8 marker. Choose **CSV UTF-8 (Comma delimited)** when your data needs characters beyond that format. Both choices use commas and `.csv` filenames.
 3. Choose the source sheet. **NEGATIVE** is selected automatically.
 4. Choose the destination sheet if your template has multiple sheets.
@@ -245,15 +245,15 @@ Before email validation, the sample dated October 26, 2026 had qualified group c
 
 ## GEO Area separation
 
-**CSV is the default for GEO and RECO. Keep account digits in Excel is enabled by default** for individual downloads, **Download all CSV files (ZIP)** and **Save files to folder**. The protection adds one leading tab inside nonempty `primary_key`, `cardnumber`, `indexoneuid` and `phone` fields. It preserves the supplied digits and leading zeros without formulas or apostrophes, including repeated CSV saves in Excel. Other fields, numeric amounts, headers, row order and filenames are unchanged. AUTOSTAT strips the surrounding whitespace and uses Financing/Card No. for its account number as before. Blank identifiers stay blank. Original source records and the internal plain CSV bytes are retained.
+**CSV is the default for GEO and RECO. Account-number protection is always on** for individual downloads, **Download all CSV files (ZIP)** and **Save files to folder**, in both grouped and all-accounts modes. The protection adds one leading tab inside nonempty `primary_key`, `cardnumber`, `indexoneuid` and `phone` fields. It preserves the supplied digits and leading zeros without formulas or apostrophes through normal Excel open/save/close cycles. Other fields, numeric amounts, headers, row order and filenames are unchanged. AUTOSTAT strips the surrounding whitespace and uses Financing/Card No. for its account number as before. Blank identifiers stay blank. Old sessions that disabled protection can no longer generate unprotected downloads, and older prepared results are cleared. Original source records and the internal plain CSV bytes are retained.
 
-The tab is part of the CSV field value. For a strict upload system that does not accept or trim it, turn **Keep account digits in Excel** off to download unprefixed CSV fields. This changes individual downloads, ZIPs and folder saves together and clears previous results. Plain CSV can be rounded by Excel even when its numeric-looking fields are enclosed in CSV quotes. Import identifier columns as Text before loading a plain CSV, or disable the relevant automatic conversions in supported Excel versions. See [Microsoft's instructions for retaining leading zeros and large numbers](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers). No export can recover account digits already missing from the source.
+The tab is part of the CSV field value and must be kept when editing. CSV cannot lock cell types: manually removing the prefix, converting account columns to numbers or using an importer that discards the prefix can allow leading zeros or long-number precision to be lost. See [Microsoft's instructions for retaining leading zeros and large numbers](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers). No export can recover account digits already missing from the source.
 
 Optional **Excel (.xlsx)** copies keep only identifier/phone columns as Text. Numeric balances and levels retain their source number types, dates remain Excel dates, and names, email addresses, labels and headers use General formatting. Extra template columns stay blank. The individual button downloads the selected file; ZIPs and folder saves use the same format choice.
 
 GEO, RECO, B2 and B4 automatically sort their output files by **OB, highest to lowest**. GEO and RECO apply this to every Email and Viber file, including review groups and all-accounts mode; B2 and B4 apply it independently to CARDS and BEL. Equal amounts keep source order; blank or invalid amounts go last. Previews, CSV and Excel downloads, ZIPs, and folder saves all use the same order. Source values are preserved.
 
-Both GEO and RECO show filenames matching the selected format. Changing format or account protection clears previous results; prepare fresh downloads. An older session that inherited the previous Excel default switches back to CSV once, after which explicit format choices are retained. **Clear all files** keeps the chosen format and account-protection setting.
+Both GEO and RECO show filenames matching the selected format. Changing format clears previous results; prepare fresh downloads. An older session that inherited the previous Excel default switches back to CSV once, after which explicit format choices are retained. **Clear all files** keeps the chosen format; CSV account protection remains automatic.
 
 For GEO workbooks, the app detects the **Area** source column and defaults to **Separate Area and Christmas Amnesty groups**. `Mindanao` and `Region 3` / `R3` form separate groups, ignoring case, spacing, and punctuation. Each Area uses these five main groups, combining **all levels** within each product:
 
@@ -331,8 +331,8 @@ The built-in template uses your original 16-column layout: `email`, `primary_key
 
 - Source order is retained within each output group. Hidden and filtered source rows are included.
 - Rows with no values in any mapped field are skipped. Accounts with neither a valid email nor a phone are removed and counted separately. Invalid emails are removed and counted. Duplicates are retained. Accounts with only a valid email or only a phone go to that channel; accounts with both go to both channels.
-- GEO/RECO campaign Email/Viber files default to CSV, including individual downloads, ZIP contents and folder saves. Account protection is enabled by default and affects only identifiers and phones. Optional Excel copies remain available. The blank template download remains CSV. AUTOSTAT has its own Excel/CSV selection.
-- IDs, account numbers, card numbers, and phones retain existing leading zeros and simple Excel zero masks such as `000000`. Protected CSV adds a leading tab to these fields; plain CSV is available for strict upload systems by disabling protection. Digits already lost in the source cannot be recovered. Plain CSV has no text column types: import identifiers as Text before loading it in Excel.
+- GEO/RECO campaign Email/Viber files default to CSV, including individual downloads, ZIP contents and folder saves. Account protection is always on and affects only identifiers and phones. Optional Excel copies remain available. The blank template download remains CSV. AUTOSTAT has its own Excel/CSV selection.
+- IDs, account numbers, card numbers, and phones retain existing leading zeros and simple Excel zero masks such as `000000`. GEO and RECO CSV exports always add a protective leading tab to these fields. Keep the prefix and leave account columns as text during editing. Digits already lost in the source cannot be recovered.
 - Excel dates and numeric balances retain their source types. CSV dates use ISO text and balances use their source values without currency formatting. **CSV (Comma delimited)** uses Windows-1252 without a BOM and Windows line endings. **CSV UTF-8 (Comma delimited)** uses UTF-8 with BOM. Characters unsupported by the standard format produce an actionable error; they are never silently replaced or dropped.
 - Excel templates supply the selected sheet's header labels and column order from the chosen header row. Their CSV outputs use commas. Content above the header, stale template rows, styles, and other worksheets are omitted. Extra template columns are blank. The original template is never changed.
 - CSV templates supply their first-row headers and column order. Comma, semicolon, tab, and pipe delimiters are accepted as inputs; outputs always use commas. Extra template columns are blank.
@@ -347,5 +347,12 @@ python -m unittest discover -s tests -v
 ```
 
 The tests use generated sample data, including CSV output from Excel and CSV templates, reordered headers, leading-zero identifiers, multiple sheets, stale template rows, Excel formulas/errors, all qualified/blank group boundaries, email format validation and removal, channel routing, retained contact headers, header-only channels, contact exclusions, folder saves, ZIP contents, and the Streamlit upload-to-download flow.
+
+On Windows with Microsoft Excel installed, this optional integration test runs a hidden Excel instance against generated sample files. It checks identifiers on every reopen through 20 open/save/close cycles for GEO and RECO Email/Viber files in both CSV encodings, then verifies the final CSV contents. The regular test suite skips it unless explicitly enabled.
+
+```powershell
+$env:RUN_EXCEL_CSV_TESTS = "1"
+python -m unittest discover -s tests -p test_excel_csv_roundtrip.py -v
+```
 
 The app uses Streamlit's [file uploader](https://docs.streamlit.io/develop/api-reference/widgets/st.file_uploader) and [download button](https://docs.streamlit.io/develop/api-reference/widgets/st.download_button).

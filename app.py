@@ -134,12 +134,7 @@ def render_workbook_page() -> None:
             "Output files", ("CSV (.csv)", "Excel (.xlsx)"), key="campaign_output_format",
             help="CSV is the default for GEO and RECO uploads. Excel copies remain optional.",
         )
-        csv_protect_ids = st.checkbox(
-            "Keep account digits in Excel", value=True, key="campaign_csv_protect_ids",
-            disabled=campaign_format == "Excel (.xlsx)",
-            help="Adds a leading tab inside account, reference and phone fields so Excel keeps all digits through CSV saves. "
-            "Amounts stay numeric. Turn off only if your upload system requires fields without that prefix.",
-        )
+        st.caption("Account numbers are automatically protected in every GEO and RECO CSV export.")
         csv_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
             help="Use CSV UTF-8 for names or other text that the standard CSV format cannot represent.",
@@ -397,7 +392,7 @@ def render_workbook_page() -> None:
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
         "config-filenames-and-email-summary-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
-        CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION, csv_protect_ids,
+        CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
         (RECO_DOCLASS_VERSION, tuple(RECO_DOCLASS_BY_FILENAME.items())) if not geo else None,
         tuple(source_columns.items()) if source_columns is not None else None,
@@ -443,7 +438,7 @@ def render_workbook_page() -> None:
                     "grouped": grouped,
                     "geo": geo,
                     "excel_output": excel_output,
-                    "protect_csv_identifiers": csv_protect_ids and not excel_output,
+                    "protect_csv_identifiers": not excel_output,
                     "count": len(mapped.records),
                     "blank_rows": mapped.blank_rows_skipped,
                     "no_contact_rows": mapped.no_contact_rows_skipped,
@@ -536,20 +531,19 @@ def render_workbook_page() -> None:
         key=f"excel_download_{file.key}" if excel_output else f"download_{file.key}",
         on_click="ignore", type="primary",
         help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
-        "CSV identifiers include a leading tab to retain all digits in Excel." if result["protect_csv_identifiers"] else
-        "Plain CSV for upload systems that require unprefixed identifiers. Import identifier columns as Text in Excel.",
+        "CSV identifiers include a leading tab to retain all digits in Excel.",
     )
     if not excel_output:
         with st.expander("CSV account-number protection"):
             st.write(
-                "Keep account digits in Excel is on by default. CSV fields for primary_key, cardnumber, indexoneuid "
+                "Account-number protection is always on for GEO and RECO CSV exports. Fields for primary_key, cardnumber, indexoneuid "
                 "and phone include a leading tab that keeps them as text when opened and saved in Excel. "
                 "The digits are unchanged; amounts and other columns have no added prefix. AUTOSTAT removes the "
                 "surrounding whitespace when reading account numbers."
             )
             st.write(
-                "For an upload system that requires fields without the tab prefix, turn this setting off. "
-                "When editing plain CSV, import the identifier columns as Text before loading; ordinary Excel opening can round them. "
+                "Keep account columns as text when editing. Converting them to numbers or removing their protective prefix "
+                "can let Excel remove leading zeros or round long numbers. Digits already missing from the source cannot be restored. "
                 "[Microsoft's instructions](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers)."
             )
     show_preview(file.preview, file.count, file.headers)
