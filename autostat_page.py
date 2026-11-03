@@ -33,6 +33,7 @@ B2_UPLOAD_VERSION = 1
 COMPACT_SUMMARY_VERSION = 1
 GROUPED_SOURCE_SETTINGS_VERSION = 1
 BROWSER_DOWNLOADS_ONLY_VERSION = 1
+AUTOSTAT_VISIBLE_SETTINGS_VERSION = 1
 
 
 def render_autostat() -> None:
@@ -59,7 +60,9 @@ def _render_autostat_uploads(
     result_key = state_prefix + "result"
     bucket_label = f"B{bucket}"
     workbook_name = f"AUTOSTAT_{bucket_label}" if b2 else "AUTOSTAT"
-    options = st.expander(f"{bucket_label} AutoStat options") if compact else None
+    options = st.container(border=True) if compact else None
+    if compact:
+        options.caption(f"{bucket_label} AutoStat options")
     if b2 and not compact:
         st.subheader(f"{bucket_label} activity logs")
         st.caption(
@@ -82,7 +85,9 @@ def _render_autostat_uploads(
     )
     fixed_timestamp = None
     default_collector = ""
-    with options if compact else st.expander("Log settings"):
+    with options if compact else st.container(border=True):
+        if not compact:
+            st.caption("Log settings")
         st.session_state[f"{state_prefix}remark_by"] = AUTOSTAT_REMARK_BY
         st.text_input("Remarks By" if b2 else "Remark By", key=f"{state_prefix}remark_by", disabled=True)
         remark_by = AUTOSTAT_REMARK_BY

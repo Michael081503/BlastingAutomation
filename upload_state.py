@@ -8,6 +8,7 @@ import streamlit as st
 
 
 CLEAR_UPLOADS_VERSION = 1
+WORKSPACE_ACTIONS_VERSION = 1
 B4_UPLOADS_VERSION = 1
 B4_AUTOSTAT_UPLOADS_VERSION = 1
 CAMPAIGN_FORMAT_SETTINGS_VERSION = 1
@@ -74,8 +75,7 @@ def render_clear_all_files() -> None:
             settings[key] = st.session_state[key]
         else:
             st.session_state[key] = settings[key]
-    st.sidebar.button(
+    st.button(
         "Clear all files", key="clear_all_files", on_click=clear_all_files,
         help="Clears uploaded files and prepared downloads on every page. Your settings are kept.",
-        icon=":material/clear_all:",
     )

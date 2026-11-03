@@ -51,8 +51,12 @@ class AutomaticPreparationTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state["result"]["count"], 2)
             self.assertFalse(any(button.label == "Preview and prepare files" for button in app.button))
-            for label in ("Optional settings", "AUTOSTAT logs (optional)", "Preview and other downloads"):
+            for label in ("Optional settings", "Preview and other downloads"):
                 self.assertFalse(next(item for item in app.expander if item.label == label).proto.expanded)
+            self.assertFalse(any(item.label in ("AUTOSTAT logs (optional)", "AutoStat log settings")
+                                 for item in app.expander))
+            self.assertTrue({"geo_autostat_email_excel", "geo_autostat_viber_excel"} <=
+                            {call.kwargs.get("key") for call in download.call_args_list})
             zip_call = next(call for call in download.call_args_list if call.kwargs.get("key") == "csv_zip")
             self.assertEqual(zip_call.args[0], "Download RECO CSV ZIP (.csv files)")
             with ZipFile(BytesIO(zip_call.args[1]())) as archive:

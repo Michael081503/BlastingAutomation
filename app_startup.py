@@ -23,7 +23,7 @@ def refresh_application_modules() -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
-        ("upload_state", ("CLEAR_UPLOADS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
+        ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "HALLOWEEN_THEME_VERSION", "HALLOWEEN_GHOST_VERSION", "HALLOWEEN_SPIDER_VERSION",
             "render_clear_all_files",
@@ -93,6 +93,7 @@ def refresh_application_modules() -> set[str]:
             "GEO_AUTOSTAT_VERSION", "GEO_FINANCING_ACCOUNT_VERSION", "mapped_contact_source", "render_geo_autostat",
             "GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION",
             "GEO_AUTOSTAT_SHARED_DOWNLOADS_VERSION", "render_autostat_downloads",
+            "AUTOSTAT_VISIBLE_DOWNLOADS_VERSION",
         ), ("autostat", "autostat_downloads", "automation", "email_validation", "folder_output")),
         ("b2_matching", (
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
@@ -115,6 +116,7 @@ def refresh_application_modules() -> set[str]:
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
             "B2_UPLOAD_VERSION", "DEDICATED_BUCKET_UPLOADS_VERSION", "upload_widget_key",
             "AUTOSTAT_AUTOMATIC_UPLOADS_VERSION", "BROWSER_DOWNLOADS_ONLY_VERSION",
+            "AUTOSTAT_VISIBLE_SETTINGS_VERSION",
         ), ("autostat", "autostat_downloads", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
     )
     refreshed = set()

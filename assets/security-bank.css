@@ -9,6 +9,7 @@
     --sbc-surface: #191420;
     --sbc-halloween-scene: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR__");
     --sbc-web-art: url("data:image/svg+xml;base64,__HALLOWEEN_WEBS__");
+    --sbc-bat-icon: url("data:image/svg+xml;base64,__BATMAN_ICON__");
 }
 
 [data-testid="stAppViewContainer"] {
@@ -26,21 +27,26 @@
 }
 
 [data-testid="stMain"] {
+    min-height: 0;
+    overflow-y: auto;
     background: var(--sbc-halloween-scene) left 16px bottom 24px / clamp(0px, calc((100% - 1280px) / 2 - 32px), 420px) auto no-repeat;
 }
 
 [data-testid="stMainBlockContainer"] {
+    flex-shrink: 0;
+    height: auto;
+    overflow: visible;
     max-width: 1280px;
     padding-top: 5.25rem;
     padding-bottom: 3rem;
 }
 
-.sbc-brand-header {
+[data-testid="stHorizontalBlock"].st-key-sbc_workspace_header {
     position: relative;
     overflow: hidden;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
     gap: 1.5rem;
     padding: 0.7rem 1.6rem;
     margin-bottom: 0.75rem;
@@ -50,12 +56,61 @@
     box-shadow: 0 10px 35px rgb(0 0 0 / 20%);
 }
 
-.sbc-brand-header::after {
+.st-key-sbc_workspace_header::after {
     content: "";
     position: absolute;
     inset: auto 0 0;
     height: 3px;
     background: linear-gradient(90deg, var(--sbc-orange), #a575cf 65%, #493047);
+    pointer-events: none;
+}
+
+.sbc-brand-header {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    min-width: 0;
+}
+
+.st-key-sbc_workspace_actions {
+    align-items: flex-end;
+}
+
+.st-key-clear_all_files [data-testid="stBaseButton-secondary"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 44px;
+    padding: 0.55rem 0.85rem;
+    color: #f6d58a;
+    background: #2b2530;
+    border: 1px solid #71603e;
+    border-radius: 10px;
+    white-space: nowrap;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+.st-key-clear_all_files [data-testid="stBaseButton-secondary"]::before {
+    content: "";
+    flex: 0 0 1.7rem;
+    width: 1.7rem;
+    height: 1.1rem;
+    background: currentColor;
+    -webkit-mask: var(--sbc-bat-icon) center / contain no-repeat;
+    mask: var(--sbc-bat-icon) center / contain no-repeat;
+}
+
+.st-key-clear_all_files [data-testid="stBaseButton-secondary"]:hover {
+    color: #ffe3a3;
+    background: #3a2f34;
+    border-color: #d6a754;
+}
+
+.st-key-clear_all_files [data-testid="stBaseButton-secondary"]:focus-visible {
+    outline: 2px solid var(--sbc-gold);
+    outline-offset: 3px;
 }
 
 .sbc-bank-mark {
@@ -299,37 +354,31 @@ h1 {
 }
 
 @media (max-width: 1024px) {
+    [data-testid="stHorizontalBlock"].st-key-sbc_workspace_header {
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+    }
+
     .sbc-brand-header {
         display: grid;
         grid-template-columns: minmax(0, 1fr) 92px;
         gap: 0.75rem 1rem;
-        padding: 1rem 1.25rem;
     }
 
     .sbc-bank-mark {
         grid-column: 1;
         grid-row: 1;
         max-width: 230px;
-        align-self: end;
+        align-self: center;
     }
 
     .sbc-header-mascot {
         grid-column: 2;
-        grid-row: 1 / span 2;
+        grid-row: 1;
         height: 138px;
         margin: -1rem 0;
     }
 
-    .sbc-workspace-meta {
-        grid-column: 1;
-        grid-row: 2;
-        align-items: flex-start;
-        align-self: start;
-    }
-
-    .sbc-workspace-name {
-        text-align: left;
-    }
 }
 
 @media (max-width: 640px) {
@@ -337,11 +386,36 @@ h1 {
         padding-top: 4.75rem;
     }
 
+    [data-testid="stHorizontalBlock"].st-key-sbc_workspace_header {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+        padding: 1rem;
+        border-radius: 14px;
+    }
+
     .sbc-brand-header {
         grid-template-columns: minmax(0, 1fr) 76px;
         gap: 0.6rem;
-        padding: 1rem;
-        border-radius: 14px;
+    }
+
+    .st-key-sbc_workspace_header > [data-testid="stLayoutWrapper"] {
+        width: 100%;
+    }
+
+    .st-key-sbc_workspace_actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        width: 100%;
+    }
+
+    .st-key-sbc_workspace_actions > [data-testid="stElementContainer"] {
+        width: auto;
+    }
+
+    .st-key-clear_all_files [data-testid="stBaseButton-secondary"] {
+        gap: 0.4rem;
+        padding: 0.5rem 0.65rem;
     }
 
     .sbc-bank-mark {
@@ -355,16 +429,19 @@ h1 {
     .sbc-workspace-meta {
         max-width: none;
         gap: 0.4rem;
+        align-items: flex-start;
     }
 
     .sbc-workspace-name {
         font-size: 0.62rem;
         letter-spacing: 0.05em;
+        text-align: left;
     }
 
     .sbc-season-tag {
         padding: 0.25rem 0.4rem;
         font-size: 0.6rem;
+        white-space: normal;
     }
 
     [data-testid="stMetric"] {
@@ -377,7 +454,8 @@ h1 {
         --sbc-halloween-scene: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR_STILL__");
     }
 
-    [data-testid="stSidebarNav"] a {
+    [data-testid="stSidebarNav"] a,
+    .st-key-clear_all_files [data-testid="stBaseButton-secondary"] {
         transition: none;
     }
 

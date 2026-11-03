@@ -21,6 +21,7 @@ GEO_AUTOSTAT_VERSION = 5
 GEO_FINANCING_ACCOUNT_VERSION = 1
 GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION = 1
 GEO_AUTOSTAT_SHARED_DOWNLOADS_VERSION = 1
+AUTOSTAT_VISIBLE_DOWNLOADS_VERSION = 1
 
 
 def mapped_contact_source(
@@ -60,7 +61,9 @@ def render_geo_autostat(
         st.session_state.pop("geo_autostat_result", None)
         st.caption("AUTOSTAT excludes SBC INSURANCE, B2 and B4 files and worksheets.")
         return
-    with st.expander("AutoStat log settings"):
+    downloads = st.container(key="geo_autostat_downloads")
+    with st.container(border=True, key="geo_autostat_settings"):
+        st.caption("AutoStat log settings")
         st.session_state["geo_autostat_remark_by"] = AUTOSTAT_REMARK_BY
         st.text_input("Remark By", key="geo_autostat_remark_by", disabled=True)
         remark_by = AUTOSTAT_REMARK_BY
@@ -117,7 +120,8 @@ def render_geo_autostat(
             "No valid mobile numbers with account numbers were found for Viber. Check the selected phone column. "
             "Mobile numbers must normalize to 10 digits starting with 9."
         )
-    render_autostat_downloads(
-        bundle, state_prefix="geo_autostat_",
-        channel_keys=("geo_autostat_email_excel", "geo_autostat_viber_excel"),
-    )
+    with downloads:
+        render_autostat_downloads(
+            bundle, state_prefix="geo_autostat_",
+            channel_keys=("geo_autostat_email_excel", "geo_autostat_viber_excel"),
+        )

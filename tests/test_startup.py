@@ -610,7 +610,8 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             assert 'exports' in refresh_application_modules()
             import app
-            assert app.campaign_output_files is exports.campaign_output_files
+            assert app.build_export_csv is exports.build_export_csv
+            assert app.build_csv_zip is exports.build_csv_zip
             assert exports.EXCEL_SAFE_CSV_VERSION == 2
             assert exports.REQUIRED_CSV_PROTECTION_VERSION == 1
             assert refresh_application_modules() == set()

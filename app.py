@@ -140,6 +140,7 @@ def render_workbook_page() -> None:
 
     source_file = st.file_uploader("Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
     download_area = st.container()
+    autostat_panel = st.container(key="geo_autostat_section")
     settings = st.expander("Optional settings", expanded=False)
     if source_file is not None:
         source_bytes = source_file.getvalue()
@@ -444,7 +445,7 @@ def render_workbook_page() -> None:
                 mime="application/zip", type="primary", on_click="ignore", key="excel_zip" if excel_output else "csv_zip",
             )
 
-    with st.expander("AUTOSTAT logs (optional)", expanded=False):
+    with autostat_panel:
         render_geo_autostat(
             source_file.name, source_bytes, source_sheet, source_header, len(source_info.headers),
             source_columns if source_columns is not None else defaults, encoding=encoding,
