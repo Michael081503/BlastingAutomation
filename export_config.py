@@ -102,6 +102,12 @@ COLLECTION_AGENTS = (
     ("Kyarill Palima", "KPALIMA"),
 )
 
+# GEO alternates accounts in this fixed order for every output group, every day.
+GEO_AGENTS = (
+    ("Almera Ranceli", "AMRANCELI"),
+    ("Kyarill Palima", "KPALIMA"),
+)
+
 # RECO-only daily cycle. The first agent moves to the end every calendar day.
 GEO_RECO_AGENTS = (
     ("Andrea Mamaril", "APMAMARIL"),

@@ -11,14 +11,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from uuid import uuid4
+from zipfile import ZipFile
 
 from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 
 from agent_cycle import AgentCycle, assign_agents_to_accounts, cycle_agents, default_cycle, load_cycle, reorder_cycle, save_cycle
 from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
-from export_config import GEO_RECO_AGENTS
-from exports import build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
+from export_config import GEO_AGENTS, GEO_RECO_AGENTS
+from exports import build_excel_zip, build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -149,14 +150,48 @@ class AgentCycleTests(unittest.TestCase):
         source = records()
         bundle = build_geo_exports(create_default_csv_template(), source, "", 1, ".csv", agents=GEO_RECO_AGENTS)
         for file in bundle.files:
-            self.assertTrue(all(row["Monthly"] == row["Terms"] == "" for row in rows(file)))
+            self.assertTrue(all((row["Monthly"], row["Terms"]) in GEO_AGENTS for row in rows(file)))
+            self.assertEqual((file.records[0]["Monthly"], file.records[0]["Terms"]), GEO_AGENTS[0])
             workbook = load_workbook(BytesIO(build_export_excel(file)))
             headers = [cell.value for cell in workbook.active[1]]
             for row in list(workbook.active.values)[1:]:
-                self.assertIsNone(row[headers.index("Monthly")])
-                self.assertIsNone(row[headers.index("Terms")])
+                self.assertIn((row[headers.index("Monthly")], row[headers.index("Terms")]), GEO_AGENTS)
             workbook.close()
         self.assertTrue(all("Monthly" not in row and "Terms" not in row for row in source))
+
+    def test_geo_fixed_agents_balance_accounts_with_custom_headers_and_both_zip_formats(self):
+        source = records()
+        source[0]["AREA"] = "Region 3"
+        source.append(dict(source[3]))
+        source.append({**source[0], "primary_key": "NO-CONTACT", "email": None, "phone": None, "OB": 999})
+        original = [dict(row) for row in source]
+        expected_codes = {1: "AMRANCELI", 2: "KPALIMA", 3: "AMRANCELI", 4: "KPALIMA", 5: "AMRANCELI",
+                          6: "KPALIMA", 7: "AMRANCELI", 8: "KPALIMA", 9: "AMRANCELI", 10: "KPALIMA", 11: "AMRANCELI"}
+        names = {code: name for name, code in GEO_AGENTS}
+        headers = [header for header in reversed(DEFAULT_TEMPLATE_HEADERS) if header not in ("Monthly", "Terms")]
+        template = (",".join(headers) + "\n").encode()
+        bundle = build_geo_exports(template, source, "", 1, ".csv", agents=GEO_RECO_AGENTS)
+        assignments = {}
+        with ZipFile(BytesIO(bundle.zip_data)) as csv_zip, ZipFile(BytesIO(build_excel_zip(bundle.files))) as excel_zip:
+            for file in bundle.files:
+                self.assertEqual(file.headers, [*headers, "Monthly", "Terms"])
+                exported = rows(file)
+                for row in exported:
+                    code = expected_codes[int(row["primary_key"])]
+                    self.assertEqual((row["Monthly"], row["Terms"]), (names[code], code))
+                    self.assertEqual(assignments.setdefault(row["primary_key"], code), code)
+                self.assertEqual(csv_zip.read(file.filename), file.data)
+                self.assertEqual([(row["Monthly"], row["Terms"]) for row in file.preview],
+                                 [(row["Monthly"], row["Terms"]) for row in exported])
+                workbook = load_workbook(BytesIO(excel_zip.read(Path(file.filename).with_suffix(".xlsx").name)))
+                saved_headers = [cell.value for cell in workbook.active[1]]
+                for row, expected in zip(list(workbook.active.values)[1:], exported):
+                    self.assertEqual((row[saved_headers.index("Monthly")], row[saved_headers.index("Terms")]),
+                                     (expected["Monthly"], expected["Terms"]))
+                workbook.close()
+        self.assertEqual(len(assignments), 11)
+        self.assertEqual(sum(bundle.counts.values()), 12)
+        self.assertEqual(source, original)
 
 
 class Upload(BytesIO):
@@ -341,12 +376,61 @@ class AgentCyclePageTests(unittest.TestCase):
                     result = app.session_state["result"]
                     self.assertTrue(result["geo"])
                     for file in result["files"]:
-                        self.assertTrue(all(row["Monthly"] == row["Terms"] == "" for row in rows(file)))
+                        self.assertTrue(all((row["Monthly"], row["Terms"]) in GEO_AGENTS for row in rows(file)))
+                        self.assertEqual((file.records[0]["Monthly"], file.records[0]["Terms"]), GEO_AGENTS[0])
                     signature = result["signature"]
+                    zip_data = result["zip_data"]
                     save_cycle(AgentCycle(TODAY, ("ROSVINOYA", "JBATALLER", "APMAMARIL")))
                     with patch("agent_cycle_page.manila_today", return_value=TODAY + timedelta(days=1)):
                         app.run(timeout=20)
                         self.assertEqual(app.session_state["result"]["signature"], signature)
+                        self.assertEqual(app.session_state["result"]["zip_data"], zip_data)
+
+    def test_geo_fixed_agents_replace_stale_manual_settings_and_downloads(self):
+        upload = Upload(geo=True)
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
+            app = AppTest.from_file(str(ROOT / "app.py"))
+            app.session_state["geo_agent_name"] = "Old Manual Agent"
+            app.session_state["geo_agent_code"] = "OLDAGENT"
+            app.session_state["result"] = {"signature": ("old-manual-assignment",)}
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertFalse(any(widget.key in ("geo_agent_name", "geo_agent_code") for widget in app.text_input))
+            self.assertEqual(list(app.table[0].value["Monthly"]), [name for name, _ in GEO_AGENTS])
+            self.assertEqual(list(app.table[0].value["Terms"]), [code for _, code in GEO_AGENTS])
+            for mode in ("Separate Area and Christmas Amnesty groups", "All accounts in one group"):
+                with self.subTest(mode=mode):
+                    app.radio[0].set_value(mode).run(timeout=20)
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.error), 0)
+                    result = app.session_state["result"]
+                    self.assertTrue(result["geo"])
+                    accounts = {}
+                    for file in result["files"]:
+                        for row in rows(file):
+                            pair = row["Monthly"], row["Terms"]
+                            self.assertIn(pair, GEO_AGENTS)
+                            key = file.group_key, row["primary_key"]
+                            self.assertEqual(accounts.setdefault(key, pair), pair)
+                    for group in {key[0] for key in accounts}:
+                        group_codes = Counter(pair[1] for key, pair in accounts.items() if key[0] == group)
+                        self.assertIn(group_codes["AMRANCELI"] - group_codes["KPALIMA"], (0, 1))
+
+    def test_geo_fixed_first_agent_survives_clear_all_files_and_new_sessions(self):
+        upload = Upload(geo=True)
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key", "").startswith("source_upload") else None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            upload = None
+            app.button(key="clear_all_files").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn("result", app.session_state)
+            upload = Upload(geo=True)
+            app.run(timeout=20)
+            fresh = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            for session in (app, fresh):
+                self.assertEqual(len(session.exception), 0)
+                for file in session.session_state["result"]["files"]:
+                    self.assertEqual((file.records[0]["Monthly"], file.records[0]["Terms"]), GEO_AGENTS[0])
 
 
 if __name__ == "__main__":

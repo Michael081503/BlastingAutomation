@@ -29,7 +29,7 @@ from automation import (
     write_typed_template_sheet,
 )
 from export_config import (
-    CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
+    CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
     OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from email_validation import validated_email
@@ -61,6 +61,7 @@ EXCEL_SAFE_CSV_VERSION = 2
 REQUIRED_CSV_PROTECTION_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
+GEO_FIXED_AGENTS_VERSION = 1
 RECO_DOCLASS_VERSION = 1
 NEGATIVE_MEMBERSHIP_VERSION = 1
 SOURCE_ACCOUNT_FIELDS = ("primary_key", "cardnumber", "indexoneuid")
@@ -440,9 +441,9 @@ def build_geo_exports(
     source_sheet: str = "NEGATIVE",
     agents: tuple[tuple[str, str], ...] | None = None,
 ) -> ExportBundle:
-    """Create GEO files without applying RECO's three-agent cycle.
+    """Alternate GEO accounts between its fixed agents, with Almera first.
 
-    The agents keyword remains accepted for older callers and is ignored here.
+    The legacy agents keyword is ignored so RECO's cycle cannot assign GEO.
     """
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     if not any(normalize_header(header) == "area" for header in csv_template_headers(template)):
@@ -450,7 +451,7 @@ def build_geo_exports(
     return _build_grouped_exports(
         template, records, "", 1, ".csv", groups=separate_geo(records),
         labels=GEO_GROUP_LABELS, names=GEO_OUTPUT_FILENAMES, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
-        source_sheet=source_sheet, agents=None,
+        source_sheet=source_sheet, agents=GEO_AGENTS,
     )
 
 

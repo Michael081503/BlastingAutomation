@@ -18,7 +18,7 @@ importlib.reload(app_startup).refresh_application_modules()
 
 from branding import BANK_ICON, render_bank_branding
 from export_config import (
-    CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
+    CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
     OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from exports import (
@@ -26,7 +26,7 @@ from exports import (
     GROUPED_SHEET_EXPORT_VERSION,
     EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
-    RECO_DOCLASS_VERSION,
+    RECO_DOCLASS_VERSION, GEO_FIXED_AGENTS_VERSION,
     NEGATIVE_MEMBERSHIP_VERSION, source_account_counts, validate_negative_exports,
     build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
@@ -288,7 +288,19 @@ def render_workbook_page() -> None:
             st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
         geo = source_info.has_area
         assignment_date, agents = None, None
-        if not geo:
+        if geo:
+            agents = GEO_AGENTS
+            st.subheader("GEO agent assignment")
+            st.table([
+                {"Order": number, "Monthly": name, "Terms": code}
+                for number, (name, code) in enumerate(agents, start=1)
+            ])
+            st.caption(
+                "Almera is always first, followed by Kyarill. After sorting each group by OB, highest first, "
+                "accounts alternate evenly between them. Almera receives the extra account for odd totals. "
+                "The same account keeps its agent in Email and Viber. This order stays fixed every day."
+            )
+        else:
             agent_plan = render_agent_cycle()
             if agent_plan is None:
                 st.session_state.pop("result", None)
@@ -356,6 +368,7 @@ def render_workbook_page() -> None:
         EXCEL_EXPORT_VERSION,
         CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
+        GEO_FIXED_AGENTS_VERSION,
         (RECO_DOCLASS_VERSION, tuple(RECO_DOCLASS_BY_FILENAME.items())) if not geo else None,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
@@ -388,7 +401,8 @@ def render_workbook_page() -> None:
                         bundle = build_sheet_exports(
                             template_bytes, mapped.records, template_sheet, template_header,
                             base_name=output_filename(source_file.name, source_sheet),
-                            label=source_sheet, template_extension=template_extension, encoding=encoding, agents=agents, reco=not geo,
+                            label=source_sheet, template_extension=template_extension, encoding=encoding,
+                            agents=agents, reco=not geo,
                         )
                     export_result = {
                         "files": bundle.files,
