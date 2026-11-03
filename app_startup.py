@@ -35,7 +35,7 @@ def refresh_application_modules() -> set[str]:
             "GEO_LOANS_FILENAMES_VERSION",
             "AUTOSTAT_B2_FILENAMES", "AUTOSTAT_B4_FILENAMES", "COLLECTION_AGENTS",
             "GEO_RECO_AGENTS", "GEO_RECO_CYCLE_START",
-            "GEO_AGENTS",
+            "GEO_AGENTS", "GEO_AGENT_ROSTER_VERSION",
             "RECO_DOCLASS_BY_FILENAME",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),

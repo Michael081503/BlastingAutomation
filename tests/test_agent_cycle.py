@@ -146,9 +146,15 @@ class AgentCycleTests(unittest.TestCase):
                     self.assertEqual(assignments[f"{11:018d}"][1], "APMAMARIL")
                     self.assertEqual(source, original)
 
-    def test_geo_ignores_reco_agents_even_when_supplied_by_an_older_caller(self):
+    def test_geo_keeps_fixed_order_when_rotated_reco_agents_are_supplied(self):
         source = records()
-        bundle = build_geo_exports(create_default_csv_template(), source, "", 1, ".csv", agents=GEO_RECO_AGENTS)
+        self.assertEqual(GEO_AGENTS, (
+            ("Andrea Mamaril", "APMAMARIL"),
+            ("Rosalie Vinoya", "ROSVINOYA"),
+            ("Jenayrine Bataller", "JBATALLER"),
+        ))
+        rotated_agents = GEO_RECO_AGENTS[1:] + GEO_RECO_AGENTS[:1]
+        bundle = build_geo_exports(create_default_csv_template(), source, "", 1, ".csv", agents=rotated_agents)
         for file in bundle.files:
             self.assertTrue(all((row["Monthly"], row["Terms"]) in GEO_AGENTS for row in rows(file)))
             self.assertEqual((file.records[0]["Monthly"], file.records[0]["Terms"]), GEO_AGENTS[0])
@@ -165,8 +171,8 @@ class AgentCycleTests(unittest.TestCase):
         source.append(dict(source[3]))
         source.append({**source[0], "primary_key": "NO-CONTACT", "email": None, "phone": None, "OB": 999})
         original = [dict(row) for row in source]
-        expected_codes = {1: "AMRANCELI", 2: "KPALIMA", 3: "AMRANCELI", 4: "KPALIMA", 5: "AMRANCELI",
-                          6: "KPALIMA", 7: "AMRANCELI", 8: "KPALIMA", 9: "AMRANCELI", 10: "KPALIMA", 11: "AMRANCELI"}
+        expected_codes = {1: "APMAMARIL", 2: "JBATALLER", 3: "ROSVINOYA", 4: "APMAMARIL", 5: "JBATALLER",
+                          6: "ROSVINOYA", 7: "APMAMARIL", 8: "APMAMARIL", 9: "JBATALLER", 10: "ROSVINOYA", 11: "APMAMARIL"}
         names = {code: name for name, code in GEO_AGENTS}
         headers = [header for header in reversed(DEFAULT_TEMPLATE_HEADERS) if header not in ("Monthly", "Terms")]
         template = (",".join(headers) + "\n").encode()
@@ -414,7 +420,9 @@ class AgentCyclePageTests(unittest.TestCase):
                             self.assertEqual(accounts.setdefault(key, pair), pair)
                     for group in {key[0] for key in accounts}:
                         group_codes = Counter(pair[1] for key, pair in accounts.items() if key[0] == group)
-                        self.assertIn(group_codes["AMRANCELI"] - group_codes["KPALIMA"], (0, 1))
+                        counts = [group_codes[code] for _, code in GEO_AGENTS]
+                        self.assertEqual(counts, sorted(counts, reverse=True))
+                        self.assertLessEqual(max(counts) - min(counts), 1)
 
     def test_geo_fixed_first_agent_survives_clear_all_files_and_new_sessions(self):
         upload = Upload(geo=True)

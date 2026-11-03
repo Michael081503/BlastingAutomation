@@ -102,16 +102,14 @@ COLLECTION_AGENTS = (
     ("Kyarill Palima", "KPALIMA"),
 )
 
-# GEO alternates accounts in this fixed order for every output group, every day.
-GEO_AGENTS = (
-    ("Almera Ranceli", "AMRANCELI"),
-    ("Kyarill Palima", "KPALIMA"),
-)
-
-# RECO-only daily cycle. The first agent moves to the end every calendar day.
+# Shared GEO and RECO roster. RECO moves the first agent to the end each day.
 GEO_RECO_AGENTS = (
     ("Andrea Mamaril", "APMAMARIL"),
     ("Rosalie Vinoya", "ROSVINOYA"),
     ("Jenayrine Bataller", "JBATALLER"),
 )
 GEO_RECO_CYCLE_START = "2026-10-30"
+
+# GEO repeats this fixed order for every output group, every day.
+GEO_AGENT_ROSTER_VERSION = 1
+GEO_AGENTS = GEO_RECO_AGENTS

@@ -11,20 +11,22 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
-    def test_cached_geo_exports_refresh_for_fixed_agent_assignments(self):
+    def test_cached_geo_exports_refresh_for_current_agent_roster(self):
         self.run_isolated("""
             import automation, exports, export_config
-            del exports.GEO_FIXED_AGENTS_VERSION
-            del export_config.GEO_AGENTS
+            del export_config.GEO_AGENT_ROSTER_VERSION
+            export_config.GEO_AGENTS = (('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA'))
+            exports.GEO_AGENTS = export_config.GEO_AGENTS
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'exports', 'export_config'} <= refreshed
             bundle = exports.build_geo_exports(automation.create_default_csv_template(),
                 [{'primary_key': '0001', 'email': 'one@example.com', 'product': 'CARDS', 'AREA': 'Mindanao'}],
                 '', 1, '.csv')
-            assert bundle.files[0].preview[0]['Monthly'] == 'Almera Ranceli'
-            assert bundle.files[0].preview[0]['Terms'] == 'AMRANCELI'
-            assert export_config.GEO_AGENTS == (('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA'))
+            assert bundle.files[0].preview[0]['Monthly'] == 'Andrea Mamaril'
+            assert bundle.files[0].preview[0]['Terms'] == 'APMAMARIL'
+            assert export_config.GEO_AGENTS == (
+                ('Andrea Mamaril', 'APMAMARIL'), ('Rosalie Vinoya', 'ROSVINOYA'), ('Jenayrine Bataller', 'JBATALLER'))
             assert refresh_application_modules() == set()
         """)
 
@@ -712,7 +714,7 @@ class StartupTests(unittest.TestCase):
             geo = exports.build_geo_exports(automation.create_default_csv_template(),
                 [{'primary_key': '0001', 'email': 'one@example.com', 'product': 'CARDS', 'AREA': 'Mindanao'}],
                 '', 1, '.csv', agents=agents)
-            assert all(row['Monthly'] == 'Almera Ranceli' and row['Terms'] == 'AMRANCELI'
+            assert all(row['Monthly'] == 'Andrea Mamaril' and row['Terms'] == 'APMAMARIL'
                 for file in geo.files for row in file.preview)
             assert agent_cycle_page.AGENT_CYCLE_PAGE_VERSION == 4
             assert refresh_application_modules() == set()

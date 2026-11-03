@@ -296,8 +296,8 @@ def render_workbook_page() -> None:
                 for number, (name, code) in enumerate(agents, start=1)
             ])
             st.caption(
-                "Almera is always first, followed by Kyarill. After sorting each group by OB, highest first, "
-                "accounts alternate evenly between them. Almera receives the extra account for odd totals. "
+                "Accounts follow the order above after sorting each group by OB, highest first. "
+                "They are split evenly, with any extra accounts assigned from the top of the order. "
                 "The same account keeps its agent in Email and Viber. This order stays fixed every day."
             )
         else:

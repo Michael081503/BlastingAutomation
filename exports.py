@@ -441,7 +441,7 @@ def build_geo_exports(
     source_sheet: str = "NEGATIVE",
     agents: tuple[tuple[str, str], ...] | None = None,
 ) -> ExportBundle:
-    """Alternate GEO accounts between its fixed agents, with Almera first.
+    """Distribute GEO accounts across its fixed agent order.
 
     The legacy agents keyword is ignored so RECO's cycle cannot assign GEO.
     """
