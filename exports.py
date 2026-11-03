@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import csv
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -24,6 +25,7 @@ from automation import (
     normalize_header,
     normalize_product,
     ob_sort_key,
+    source_column_positions,
     write_typed_template_sheet,
 )
 from export_config import (
@@ -60,6 +62,8 @@ REQUIRED_CSV_PROTECTION_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
 RECO_DOCLASS_VERSION = 1
+NEGATIVE_MEMBERSHIP_VERSION = 1
+SOURCE_ACCOUNT_FIELDS = ("primary_key", "cardnumber", "indexoneuid")
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
     "qualified_cards": "QUALIFIED / CARDS",
@@ -102,6 +106,42 @@ class ExportBundle:
     zip_data: bytes
     zip_filename: str
     no_contact_rows_skipped: int
+
+
+def source_account_counts(records: list[dict[str, Any]]) -> Counter[tuple[str, ...]]:
+    """Retain complete account identities and duplicate counts from the source."""
+    return Counter(
+        tuple("" if record.get(field) is None else str(record[field]).strip() for field in SOURCE_ACCOUNT_FIELDS)
+        for record in records
+    )
+
+
+def validate_negative_exports(
+    files: list[ExportFile], source_accounts: Counter[tuple[str, ...]], *, source_sheet: str,
+) -> None:
+    """Block CSV and Excel downloads that cannot be traced to this NEGATIVE source."""
+    if normalize_header(source_sheet) != "negative":
+        raise AutomationError("Downloads blocked: GEO and RECO must use the NEGATIVE worksheet only.")
+    channels = defaultdict(Counter)
+    for file in files:
+        encoding = "utf-8-sig" if file.data.startswith(b"\xef\xbb\xbf") else "cp1252"
+        rows = csv.reader(StringIO(file.data.decode(encoding), newline=""))
+        positions = source_column_positions(next(rows, []))
+        csv_accounts = source_account_counts([
+            {field: row[positions[field]] if field in positions and positions[field] < len(row) else None
+             for field in SOURCE_ACCOUNT_FIELDS}
+            for row in rows
+        ])
+        if csv_accounts != source_account_counts(file.records) or sum(csv_accounts.values()) != file.count:
+            raise AutomationError(
+                f"Downloads blocked: {file.filename} has inconsistent account data. Clear all files and upload the source again."
+            )
+        channels[file.channel].update(csv_accounts)
+    if any(accounts - source_accounts for accounts in channels.values()):
+        raise AutomationError(
+            "Downloads blocked: an output account is not verified against this upload's NEGATIVE worksheet. "
+            "Clear all files and upload the current source workbook again."
+        )
 
 
 def build_export_excel(file: ExportFile) -> bytes:

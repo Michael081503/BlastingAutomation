@@ -27,6 +27,7 @@ from exports import (
     EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
     RECO_DOCLASS_VERSION,
+    NEGATIVE_MEMBERSHIP_VERSION, source_account_counts, validate_negative_exports,
     build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
@@ -44,13 +45,14 @@ from automation import (
     MAPPING_VERSION,
     OB_SORT_VERSION,
     WORKBOOK_READER_VERSION,
+    NEGATIVE_SOURCE_ONLY_VERSION,
     OPTIONAL_FIELD_MAPPING,
     TARGET_HEADERS,
     XLSX_MIME,
     AutomationError,
     create_default_csv_template,
     csv_template_headers,
-    default_source_sheet,
+    negative_source_sheet,
     inspect_workbook,
     inspect_source_sheet,
     preview_source_rows,
@@ -95,7 +97,7 @@ def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
 def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
-    st.write("Upload your GEO or RECO workbook. Your output ZIP is prepared automatically.")
+    st.write("Upload your GEO or RECO workbook. Only its NEGATIVE worksheet is exported; your output ZIP is prepared automatically.")
     if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
         st.session_state["campaign_output_format"] = "CSV (.csv)"
         st.session_state["campaign_csv_default_version"] = CSV_CAMPAIGN_DEFAULT_VERSION
@@ -172,7 +174,8 @@ def render_workbook_page() -> None:
     source_digest = hashlib.sha256(source_bytes).hexdigest()
     template_digest = hashlib.sha256(template_bytes).hexdigest()
     try:
-        default_sheet = default_source_sheet(source_sheets)
+        source_info = negative_source_sheet(source_sheets)
+        source_sheet = source_info.name
         template_sheets = (
             workbook_info(template_bytes, template=True) if template_extension == ".xlsx" else []
         )
@@ -180,21 +183,17 @@ def render_workbook_page() -> None:
             csv_template_headers(template_bytes)
     except AutomationError as exc:
         st.session_state.pop("result", None)
+        st.session_state.pop("geo_autostat_result", None)
         st.error(str(exc))
         return
 
+    download_area.caption(f"Source workbook: {source_file.name} | Worksheet: {source_sheet} only.")
     with settings:
-        st.subheader("Choose the sheet to process")
+        st.subheader("NEGATIVE source settings")
         sheet_left, sheet_right = st.columns(2)
-        source_names = [sheet.name for sheet in source_sheets]
         with sheet_left:
-            source_sheet = st.selectbox(
-                "Source sheet",
-                source_names,
-                index=source_names.index(default_sheet),
-                key=f"source_sheet_{source_digest}",
-            )
-            source_info = next(sheet for sheet in source_sheets if sheet.name == source_sheet)
+            st.text_input("Source sheet", value=source_sheet, disabled=True,
+                          help="Both GEO and RECO are restricted to NEGATIVE. Other worksheets are never exported.")
         with sheet_right:
             if template_sheets:
                 best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
@@ -344,8 +343,6 @@ def render_workbook_page() -> None:
                     "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
                     "BLANK: the same three groups, plus other products. Empty groups produce no file."
                 )
-            if normalize_header(source_sheet) != "negative":
-                st.caption("Grouped filenames include the selected worksheet name before the configured group name.")
         st.caption("Output filenames are set in export_config.py. Edits are applied automatically.")
 
     signature = (
@@ -354,7 +351,8 @@ def render_workbook_page() -> None:
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
-        "automatic-preparation-v1", GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
+        "automatic-preparation-v1", NEGATIVE_SOURCE_ONLY_VERSION, NEGATIVE_MEMBERSHIP_VERSION,
+        GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
         CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
@@ -362,7 +360,7 @@ def render_workbook_page() -> None:
         tuple(source_columns.items()) if source_columns is not None else None,
     )
     previous_result = st.session_state.get("result")
-    if previous_result is not None and previous_result["signature"] != signature:
+    if previous_result is not None and previous_result.get("signature") != signature:
         st.session_state.pop("result", None)
 
     if not can_prepare:
@@ -377,6 +375,7 @@ def render_workbook_page() -> None:
                 mapped = read_source(
                     source_bytes, source_sheet, source_header, allow_missing=True, source_columns=source_columns,
                 )
+                source_accounts = source_account_counts(mapped.records)
                 export_result = {}
                 if mapped.records:
                     if grouped:
@@ -397,8 +396,12 @@ def render_workbook_page() -> None:
                         "zip_data": bundle.zip_data,
                         "zip_filename": bundle.zip_filename,
                     }
+                    validate_negative_exports(bundle.files, source_accounts, source_sheet=source_sheet)
                 st.session_state["result"] = {
                     "signature": signature,
+                    "source_sha256": source_digest,
+                    "source_sheet": source_sheet,
+                    "source_accounts": source_accounts,
                     "grouped": grouped,
                     "geo": geo,
                     "excel_output": excel_output,
@@ -426,7 +429,17 @@ def render_workbook_page() -> None:
     if result is None:
         return
     if result.get("error"):
-        st.error(result["error"])
+        st.session_state.pop("geo_autostat_result", None)
+        download_area.error(result["error"])
+        return
+    try:
+        if result.get("source_sha256") != source_digest or result.get("source_sheet") != source_sheet:
+            raise AutomationError("Downloads blocked: the prepared files do not match the current NEGATIVE upload. Upload the source again.")
+        validate_negative_exports(result.get("files", []), result["source_accounts"], source_sheet=source_sheet)
+    except AutomationError as exc:
+        st.session_state["result"] = {"signature": signature, "error": str(exc)}
+        st.session_state.pop("geo_autostat_result", None)
+        download_area.error(str(exc))
         return
     if result["count"]:
         download_area.success(f"Ready: {result['count']:,} accounts from {source_sheet}, in {len(result['files'])} files.")

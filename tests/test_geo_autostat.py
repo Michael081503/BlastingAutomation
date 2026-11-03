@@ -23,7 +23,7 @@ class Upload(BytesIO):
         self.name = name
 
 
-def workbook_data(first_account="000000000000000001.0", first_card="12345678901234567.0"):
+def workbook_data(first_account="000000000000000001.0", first_card="12345678901234567.0", *, geo_negative=False):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "NEGATIVE"
@@ -39,6 +39,9 @@ def workbook_data(first_account="000000000000000001.0", first_card="123456789012
     sheet = workbook.create_sheet("GEO")
     sheet.append([*headers, "Area"])
     sheet.append(["000000000000000019", "CARD-GEO", "GEO-1", "geo@example.com", "09000000005", 100, "BEL", 1, "QUALIFIED", "Mindanao"])
+    if geo_negative:
+        workbook["NEGATIVE"].title = "OTHER RECO"
+        sheet.title = "NEGATIVE"
     output = BytesIO()
     workbook.save(output)
     workbook.close()
@@ -68,7 +71,8 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
                 with self.subTest(sheet=sheet_name):
                     if sheet_name == "GEO":
                         download.reset_mock()
-                        next(widget for widget in app.selectbox if widget.label == "Source sheet").select(sheet_name).run(timeout=20)
+                        upload = Upload(workbook_data(geo_negative=True))
+                        app.run(timeout=20)
                     self.assertEqual(len(app.error), 0)
                     calls = {call.kwargs.get("key"): call for call in download.call_args_list}
                     email = calls["geo_autostat_email_excel"]
@@ -112,6 +116,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
         ):
             with self.subTest(headers=headers):
                 workbook = Workbook()
+                workbook.active.title = "NEGATIVE"
                 workbook.active.append(headers)
                 workbook.active.append(record)
                 data = BytesIO()
@@ -164,7 +169,8 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertEqual(prepare.call_count, 1)
             self.assertEqual(app.session_state["geo_autostat_result"]["timestamp"], result["timestamp"])
-            next(widget for widget in app.selectbox if widget.label == "Source sheet").select("GEO").run(timeout=20)
+            uploads[0] = Upload(workbook_data(geo_negative=True))
+            app.run(timeout=20)
             self.assertEqual(prepare.call_count, 2)
             self.assertEqual([row["Account No."] for row in log_rows(app.session_state["geo_autostat_result"]["bundle"].files[0])],
                              ["CARD-GEO"])
@@ -251,6 +257,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
 
     def test_all_invalid_account_rows_show_skipped_count_without_stale_downloads(self):
         workbook = Workbook()
+        workbook.active.title = "NEGATIVE"
         workbook.active.append(["primary_key", "cardnumber", "email", "phone"])
         workbook.active.append(["VALID-PRIMARY", "5.15604E+15", "one@example.com", "09171234567"])
         output = BytesIO()

@@ -126,6 +126,7 @@ class ExcelExportTests(unittest.TestCase):
     def test_main_page_offers_excel_zip_and_individual_workbooks_without_building_them_on_rerun(self):
         # A real source workbook exercises the page's normal preparation flow.
         workbook = Workbook()
+        workbook.active.title = "NEGATIVE"
         workbook.active.append(["cardnumber", "email", "OB", "level", "endo date"])
         workbook.active.append(["5156041234567897", "first@example.com", 1000, 1, datetime(2026, 10, 30, 13, 14, 15)])
         output = BytesIO()

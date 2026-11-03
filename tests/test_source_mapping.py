@@ -15,9 +15,9 @@ from automation import AutomationError, read_source, source_column_positions
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def source_data(headers, rows):
+def source_data(headers, rows, *, sheet_name='Accounts'):
     workbook = Workbook()
-    workbook.active.title = 'Accounts'
+    workbook.active.title = sheet_name
     workbook.active.append(headers)
     for row in rows:
         workbook.active.append(row)
@@ -57,7 +57,7 @@ class SourceMappingTests(unittest.TestCase):
                 read_source(data, 'Accounts', 1, allow_missing=True, source_columns=mapping)
 
     def test_unknown_headers_can_be_mapped_in_the_page(self):
-        upload = Upload(source_data(['Ledger Ref', 'Inbox', 'Handset', 'Person'], [['00001', 'first@example.com', '09171234567', 'First person']]))
+        upload = Upload(source_data(['Ledger Ref', 'Inbox', 'Handset', 'Person'], [['00001', 'first@example.com', '09171234567', 'First person']], sheet_name='NEGATIVE'))
         with patch('streamlit.file_uploader', side_effect=lambda label, **kw: upload if kw.get('key') == 'source_upload' else None):
             app = AppTest.from_file(str(ROOT / 'app.py')).run(timeout=20)
             self.assertEqual(len(app.exception), 0)

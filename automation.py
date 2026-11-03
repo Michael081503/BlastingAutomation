@@ -51,6 +51,7 @@ SOURCE_ALIASES = {
 MAPPING_VERSION = 8
 PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
+NEGATIVE_SOURCE_ONLY_VERSION = 1
 OB_SORT_VERSION = 1
 RECO_DOCLASS_WRITER_VERSION = 1
 AUTOSTAT_COLUMN_FORMAT_VERSION = 1
@@ -242,6 +243,19 @@ def default_source_sheet(sheets: list[SheetInfo]) -> str:
         (sheet.name for sheet in candidates if normalize_header(sheet.name) == "negative"),
         max(candidates, key=lambda sheet: sheet.matched_fields).name,
     )
+
+
+def negative_source_sheet(sheets: list[SheetInfo]) -> SheetInfo:
+    """Require one NEGATIVE worksheet without falling back to another sheet."""
+    matches = [sheet for sheet in sheets if normalize_header(sheet.name) == "negative"]
+    if not matches:
+        raise AutomationError(
+            "This workbook has no NEGATIVE worksheet. GEO and RECO exports require NEGATIVE; "
+            "OVERALL and other worksheets will not be used. Upload the workbook containing NEGATIVE."
+        )
+    if len(matches) != 1:
+        raise AutomationError("More than one worksheet matches NEGATIVE. Keep one unambiguous NEGATIVE worksheet.")
+    return matches[0]
 
 
 def _worksheet(workbook, name: str):

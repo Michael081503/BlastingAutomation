@@ -1045,7 +1045,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state['result']['count'], 1)
 
-    def test_other_worksheets_default_to_negative_rules_and_remember_their_own_mode(self):
+    def test_other_worksheets_cannot_be_selected_or_exported(self):
         rows = [
             sample_row(product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
             sample_row(product="CARDS", level=6), sample_row(product="BEL", level=2),
@@ -1060,65 +1060,39 @@ class AppTests(unittest.TestCase):
         upload = FakeUpload("accounts.xlsx", save(workbook))
         with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-            self.assertEqual(app.selectbox[0].value, "NEGATIVE")
-            app.run(timeout=20)
+            source = next(widget for widget in app.text_input if widget.label == "Source sheet")
+            self.assertEqual(source.value, "NEGATIVE")
+            self.assertTrue(source.disabled)
+            self.assertFalse(any(widget.label == "Source sheet" for widget in app.selectbox))
             baseline = app.session_state["result"]
-            app.selectbox[0].select("POSITIVE").run(timeout=20)
-            self.assertNotEqual(app.session_state["result"]["signature"], baseline["signature"])
-            self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
             app.run(timeout=20)
+            self.assertEqual(app.session_state["result"]["signature"], baseline["signature"])
+            self.assertTrue(all(row["FullName"] == "Ana Cruz" for file in baseline["files"] for row in file.records))
+            app.radio[0].set_value("All accounts in one group").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             result = app.session_state["result"]
-            self.assertTrue(result["grouped"])
-            self.assertFalse(result["geo"])
-            self.assertEqual(result["group_counts"], baseline["group_counts"])
-            self.assertEqual([file.filename for file in result["files"]], ["POSITIVE - " + file.filename for file in baseline["files"]])
-            self.assertTrue(all(row["FullName"] == "POSITIVE" for file in result["files"] for row in file.preview))
-            self.assertEqual(app.main.dataframe[-1].value.loc[0, "FullName"], "POSITIVE")
-            app.radio[0].set_value("All accounts in one group").run(timeout=20)
-            app.selectbox[0].select("CONTACTED").run(timeout=20)
-            self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
-            app.run(timeout=20)
-            self.assertTrue(all(file.filename.startswith("CONTACTED - ") for file in app.session_state["result"]["files"]))
-            app.selectbox[0].select("POSITIVE").run(timeout=20)
-            self.assertEqual(app.radio[0].value, "All accounts in one group")
-            app.run(timeout=20)
-            self.assertFalse(app.session_state["result"]["grouped"])
-            self.assertEqual(len(app.session_state["result"]["files"]), 2)
+            self.assertEqual(result["source_sheet"], "NEGATIVE")
+            self.assertFalse(result["grouped"])
+            self.assertEqual(len(result["files"]), 2)
+            self.assertTrue(all(row["FullName"] == "Ana Cruz" for file in result["files"] for row in file.records))
 
-    def test_grouping_defaults_on_workbooks_without_negative_and_on_other_geo_sheets(self):
+    def test_geo_and_reco_workbooks_without_negative_are_blocked(self):
         for geo in (False, True):
             with self.subTest(geo=geo):
                 data = (geo_source_file([
                     sample_row(Area="Mindanao", product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"}),
-                    sample_row(Area="Mindanao", product="CARDS", level=6, **{"Christmas Amnesty": "QUALIFIED"}),
-                    sample_row(Area="Region 3", product="BEL"),
-                ]) if geo else source_file([sample_row(product="CARDS", level=1, **{"Christmas Amnesty": "QUALIFIED"})], other_sheet=False))
+                ]) if geo else source_file([sample_row(product="CARDS", level=1)], other_sheet=False))
                 workbook = loaded(data)
-                if "Summary" in workbook.sheetnames:
-                    del workbook["Summary"]
                 workbook["NEGATIVE"].title = "ACTIVE GEO" if geo else "PROMISE TO PAY"
                 upload = FakeUpload("other.xlsx", save(workbook))
                 with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs.get("key") == "source_upload" else None):
                     app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-                    name = "ACTIVE GEO" if geo else "PROMISE TO PAY"
-                    self.assertEqual(app.selectbox[0].value, name)
-                    self.assertEqual(app.radio[0].value, "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups")
-                    app.run(timeout=20)
                     self.assertEqual(len(app.exception), 0)
-                    self.assertEqual(len(app.error), 0)
-                    result = app.session_state["result"]
-                    self.assertTrue(result["grouped"])
-                    self.assertEqual(result["geo"], geo)
-                    self.assertTrue(all(file.filename.startswith(name + " - ") for file in result["files"]))
-                    self.assertTrue(result["zip_filename"].startswith(name + " - "))
-                    if geo:
-                        self.assertEqual(result["group_counts"]["mindanao_qualified_cards"], 2)
-                        self.assertEqual(len(result["files"]), 4)
-                        for file in result["files"]:
-                            for row in file.preview:
-                                self.assertEqual(row["doclass"], "SBC GEO Mindanao" if row["AREA"] == "Mindanao" else "SBC GEO R3")
+                    self.assertTrue(any("no NEGATIVE" in item.value for item in app.error))
+                    self.assertNotIn("result", app.session_state)
+                    self.assertNotIn("geo_autostat_result", app.session_state)
+                    self.assertFalse(any(widget.key in {"csv_zip", "excel_zip"} for widget in app.get("download_button")))
 
     def test_configured_geo_names_apply_to_downloads_and_preview(self):
         upload = FakeUpload("GEO.xlsx", geo_source_file([
@@ -1319,7 +1293,7 @@ class AppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.selectbox[0].value, "NEGATIVE")
+            self.assertEqual(next(widget for widget in app.text_input if widget.label == "Source sheet").value, "NEGATIVE")
             app.radio[0].set_value("All accounts in one group").run(timeout=20)
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
@@ -1333,7 +1307,10 @@ class AppTests(unittest.TestCase):
             # A routine rerun must retain the prepared download.
             app.run(timeout=20)
             self.assertEqual(app.session_state["result"]["count"], 1)
-            app.selectbox[0].select("NEXT").run(timeout=20)
+            updated = loaded(upload.getvalue())
+            updated["NEGATIVE"].cell(2, list(FIELD_MAPPING).index("Name") + 1).value = "Next person"
+            upload = FakeUpload("source.xlsx", save(updated))
+            app.run(timeout=20)
             self.assertEqual(app.main.dataframe[-1].value.iloc[0]["FullName"], "Next person")
             self.assertEqual(len(app.success), 1)
             self.assertEqual(len(app.get("download_button")), 7)
@@ -1386,7 +1363,7 @@ class AppTests(unittest.TestCase):
 
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
-            self.assertEqual(app.selectbox[1].value, "Layout")
+            self.assertEqual(next(widget for widget in app.selectbox if widget.label == "Template sheet").value, "Layout")
             for mode in ("Separate Christmas Amnesty groups", "All accounts in one group"):
                 with self.subTest(mode=mode):
                     app.radio[0].set_value(mode).run(timeout=20)

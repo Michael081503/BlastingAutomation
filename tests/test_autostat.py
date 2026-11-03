@@ -890,8 +890,8 @@ class AutostatAppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual([panel.label for panel in app.expander], ["Log settings", "Edit source columns", "Preview"])
-            source_panel = app.expander[1]
+            self.assertEqual([panel.label for panel in app.expander], ["Edit source columns", "Preview"])
+            source_panel = next(panel for panel in app.expander if panel.label == "Edit source columns")
             self.assertFalse(source_panel.proto.expanded)
             self.assertEqual(len(source_panel.multiselect), 8)
             self.assertEqual(len(app.exception), 0)

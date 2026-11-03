@@ -24,7 +24,7 @@ class Upload(BytesIO):
         self.name = "mixed-workflows.xlsx"
 
 
-def mixed_workbook() -> bytes:
+def mixed_workbook(*, geo_negative=False) -> bytes:
     workbook = Workbook()
     grid = workbook.active
     grid.title = "DataGrid"
@@ -63,6 +63,9 @@ def mixed_workbook() -> bytes:
         ("GEOM006", "mc", 6, "QUALIFIED", "Mindanao"),
         ("GEORBEL", "BEL", 3, None, "Region 3"),
     ], geo=True)
+    if geo_negative:
+        workbook["NEGATIVE"].title = "OTHER RECO"
+        workbook["GEO"].title = "NEGATIVE"
     output = BytesIO()
     workbook.save(output)
     workbook.close()
@@ -171,12 +174,13 @@ class WorkflowPageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.title[0].value, "GEO & RECO")
             self.assertEqual({call.kwargs["key"] for call in uploader.call_args_list}, {"source_upload", "template_upload"})
-            source = next(widget for widget in app.selectbox if widget.label == "Source sheet")
-            self.assertEqual(set(source.options), {"DataGrid", "NEGATIVE", "GEO"})
+            source = next(widget for widget in app.text_input if widget.label == "Source sheet")
+            self.assertTrue(source.disabled)
             self.assertEqual(source.value, "NEGATIVE")
             self.assert_no_embedded_b2(app)
 
-            source.select("GEO").run(timeout=20)
+            upload = Upload(mixed_workbook(geo_negative=True))
+            app.run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Area and Christmas Amnesty groups")
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
@@ -190,7 +194,7 @@ class WorkflowPageTests(unittest.TestCase):
             self.assertEqual(result["group_counts"]["mindanao_qualified_cards"], 2)
             self.assertEqual(result["group_counts"]["r3_blank_bel"], 1)
             self.assertEqual({file.filename for file in result["files"]}, {
-                f"GEO - {GEO_OUTPUT_FILENAMES[group]}{CHANNEL_SUFFIXES[channel]}.csv"
+                f"{GEO_OUTPUT_FILENAMES[group]}{CHANNEL_SUFFIXES[channel]}.csv"
                 for group in ("mindanao_qualified_cards", "r3_blank_bel")
                 for channel in ("email", "viber")
             })
@@ -204,7 +208,8 @@ class WorkflowPageTests(unittest.TestCase):
                 self.assertTrue(all(row["doclass"] == expected_class for row in rows))
             self.assert_no_embedded_b2(app)
 
-            next(widget for widget in app.selectbox if widget.label == "Source sheet").select("NEGATIVE").run(timeout=20)
+            upload = Upload(mixed_workbook())
+            app.run(timeout=20)
             self.assertFalse(app.session_state["result"]["geo"])
             self.assertNotEqual(app.session_state["result"]["signature"], result["signature"])
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")

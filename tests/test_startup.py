@@ -11,6 +11,21 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_negative_only_policy_refreshes_cached_readers_and_export_guards(self):
+        self.run_isolated("""
+            import automation, exports
+            del automation.NEGATIVE_SOURCE_ONLY_VERSION
+            del exports.NEGATIVE_MEMBERSHIP_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'automation', 'exports', 'geo_autostat'} <= refreshed
+            assert automation.NEGATIVE_SOURCE_ONLY_VERSION == 1
+            assert exports.NEGATIVE_MEMBERSHIP_VERSION == 1
+            assert callable(automation.negative_source_sheet)
+            assert callable(exports.validate_negative_exports)
+            assert refresh_application_modules() == set()
+        """)
+
     def run_isolated(self, script: str) -> None:
         result = subprocess.run(
             [sys.executable, "-c", textwrap.dedent(script)],
