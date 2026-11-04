@@ -1,6 +1,9 @@
 [server]
 headless = true
 maxUploadSize = 200
+# Production deployments restart to load code updates; avoid module-cache eviction
+# by background file watchers while another browser session is importing modules.
+fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false

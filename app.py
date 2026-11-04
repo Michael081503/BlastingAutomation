@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
@@ -14,7 +13,7 @@ from openpyxl.utils import get_column_letter
 
 import app_startup
 
-importlib.reload(app_startup).refresh_application_modules()
+app_startup.refresh_application_modules()
 
 from branding import BANK_ICON, render_bank_branding
 from export_config import (

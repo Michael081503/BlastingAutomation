@@ -3,6 +3,42 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
+import sys
+from threading import RLock
+from time import sleep
+
+
+# Retain the same lock if this helper is explicitly reloaded during development.
+if "_REFRESH_LOCK" not in globals():
+    _REFRESH_LOCK = RLock()
+STARTUP_RECOVERY_VERSION = 1
+_MAX_REFRESH_ATTEMPTS = 3
+
+
+def _evicted_application_module(error: KeyError | ImportError) -> str | None:
+    """Recognize import machinery losing an application module, not application errors."""
+    traceback = error.__traceback__
+    while traceback is not None and traceback.tb_next is not None:
+        traceback = traceback.tb_next
+    if traceback is None:
+        return None
+    frame = traceback.tb_frame
+    origin = frame.f_globals.get("__name__")
+    if isinstance(error, KeyError):
+        if (origin not in {"importlib._bootstrap", "_frozen_importlib"}
+                or frame.f_code.co_name not in {"_load_unlocked", "_find_and_load", "_find_and_load_unlocked", "_exec"}
+                or len(error.args) != 1):
+            return None
+        name = error.args[0]
+    else:
+        if origin not in {"importlib", "importlib._bootstrap", "_frozen_importlib"}:
+            return None
+        name = error.name
+    if (not isinstance(name, str) or not name.isidentifier() or name in sys.modules
+            or not (Path(__file__).resolve().parent / f"{name}.py").is_file()):
+        return None
+    return name
 
 
 def _has_required_name(module: object, name: str) -> bool:
@@ -16,6 +52,24 @@ def _has_required_name(module: object, name: str) -> bool:
 
 
 def refresh_application_modules() -> set[str]:
+    """Serialize refreshes across sessions and recover a bounded import-cache race."""
+    with _REFRESH_LOCK:
+        refreshed = set()
+        for attempt in range(_MAX_REFRESH_ATTEMPTS):
+            try:
+                return _refresh_application_modules(refreshed)
+            except (KeyError, ImportError) as error:
+                evicted = _evicted_application_module(error)
+                if evicted is None or attempt == _MAX_REFRESH_ATTEMPTS - 1:
+                    raise
+                # Replay the dependency pass so cached consumers receive the new module.
+                refreshed.add(evicted)
+                importlib.invalidate_caches()
+                sleep(0.05)
+    raise RuntimeError("Application startup did not complete.")
+
+
+def _refresh_application_modules(refreshed: set[str]) -> set[str]:
     """Reload missing interfaces and their dependents in dependency order.
 
     A running cloud process can retain modules from before a deployment. Only
@@ -133,7 +187,6 @@ def refresh_application_modules() -> set[str]:
             "AUTOSTAT_VISIBLE_SETTINGS_VERSION",
         ), ("autostat", "autostat_downloads", "b2_autostat", "automation", "folder_output", "export_config", "upload_state")),
     )
-    refreshed = set()
     for name, required, dependencies in modules:
         module = importlib.import_module(name)
         if any(not _has_required_name(module, attribute) for attribute in required) or refreshed.intersection(dependencies):

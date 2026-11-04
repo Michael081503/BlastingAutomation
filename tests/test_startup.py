@@ -11,6 +11,142 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_startup_recovers_a_module_evicted_during_import_or_reload(self):
+        self.run_isolated("""
+            import importlib, sys
+            from importlib.machinery import SourceFileLoader
+            from unittest.mock import patch
+            import app_startup
+            app_startup.refresh_application_modules()
+            import automation, agent_order, agent_cycle_page, b2_page
+            error_class = automation.AutomationError
+            original_exec = SourceFileLoader.exec_module
+            for mode in ('import', 'reload'):
+                module = importlib.import_module('agent_availability_page')
+                if mode == 'import':
+                    del sys.modules['agent_availability_page']
+                else:
+                    del module.AGENT_ABSENCE_CHECKBOX_VERSION
+                evictions = []
+                def interrupt_import(loader, module):
+                    original_exec(loader, module)
+                    if module.__name__ == 'agent_availability_page' and not evictions:
+                        evictions.append(module.__name__)
+                        del sys.modules[module.__name__]
+                with patch.object(SourceFileLoader, 'exec_module', interrupt_import):
+                    refreshed = app_startup.refresh_application_modules()
+                current = sys.modules['agent_availability_page']
+                assert evictions == ['agent_availability_page']
+                assert {'agent_availability_page', 'agent_order', 'agent_cycle_page', 'b2_page'} <= refreshed
+                assert agent_order.render_agent_availability is current.render_agent_availability
+                assert b2_page.render_agent_availability is current.render_agent_availability
+                assert agent_cycle_page.render_agent_order is agent_order.render_agent_order
+                assert automation.AutomationError is error_class
+                assert app_startup.refresh_application_modules() == set()
+        """)
+
+    def test_startup_limits_recovery_for_repeated_module_eviction(self):
+        self.run_isolated("""
+            import sys
+            from importlib.machinery import SourceFileLoader
+            from unittest.mock import patch
+            import app_startup
+            app_startup.refresh_application_modules()
+            del sys.modules['agent_availability_page']
+            original_exec = SourceFileLoader.exec_module
+            evictions = []
+            def interrupt_import(loader, module):
+                original_exec(loader, module)
+                if module.__name__ == 'agent_availability_page':
+                    evictions.append(module.__name__)
+                    del sys.modules[module.__name__]
+            with patch.object(SourceFileLoader, 'exec_module', interrupt_import):
+                try:
+                    app_startup.refresh_application_modules()
+                except KeyError as error:
+                    assert error.args == ('agent_availability_page',)
+                else:
+                    raise AssertionError('Repeated import failures must remain visible')
+            assert len(evictions) == 3
+        """)
+
+    def test_startup_does_not_retry_an_application_key_error(self):
+        self.run_isolated("""
+            import sys
+            from importlib.machinery import SourceFileLoader
+            from unittest.mock import patch
+            import app_startup
+            app_startup.refresh_application_modules()
+            del sys.modules['agent_availability_page']
+            original_exec = SourceFileLoader.exec_module
+            calls = []
+            def broken_module(loader, module):
+                if module.__name__ == 'agent_availability_page':
+                    calls.append(module.__name__)
+                    raise KeyError('agent_availability_page')
+                original_exec(loader, module)
+            with patch.object(SourceFileLoader, 'exec_module', broken_module):
+                try:
+                    app_startup.refresh_application_modules()
+                except KeyError as error:
+                    assert error.args == ('agent_availability_page',)
+                else:
+                    raise AssertionError('Application errors must remain visible')
+            assert calls == ['agent_availability_page']
+        """)
+
+    def test_simultaneous_sessions_serialize_module_refreshes(self):
+        self.run_isolated("""
+            import importlib, threading, time
+            from concurrent.futures import ThreadPoolExecutor
+            from unittest.mock import patch
+            import app_startup
+            app_startup.refresh_application_modules()
+            import agent_availability_page
+            del agent_availability_page.AGENT_ABSENCE_CHECKBOX_VERSION
+            original_reload = importlib.reload
+            active, maximum = 0, 0
+            counter_lock = threading.Lock()
+            start = threading.Barrier(4)
+            def observed_reload(module):
+                global active, maximum
+                with counter_lock:
+                    active += 1
+                    maximum = max(maximum, active)
+                try:
+                    time.sleep(0.03)
+                    return original_reload(module)
+                finally:
+                    with counter_lock:
+                        active -= 1
+            def open_session():
+                start.wait(timeout=10)
+                return app_startup.refresh_application_modules()
+            with patch('app_startup.importlib.reload', observed_reload):
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    results = list(pool.map(lambda _: open_session(), range(4)))
+            assert maximum == 1
+            assert sum(bool(result) for result in results) == 1
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
+    def test_app_uses_startup_helper_without_forcing_a_reload(self):
+        self.run_isolated("""
+            from unittest.mock import patch
+            import app_startup
+            app_startup.refresh_application_modules()
+            refresh = app_startup.refresh_application_modules
+            with patch.object(app_startup, 'refresh_application_modules', wraps=refresh) as tracked:
+                import app
+                assert tracked.call_count == 1
+                assert app_startup.refresh_application_modules is tracked
+        """)
+
+    def test_production_disables_background_module_eviction(self):
+        import tomllib
+        settings = tomllib.loads((PROJECT_DIRECTORY / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+        self.assertEqual(settings["server"]["fileWatcherType"], "none")
+
     def test_cached_agent_ui_refreshes_to_native_rows_and_absence_checkboxes(self):
         self.run_isolated("""
             import agent_order, agent_availability_page, agent_cycle_page
@@ -403,7 +539,7 @@ class StartupTests(unittest.TestCase):
                 assert rows[0]['primary_key'] == '0001'
         """)
 
-    def test_cached_level_grouping_and_old_bootstrap_refresh_to_product_groups(self):
+    def test_cached_level_grouping_refreshes_to_product_groups(self):
         self.run_isolated("""
             import app_startup, automation, export_config, exports
             error_class = automation.AutomationError
@@ -412,7 +548,6 @@ class StartupTests(unittest.TestCase):
                 'qualified_cards_level_6': 'Old Level 6',
             }
             del exports.GEO_PRODUCT_GROUP_LABELS
-            app_startup.refresh_application_modules = lambda: set()
             import app
             assert 'mindanao_qualified_cards' in app.GEO_OUTPUT_FILENAMES
             assert 'r3_qualified_cards' in app.GEO_OUTPUT_FILENAMES

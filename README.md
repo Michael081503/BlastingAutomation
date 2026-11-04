@@ -134,7 +134,9 @@ See Streamlit's [official deployment instructions](https://docs.streamlit.io/dep
 
 Upload the source workbook and template in the deployed app. Input workbooks, generated files, environment files, and Streamlit secrets are excluded from Git; the repository contains the application code and tests.
 
-Startup refreshes older modules held in memory when a deployment adds required settings, including GEO configuration. Routine reruns retain the same module classes and settings. If startup still reports missing names after an update, check that the app uses `main` and `app.py` from this repository, then choose **Manage app → ⋮ → Reboot app** to clear the cloud process and load the deployed files. See Streamlit's [reboot instructions](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/reboot-your-app).
+Startup checks required module interfaces in dependency order and serializes refreshes across browser sessions. It retries up to three times when Python import machinery loses an application module during a cache change, while preserving ordinary application errors. The startup helper is no longer forcibly reloaded on every page rerun. This addresses intermittent startup crashes such as `KeyError: 'agent_availability_page'`.
+
+The hosted configuration sets `server.fileWatcherType = "none"` to prevent background file watchers from deleting modules during imports. **After deploying this update, choose Manage app > ... > Reboot app once**, then refresh the browser. Future code/configuration updates require an app restart; uploads, settings and normal page interactions still rebuild outputs as before. For local code editing with automatic file watching, run `python -m streamlit run app.py --server.fileWatcherType=auto`. See Streamlit's [reboot instructions](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/reboot-your-app).
 
 Use individual file downloads or the ZIP download to save files to your computer, then extract the ZIP. The website has no server-folder save controls.
 
