@@ -26,6 +26,7 @@ B2_UPLOAD_ROLES_VERSION = 1
 B2_TEMPLATE_VERSION = 2
 B2_CONTACT_PRIORITY_VERSION = 1
 B2_B4_CONTACT_HEADERS_VERSION = 1
+B2_B4_AVAILABILITY_VERSION = 1
 # Exact header order from 1EMAIL_Blasting - Template.xlsx; no sample rows are used.
 B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
 DATAGRID_ROUTING_VERSION = 1
@@ -240,10 +241,18 @@ class B2MatchResult:
 
 def build_b2_exports(
     database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252", bucket: int = 2,
+    agents: tuple[tuple[str, str], ...] | None = None,
 ) -> B2MatchResult:
     """Fill the 16-column blasting layout once per verified DataGrid account."""
     if bucket not in (2, 4):
         raise AutomationError("Choose bucket B2 or B4.")
+    if agents is None:
+        agents = COLLECTION_AGENTS
+    if not agents or any(agent not in COLLECTION_AGENTS for agent in agents):
+        raise AutomationError("Choose at least one available B2/B4 agent from the configured roster.")
+    selected_agents = tuple(agent for agent in COLLECTION_AGENTS if agent in agents)
+    if len(selected_agents) != len(agents):
+        raise AutomationError("Choose each available B2/B4 agent only once.")
     filenames = AUTOSTAT_B2_FILENAMES if bucket == 2 else AUTOSTAT_B4_FILENAMES
     if set(filenames) != {"CARDS", "BEL"}:
         raise AutomationError(f"Set both CARDS and BEL B{bucket} filenames in export_config.py.")
@@ -347,7 +356,7 @@ def build_b2_exports(
             if account not in emails and account not in phones:
                 continue
             record.update({"email": emails.get(account, ""), "phone": phones.get(account, "")})
-            agent_name, agent_code = COLLECTION_AGENTS[len(rows) % len(COLLECTION_AGENTS)]
+            agent_name, agent_code = selected_agents[len(rows) % len(selected_agents)]
             record.update({"Monthly": agent_name, "Terms": agent_code})
             rows.append({header: _template_text(record[header]) for header in B2_TEMPLATE_HEADERS})
         summaries.append({"Group": group, "Accounts exported": len(rows), **_contact_summary(database, contacts),
@@ -358,6 +367,7 @@ def build_b2_exports(
 
 def build_b4_exports(
     database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252",
+    agents: tuple[tuple[str, str], ...] | None = None,
 ) -> B2MatchResult:
     """Match verified B4 accounts using the primary email and Mobile 1 headers."""
-    return build_b2_exports(database, datagrid, encoding=encoding, bucket=4)
+    return build_b2_exports(database, datagrid, encoding=encoding, bucket=4, agents=agents)

@@ -10,6 +10,7 @@ import streamlit as st
 
 from agent_cycle import AgentCycle, cycle_agents, default_cycle, load_cycle, reorder_cycle, save_cycle
 from agent_order import render_agent_order
+from agent_availability_page import render_agent_availability
 from automation import AutomationError
 from export_config import GEO_RECO_AGENTS
 from folder_output import MANILA_TIMEZONE
@@ -18,6 +19,7 @@ from folder_output import MANILA_TIMEZONE
 AGENT_CYCLE_PAGE_VERSION = 4
 AGENT_DRAG_ORDER_VERSION = 1
 AGENT_STABLE_ORDER_VERSION = 1
+RECO_AGENT_AVAILABILITY_VERSION = 1
 
 
 def manila_today():
@@ -113,4 +115,7 @@ def render_agent_cycle():
             st.caption("This cycle applies only to RECO and is stored on the computer or server running this app.")
         if st.session_state.pop("agent_cycle_saved", False):
             st.success("Agent cycle saved.")
-    return assignment_date, agents
+        available = render_agent_availability("geo_reco", assignment_date, agents, key_prefix="reco")
+        if available is None:
+            return None
+    return assignment_date, available

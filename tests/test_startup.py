@@ -11,6 +11,39 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_autostat_refreshes_to_24_hour_timestamps(self):
+        self.run_isolated("""
+            from datetime import datetime
+            import autostat, autostat_page, geo_autostat
+            del autostat.AUTOSTAT_24_HOUR_TIME_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'autostat', 'autostat_page', 'geo_autostat'} <= refreshed
+            data = b'cardnumber,email\\n0001,one@example.com\\n'
+            source = autostat.SourceSelection('contacts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
+            bundle = autostat_page.build_autostat_exports([source], timestamp=datetime(2026, 11, 4, 16, 30))
+            assert bundle.files[0].preview[0]['Time'] == '2026-11-04 16:30:00'
+            assert refresh_application_modules() == set()
+        """)
+
+    def test_cached_availability_controls_refresh_with_export_builders(self):
+        self.run_isolated("""
+            import agent_availability, agent_availability_page, exports, b2_matching
+            del agent_availability.AGENT_AVAILABILITY_VERSION
+            del exports.GEO_AGENT_AVAILABILITY_VERSION
+            del b2_matching.B2_B4_AVAILABILITY_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'agent_availability', 'agent_availability_page', 'agent_cycle_page',
+                    'exports', 'b2_matching', 'b2_page'} <= refreshed
+            from automation import create_default_csv_template
+            bundle = exports.build_geo_exports(create_default_csv_template(),
+                [{'primary_key': '0001', 'email': 'one@example.com', 'product': 'CARDS', 'AREA': 'Mindanao'}],
+                '', 1, '.csv', available_agent_codes=('ROSVINOYA',))
+            assert bundle.files[0].preview[0]['Terms'] == 'ROSVINOYA'
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_geo_exports_refresh_for_current_agent_roster(self):
         self.run_isolated("""
             import automation, exports, export_config
@@ -187,7 +220,7 @@ class StartupTests(unittest.TestCase):
             source = autostat.SourceSelection('accounts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
             bundle = autostat_page.build_autostat_exports([source], timestamp=None)
             assert [row['Account No.'] for row in bundle.files[0].preview] == ['5156041234567897', '000123']
-            assert autostat_page.AUTOSTAT_VERSION == 14
+            assert autostat_page.AUTOSTAT_VERSION == 15
             assert refresh_application_modules() == set()
         """)
 
@@ -210,7 +243,7 @@ class StartupTests(unittest.TestCase):
             bundle = b2_autostat.build_b2_autostat_exports([b2_autostat.B2ActivitySource(source)], timestamp=None)
             assert [row['Account No.'] for row in bundle.files[0].preview] == ['0001', '0003']
             assert bundle.summary[0]['Source error rows skipped'] == 1
-            assert autostat.AUTOSTAT_VERSION == 14
+            assert autostat.AUTOSTAT_VERSION == 15
             assert autostat_page.build_autostat_exports is autostat.build_autostat_exports
             assert refresh_application_modules() == set()
         """)
@@ -300,7 +333,7 @@ class StartupTests(unittest.TestCase):
             assert [file.filename for file in bundle.files] == ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv']
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
-            assert autostat.AUTOSTAT_VERSION == 14
+            assert autostat.AUTOSTAT_VERSION == 15
             assert autostat_page.AUTOSTAT_PAGE_VERSION == 13
             assert refresh_application_modules() == set()
         """)

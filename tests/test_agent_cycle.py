@@ -57,6 +57,32 @@ def change_agent_order(app, codes, *, revision=None):
 
 
 class AgentCycleTests(unittest.TestCase):
+    def test_geo_available_agents_keep_fixed_order_and_balance_both_channels(self):
+        bundle = build_geo_exports(create_default_csv_template(), records(), "", 1, ".csv",
+                                   available_agent_codes=("JBATALLER", "ROSVINOYA"))
+        assignments, groups = {}, {}
+        for file in bundle.files:
+            for row in rows(file):
+                code = row["Terms"]
+                self.assertIn(code, ("ROSVINOYA", "JBATALLER"))
+                self.assertEqual(assignments.setdefault(row["primary_key"], code), code)
+                groups.setdefault(file.group_key, {})[row["primary_key"]] = code
+            self.assertEqual(file.records[0]["Terms"], "ROSVINOYA")
+            workbook = load_workbook(BytesIO(build_export_excel(file)))
+            headers = [cell.value for cell in workbook.active[1]]
+            self.assertEqual([row[headers.index("Terms")] for row in list(workbook.active.values)[1:]],
+                             [row["Terms"] for row in rows(file)])
+            workbook.close()
+        for accounts in groups.values():
+            counts = Counter(accounts.values())
+            self.assertLessEqual(abs(counts["ROSVINOYA"] - counts["JBATALLER"]), 1)
+
+    def test_geo_rejects_missing_or_unknown_available_agents(self):
+        for codes in ((), ("UNKNOWN",), ("ROSVINOYA", "ROSVINOYA")):
+            with self.subTest(codes=codes), self.assertRaisesRegex(AutomationError, "available GEO agent"):
+                build_geo_exports(create_default_csv_template(), records(), "", 1, ".csv",
+                                  available_agent_codes=codes)
+
     def test_reordering_any_day_preserves_start_date_and_rotates_from_selected_order(self):
         cycle = default_cycle()
         for offset in range(-2, 5):
@@ -224,6 +250,7 @@ class AgentCyclePageTests(unittest.TestCase):
         self.path = Path(self.directory.name) / "cycle.json"
         self.addCleanup(patch.stopall)
         patch("agent_cycle.SETTINGS_PATH", self.path).start()
+        patch("agent_availability.SETTINGS_PATH", Path(self.directory.name) / "availability.json").start()
         patch("agent_cycle_page.manila_today", return_value=TODAY).start()
 
     def test_cycle_visible_without_uploads_and_next_day_rotates_to_rosalie(self):
@@ -234,6 +261,50 @@ class AgentCyclePageTests(unittest.TestCase):
             app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(TODAY + timedelta(days=1)).run(timeout=20)
             self.assertEqual(displayed_agent_codes(app), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
             self.assertFalse(self.path.exists())
+
+    def test_daily_availability_reassigns_geo_and_reco_and_blocks_empty_rosters(self):
+        for geo in (False, True):
+            with self.subTest(geo=geo), \
+                    patch("agent_availability.SETTINGS_PATH", Path(self.directory.name) / f"available-{geo}.json"), \
+                    patch("streamlit.file_uploader", side_effect=lambda label, **kw:
+                          Upload(geo=geo) if kw.get("key") == "source_upload" else None):
+                app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+                self.assertEqual(len(app.exception), 0)
+                selection = next(widget for widget in app.multiselect
+                                 if widget.key.startswith("agent_availability_"))
+                selection.set_value(["ROSVINOYA"]).run(timeout=20)
+                self.assertEqual(len(app.exception), 0)
+                self.assertEqual(len(app.error), 0)
+                self.assertTrue(all(record["Monthly"] == "Rosalie Vinoya" and record["Terms"] == "ROSVINOYA"
+                                    for file in app.session_state["result"]["files"] for record in file.records))
+                if not geo:
+                    self.assertEqual(displayed_agent_codes(app), ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
+                self.assertFalse(self.path.exists())
+                fresh = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+                selection = next(widget for widget in fresh.multiselect
+                                 if widget.key.startswith("agent_availability_"))
+                self.assertEqual(selection.value, ["ROSVINOYA"])
+                selection.set_value([]).run(timeout=20)
+                self.assertEqual(len(fresh.exception), 0)
+                self.assertNotIn("result", fresh.session_state)
+                self.assertNotIn("geo_autostat_result", fresh.session_state)
+                self.assertFalse(any(widget.key in {"csv_zip", "excel_zip", "geo_autostat_excel"}
+                                     for widget in fresh.get("download_button")))
+
+    def test_reco_availability_is_daily_and_keeps_the_saved_rotation(self):
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kw:
+                   Upload() if kw.get("key") == "source_upload" else None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            next(widget for widget in app.multiselect if widget.key.startswith("agent_availability_")).set_value(
+                ["JBATALLER"]).run(timeout=20)
+            app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(TODAY + timedelta(days=1)).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(next(widget for widget in app.multiselect
+                                  if widget.key.startswith("agent_availability_")).value,
+                             ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
+            self.assertEqual(displayed_agent_codes(app), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
+            self.assertEqual({record["Terms"] for file in app.session_state["result"]["files"]
+                              for record in file.records}, {"APMAMARIL", "ROSVINOYA", "JBATALLER"})
 
     def test_saving_a_new_cycle_invalidates_exports_and_survives_clear_and_new_sessions(self):
         upload = Upload()

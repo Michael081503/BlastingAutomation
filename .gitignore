@@ -15,3 +15,4 @@ output/
 *.zip
 *.log
 settings/geo_reco_agent_cycle.json
+settings/agent_availability.json

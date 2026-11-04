@@ -26,7 +26,7 @@ from exports import (
     GROUPED_SHEET_EXPORT_VERSION,
     EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
-    RECO_DOCLASS_VERSION, GEO_FIXED_AGENTS_VERSION,
+    RECO_DOCLASS_VERSION, GEO_FIXED_AGENTS_VERSION, GEO_AGENT_AVAILABILITY_VERSION,
     NEGATIVE_MEMBERSHIP_VERSION, source_account_counts, validate_negative_exports,
     build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
@@ -34,7 +34,9 @@ from exports import (
 from email_validation import EMAIL_VALIDATION_VERSION
 from geo_autostat import render_geo_autostat
 from upload_state import upload_widget_key
-from agent_cycle_page import render_agent_cycle
+from agent_cycle_page import manila_today, render_agent_cycle
+from agent_availability import AGENT_AVAILABILITY_VERSION
+from agent_availability_page import render_agent_availability
 
 from automation import (
     CSV_OUTPUT_ENCODINGS,
@@ -289,8 +291,14 @@ def render_workbook_page() -> None:
         geo = source_info.has_area
         assignment_date, agents = None, None
         if geo:
-            agents = GEO_AGENTS
             st.subheader("GEO agent assignment")
+            availability_date = manila_today()
+            agents = render_agent_availability("geo_reco", availability_date, GEO_AGENTS, key_prefix="geo")
+            if agents is None:
+                st.session_state.pop("result", None)
+                st.session_state.pop("geo_autostat_result", None)
+                download_area.error("Select at least one available GEO agent in Optional settings before preparing files.")
+                return
             st.table([
                 {"Order": number, "Monthly": name, "Terms": code}
                 for number, (name, code) in enumerate(agents, start=1)
@@ -298,7 +306,7 @@ def render_workbook_page() -> None:
             st.caption(
                 "Accounts follow the order above after sorting each group by OB, highest first. "
                 "They are split evenly, with any extra accounts assigned from the top of the order. "
-                "The same account keeps its agent in Email and Viber. This order stays fixed every day."
+                "The same account keeps its agent in Email and Viber. Available agents keep this fixed order."
             )
         else:
             agent_plan = render_agent_cycle()
@@ -369,6 +377,7 @@ def render_workbook_page() -> None:
         CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION,
         assignment_date.isoformat() if assignment_date is not None else None, agents,
         GEO_FIXED_AGENTS_VERSION,
+        GEO_AGENT_AVAILABILITY_VERSION, AGENT_AVAILABILITY_VERSION,
         (RECO_DOCLASS_VERSION, tuple(RECO_DOCLASS_BY_FILENAME.items())) if not geo else None,
         tuple(source_columns.items()) if source_columns is not None else None,
     )
@@ -396,6 +405,7 @@ def render_workbook_page() -> None:
                         bundle = builder(
                             template_bytes, mapped.records, template_sheet,
                             template_header, template_extension, encoding=encoding, source_sheet=source_sheet, agents=agents,
+                            **({"available_agent_codes": tuple(code for _, code in agents)} if geo else {}),
                         )
                     else:
                         bundle = build_sheet_exports(

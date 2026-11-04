@@ -26,7 +26,8 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 14
+AUTOSTAT_VERSION = 15
+AUTOSTAT_24_HOUR_TIME_VERSION = 1
 AUTOSTAT_REMARK_BY = "MBURGOS"
 ACCOUNT_TEXT_EXPORT_VERSION = 2
 ACCOUNT_NUMBER_NORMALIZATION_VERSION = 1
@@ -575,7 +576,7 @@ def build_bel_exports(
     names = {group: export_filename(name, ".csv") for group, name in AUTOSTAT_BEL_FILENAMES.items()}
     if len({name.casefold() for name in names.values()}) != 2:
         raise AutomationError("BEL and CARDS output filenames must be unique. Check export_config.py.")
-    time_text = timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
+    time_text = timestamp.strftime("%Y-%m-%d %H:%M:%S")
     rows, summaries = {"BEL": [], "Other": []}, []
     seen = {"email": set(), "viber": set()}
     for source in sources:
@@ -601,7 +602,7 @@ def build_autostat_exports(
     sources = [source for source in sources if not autostat_source_excluded(source.name)]
     if not sources:
         raise AutomationError("All selected files are excluded from AUTOSTAT: SBC INSURANCE, B2 and B4.")
-    time_text = "" if timestamp is None else timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
+    time_text = "" if timestamp is None else timestamp.strftime("%Y-%m-%d %H:%M:%S")
     summaries = []
     channels = {"Email": [], "Viber": []}
     seen = {"email": set(), "viber": set()}

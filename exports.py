@@ -62,6 +62,7 @@ REQUIRED_CSV_PROTECTION_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
 GEO_FIXED_AGENTS_VERSION = 1
+GEO_AGENT_AVAILABILITY_VERSION = 1
 RECO_DOCLASS_VERSION = 1
 NEGATIVE_MEMBERSHIP_VERSION = 1
 SOURCE_ACCOUNT_FIELDS = ("primary_key", "cardnumber", "indexoneuid")
@@ -440,18 +441,27 @@ def build_geo_exports(
     encoding: str = "cp1252",
     source_sheet: str = "NEGATIVE",
     agents: tuple[tuple[str, str], ...] | None = None,
+    available_agent_codes: tuple[str, ...] | None = None,
 ) -> ExportBundle:
     """Distribute GEO accounts across its fixed agent order.
 
+    Availability filters GEO's roster while retaining its fixed order.
     The legacy agents keyword is ignored so RECO's cycle cannot assign GEO.
     """
+    selected_agents = GEO_AGENTS
+    if available_agent_codes is not None:
+        known_codes = {code for _, code in GEO_AGENTS}
+        if (not available_agent_codes or len(set(available_agent_codes)) != len(available_agent_codes)
+                or not set(available_agent_codes) <= known_codes):
+            raise AutomationError("Choose at least one available GEO agent from the configured roster.")
+        selected_agents = tuple(agent for agent in GEO_AGENTS if agent[1] in available_agent_codes)
     template = _csv_export_template(template, sheet_name, header_row, template_extension)
     if not any(normalize_header(header) == "area" for header in csv_template_headers(template)):
         raise AutomationError("GEO exports need an AREA header in the template. Use the built-in 16-column template.")
     return _build_grouped_exports(
         template, records, "", 1, ".csv", groups=separate_geo(records),
         labels=GEO_GROUP_LABELS, names=GEO_OUTPUT_FILENAMES, zip_name=GEO_ZIP_FILENAME, encoding=encoding,
-        source_sheet=source_sheet, agents=GEO_AGENTS,
+        source_sheet=source_sheet, agents=selected_agents,
     )
 
 

@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
 from automation import AutomationError, CSV_OUTPUT_ENCODINGS, MAPPING_VERSION, OB_SORT_VERSION, WORKBOOK_READER_VERSION
 from autostat import AUTOSTAT_VERSION, SourceSelection, inspect_contact_source
+from agent_availability_page import render_agent_availability
 from b2_matching import (
     B2_MATCHING_VERSION, B2_TEMPLATE_HEADERS, B2_TEMPLATE_VERSION, B2_B4_AGENTS_VERSION, B2_B4_OB_SORT_VERSION,
-    B4_MATCHING_VERSION, B2_B4_CONTACT_HEADERS_VERSION, build_b2_exports, build_b4_exports,
+    B4_MATCHING_VERSION, B2_B4_CONTACT_HEADERS_VERSION, B2_B4_AVAILABILITY_VERSION, build_b2_exports, build_b4_exports,
     is_datagrid_sheet, is_sbc_database_sheet, matching_sheet_score, validate_b2_source,
 )
-from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES
+from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES, COLLECTION_AGENTS
+from folder_output import MANILA_TIMEZONE
 from upload_state import upload_widget_key
 
 
@@ -51,6 +54,9 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
         with st.sidebar:
             output_format = st.selectbox("CSV file type", list(CSV_OUTPUT_ENCODINGS), key=f"{prefix}csv_type")
         encoding = CSV_OUTPUT_ENCODINGS[output_format]
+    assignment_date = datetime.now(MANILA_TIMEZONE).date()
+    with st.expander(f"{bucket_label} agent availability"):
+        agents = render_agent_availability("b2_b4", assignment_date, COLLECTION_AGENTS, key_prefix=prefix)
     left, right = st.columns(2)
     with left:
         database_upload = st.file_uploader(
@@ -65,6 +71,9 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
             key=upload_widget_key(f"{prefix}grid_upload"),
             help="Use the account list with Account No. and Financing/Card No.; for B4 this is NEGATIVE B4 DB.xlsx.",
         )
+    if agents is None:
+        st.session_state.pop(result_key, None)
+        return
     cache = st.session_state.setdefault(f"{prefix}source_info", {})
 
     def inspect_upload(upload):
@@ -150,7 +159,8 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
     signature = (tuple(signatures), encoding, B2_MATCHING_VERSION, B2_TEMPLATE_VERSION, B2_TEMPLATE_HEADERS,
                  AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION, bucket, B4_MATCHING_VERSION,
                  B2_B4_AGENTS_VERSION, B2_B4_OB_SORT_VERSION, OB_SORT_VERSION,
-                 tuple(filenames.items()), B2_COMPACT_DOWNLOADS_VERSION, B2_B4_CONTACT_HEADERS_VERSION)
+                 tuple(filenames.items()), B2_COMPACT_DOWNLOADS_VERSION, B2_B4_CONTACT_HEADERS_VERSION,
+                 assignment_date.isoformat(), agents, B2_B4_AVAILABILITY_VERSION)
     prepared = st.session_state.get(result_key)
     if prepared is None or prepared["signature"] != signature:
         st.session_state.pop(result_key, None)
@@ -158,7 +168,7 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
         try:
             with st.spinner(f"Preparing {bucket_label} downloads..."):
                 builder = build_b2_exports if bucket == 2 else build_b4_exports
-                prepared["matched"] = builder(sources[0], sources[1], encoding=encoding)
+                prepared["matched"] = builder(sources[0], sources[1], encoding=encoding, agents=agents)
         except AutomationError as exc:
             prepared["error"] = str(exc)
         except Exception:
@@ -186,7 +196,8 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
         if result.audit:
             st.dataframe(pd.DataFrame(result.audit), hide_index=True, width="stretch")
         st.caption("Account No. matches Account Key; Financing/Card No. matches Contract Number. Both must agree when supplied.")
-        st.caption("Monthly and Terms alternate Almera Ranceli / AMRANCELI and Kyarill Palima / KPALIMA within each CARDS/BEL output.")
+        st.caption("Monthly and Terms divide accounts evenly among today's available agents in each CARDS/BEL output: "
+                   + ", ".join(f"{name} / {code}" for name, code in agents) + ".")
         selected = st.selectbox(f"{bucket_label} file to preview", [file.filename for file in bundle.files], key=f"{prefix}preview_{hash(signature)}")
         file = next(file for file in bundle.files if file.filename == selected)
         st.dataframe(pd.DataFrame(file.preview, columns=file.headers), hide_index=True, width="stretch")

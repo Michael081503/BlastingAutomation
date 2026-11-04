@@ -14,6 +14,7 @@ from automation import AutomationError
 from autostat import SourceSelection, build_autostat_excel, inspect_contact_source
 from b2_autostat import B2ActivitySource, b2_metadata_columns, build_b2_autostat_exports
 from b2_matching import B2_TEMPLATE_HEADERS, build_b4_exports
+from export_config import COLLECTION_AGENTS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +68,19 @@ class Upload(BytesIO):
 
 
 class B4MatchingTests(unittest.TestCase):
+    def test_available_agent_subset_is_forwarded_and_rejects_no_agents(self):
+        raw, grid = fixtures()
+        database, accounts = selection('database.xlsx', raw), selection('grid.xlsx', grid)
+        available = COLLECTION_AGENTS[1]
+        result = build_b4_exports(database, accounts, agents=(available,))
+        for file, summary in zip(result.bundle.files, result.bundle.summary):
+            self.assertGreater(file.count, 0)
+            self.assertEqual({(row['Monthly'], row['Terms']) for row in rows(file)}, {available})
+            self.assertEqual(summary[f'{available[1]} accounts'], file.count)
+            self.assertEqual(summary[f'{COLLECTION_AGENTS[0][1]} accounts'], 0)
+        with self.assertRaises(AutomationError):
+            build_b4_exports(database, accounts, agents=())
+
     def test_primary_mobile_and_email_headers_override_legacy_contacts(self):
         for primary_email in ('Email (1)', ' EMAIL (01) '):
             with self.subTest(primary_email=primary_email):
@@ -184,6 +198,32 @@ class B4MatchingTests(unittest.TestCase):
 
 
 class B4PageTests(unittest.TestCase):
+    def test_daily_availability_reassigns_outputs_and_removes_unavailable_downloads(self):
+        raw, grid = fixtures()
+        uploads = {'b4_database_upload': Upload('database.xlsx', raw),
+                   'b4_grid_upload': Upload('list.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])) as uploader, \
+                patch('b2_page.render_agent_availability', return_value=COLLECTION_AGENTS) as availability:
+            app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            original = app.session_state['b4_result']
+            availability.return_value = (COLLECTION_AGENTS[0],)
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            current = app.session_state['b4_result']
+            self.assertNotEqual(current['signature'], original['signature'])
+            self.assertEqual({row['Terms'] for file in current['matched'].bundle.files for row in rows(file)},
+                             {COLLECTION_AGENTS[0][1]})
+            self.assertEqual(len(app.get('download_button')), 3)
+            availability.return_value = None
+            uploader.reset_mock()
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn('b4_result', app.session_state)
+            self.assertEqual(len(app.get('download_button')), 0)
+            self.assertEqual({call.kwargs['key'] for call in uploader.call_args_list},
+                             {'b2_database_upload', 'b2_grid_upload', 'b4_database_upload', 'b4_grid_upload'})
+
     def test_database_with_mobile_1_and_email_1_prepares_downloads(self):
         raw = workbook_data(
             ['Account Key', 'Contract Number', 'Bucket Code', 'Product Category Code', 'Mobile 1', 'Email (1)'],

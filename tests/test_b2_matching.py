@@ -16,6 +16,7 @@ from automation import AutomationError, inspect_workbook, read_source
 from autostat import SourceSelection, inspect_contact_source
 from b2_autostat import B2ActivitySource, b2_metadata_columns, build_b2_autostat_exports
 from b2_matching import B2_TEMPLATE_HEADERS, build_b2_exports, is_datagrid_sheet, matching_sheet_score
+from export_config import COLLECTION_AGENTS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +85,31 @@ def csv_rows(file):
 
 
 class B2Tests(unittest.TestCase):
+    def test_available_agent_subset_receives_all_accounts_and_absent_agent_count_is_zero(self):
+        raw, grid = fixtures()
+        database, accounts = selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False)
+        for available in COLLECTION_AGENTS:
+            with self.subTest(agent=available[1]):
+                result = build_b2_exports(database, accounts, agents=(available,))
+                for file, summary in zip(result.bundle.files, result.bundle.summary):
+                    self.assertGreater(file.count, 0)
+                    self.assertEqual({(row['Monthly'], row['Terms']) for row in csv_rows(file)}, {available})
+                    self.assertEqual(summary[f'{available[1]} accounts'], file.count)
+                    for _, code in COLLECTION_AGENTS:
+                        if code != available[1]:
+                            self.assertEqual(summary[f'{code} accounts'], 0)
+
+    def test_available_agents_keep_configured_order_and_reject_empty_or_unknown_pairs(self):
+        raw, grid = fixtures()
+        database, accounts = selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False)
+        result = build_b2_exports(database, accounts, agents=tuple(reversed(COLLECTION_AGENTS)))
+        self.assertEqual([(row['Monthly'], row['Terms']) for row in csv_rows(result.bundle.files[0])][:2],
+                         list(COLLECTION_AGENTS))
+        for invalid in ((), (('Unknown', 'UNKNOWN'),), ((COLLECTION_AGENTS[0][0], COLLECTION_AGENTS[1][1]),),
+                        (COLLECTION_AGENTS[0], COLLECTION_AGENTS[0])):
+            with self.subTest(agents=invalid), self.assertRaises(AutomationError):
+                build_b2_exports(database, accounts, agents=invalid)
+
     def test_even_agent_assignment_survives_template_to_autostat_processing(self):
         raw, grid = fixtures()
         result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
@@ -298,6 +324,32 @@ class Upload(BytesIO):
 
 
 class B2AppTests(unittest.TestCase):
+    def test_daily_availability_reassigns_outputs_and_blocks_stale_downloads_when_empty(self):
+        raw, grid = fixtures()
+        uploads = {'b2_database_upload': Upload('database.xlsx', raw),
+                   'b2_grid_upload': Upload('list.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])) as uploader, \
+                patch('b2_page.render_agent_availability', return_value=COLLECTION_AGENTS) as availability:
+            app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            original = app.session_state['b2_result']
+            availability.return_value = (COLLECTION_AGENTS[1],)
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            current = app.session_state['b2_result']
+            self.assertNotEqual(current['signature'], original['signature'])
+            self.assertEqual({row['Terms'] for file in current['matched'].bundle.files for row in csv_rows(file)},
+                             {COLLECTION_AGENTS[1][1]})
+            self.assertEqual(len(app.get('download_button')), 3)
+            availability.return_value = None
+            uploader.reset_mock()
+            app.run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn('b2_result', app.session_state)
+            self.assertEqual(len(app.get('download_button')), 0)
+            self.assertEqual({call.kwargs['key'] for call in uploader.call_args_list},
+                             {'b2_database_upload', 'b2_grid_upload', 'b4_database_upload', 'b4_grid_upload'})
+
     def test_reversed_uploads_use_the_correct_roles_and_keep_the_same_exports(self):
         raw, grid = fixtures()
         expected = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))

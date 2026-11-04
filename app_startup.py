@@ -59,6 +59,12 @@ def refresh_application_modules() -> set[str]:
         ("agent_cycle", (
             "AGENT_CYCLE_VERSION", "AgentCycle", "load_cycle", "save_cycle", "cycle_agents", "assign_agents_to_accounts", "reorder_cycle",
         ), ("automation", "export_config")),
+        ("agent_availability", (
+            "AGENT_AVAILABILITY_VERSION", "agent_roster", "available_agents", "save_available_agents",
+        ), ("automation", "export_config")),
+        ("agent_availability_page", (
+            "AGENT_AVAILABILITY_PAGE_VERSION", "render_agent_availability",
+        ), ("agent_availability", "automation")),
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
             "GEO_FILENAME_CONFIG_VERSION",
@@ -72,14 +78,16 @@ def refresh_application_modules() -> set[str]:
             "AGENT_ASSIGNMENT_EXPORT_VERSION",
             "RECO_ONLY_AGENTS_VERSION",
             "GEO_FIXED_AGENTS_VERSION",
+            "GEO_AGENT_AVAILABILITY_VERSION",
             "RECO_DOCLASS_VERSION", "reco_doclass", "ExportFile.__dataclass_fields__.doclass",
             "NEGATIVE_MEMBERSHIP_VERSION", "source_account_counts", "validate_negative_exports",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("agent_order", ("AGENT_ORDER_VERSION", "AGENT_ORDER_CALLBACK_VERSION", "render_agent_order"), ()),
-        ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "AGENT_DRAG_ORDER_VERSION", "AGENT_STABLE_ORDER_VERSION", "render_agent_cycle"), ("agent_cycle", "agent_order", "folder_output")),
+        ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "AGENT_DRAG_ORDER_VERSION", "AGENT_STABLE_ORDER_VERSION", "RECO_AGENT_AVAILABILITY_VERSION", "render_agent_cycle"), ("agent_cycle", "agent_order", "folder_output", "agent_availability_page")),
         ("autostat", (
             "AUTOSTAT_VERSION", "AUTOSTAT_REMARK_BY", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
+            "AUTOSTAT_24_HOUR_TIME_VERSION",
             "build_bel_exports", "has_bel_primary_keys",
             "ACCOUNT_DEDUP_VERSION", "ACCOUNT_IDENTITY_VERSION", "unique_account_contacts",
             "COMPILED_OUTPUT_VERSION", "BLANK_TIMESTAMP_VERSION",
@@ -108,8 +116,9 @@ def refresh_application_modules() -> set[str]:
             "B2_UPLOAD_ROLES_VERSION", "is_sbc_database_sheet", "validate_b2_source",
             "B4_MATCHING_VERSION", "build_b4_exports", "B2_B4_AGENTS_VERSION",
             "B2_B4_OB_SORT_VERSION",
+            "B2_B4_AVAILABILITY_VERSION",
         ), ("autostat", "automation", "export_config")),
-        ("b2_page", ("render_b2_page", "BROWSER_DOWNLOADS_ONLY_VERSION", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "upload_widget_key"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state")),
+        ("b2_page", ("render_b2_page", "BROWSER_DOWNLOADS_ONLY_VERSION", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "upload_widget_key", "render_agent_availability"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state", "agent_availability_page")),
         ("b2_autostat", (
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",
