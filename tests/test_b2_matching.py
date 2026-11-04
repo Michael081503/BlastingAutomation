@@ -126,6 +126,40 @@ class B2Tests(unittest.TestCase):
         self.assertEqual([database.sheet.headers[index] for index in database.sheet.email_columns], ['Email (02)', 'EMAIL (01)'])
         self.assertEqual([database.sheet.headers[index] for index in database.sheet.phone_columns], ['Phone (01)', 'Mobile 1'])
 
+    def test_email_1_alias_precedes_email_01_and_retains_valid_contact_fallbacks(self):
+        headers = ['Account Key', 'Contract Number', 'Product Category Code', 'Bucket Code',
+                   'Email (02)', 'EMAIL (01)', 'Phone (01)', ' eMaIl (1) ', ' MOBILE 1 ']
+        raw = workbook_data(headers, [
+            ['0001', '000001', 'MC', 2, 'old@example.com', 'legacy@example.com', '09171234567',
+             'primary@example.com', '+63 918 123 4567'],
+            ['0002', '000002', 'MC', 2, 'other@example.com', 'legacy-fallback@example.com', '09191234567',
+             'invalid', '123'],
+        ], sheet_name='SBC')
+        grid = workbook_data(GRID_HEADERS, [
+            [1, 'Account', None, '0001', None, '000001'],
+            [2, 'Account', None, '0002', None, '000002'],
+        ], sheet_name='Sheet')
+        result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
+        output = {row['primary_key']: row for file in result.bundle.files for row in csv_rows(file)}
+        self.assertEqual((output['0001']['email'], output['0001']['phone']),
+                         ('primary@example.com', '9181234567'))
+        self.assertEqual((output['0002']['email'], output['0002']['phone']),
+                         ('legacy-fallback@example.com', '9191234567'))
+
+    def test_duplicate_preferred_contact_headers_are_rejected(self):
+        for duplicated in ('Email (1)', 'Mobile 1'):
+            with self.subTest(duplicated=duplicated):
+                headers = ['Account Key', 'Contract Number', 'Product Category Code', 'Bucket Code',
+                           'Email (1)', 'Mobile 1', duplicated.lower().replace(' ', '')]
+                raw = workbook_data(headers, [
+                    ['0001', '000001', 'MC', 2, 'first@example.com', '09171234567', 'other@example.com'],
+                ], sheet_name='SBC')
+                grid = workbook_data(GRID_HEADERS, [
+                    [1, 'Account', None, '0001', None, '000001'],
+                ], sheet_name='Sheet')
+                with self.assertRaisesRegex(AutomationError, 'ambiguous'):
+                    build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
+
     def test_datagrid_detection_uses_export_headers_without_routing_campaign_sources(self):
         self.assertTrue(is_datagrid_sheet(GRID_HEADERS))
         self.assertTrue(is_datagrid_sheet([' ACCOUNT NO. ', 'Financing/Card No.', 'Status Code', 'Email']))

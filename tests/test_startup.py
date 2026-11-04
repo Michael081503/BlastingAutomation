@@ -517,7 +517,7 @@ class StartupTests(unittest.TestCase):
             b2_page.render_b2_page = lambda: None
             import app
             assert b2_matching.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
-            assert b2_matching.B2_MATCHING_VERSION == 7
+            assert b2_matching.B2_MATCHING_VERSION == 8
             assert len(b2_page.B2_TEMPLATE_HEADERS) == 16
             assert 'Time' not in b2_page.B2_TEMPLATE_HEADERS
             assert 'timestamp' not in inspect.signature(b2_matching.build_b2_exports).parameters
@@ -747,7 +747,7 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'b2_matching', 'b2_page'} <= refreshed
-            assert b2_matching.B2_MATCHING_VERSION == 7
+            assert b2_matching.B2_MATCHING_VERSION == 8
             assert b2_page.B2_B4_OB_SORT_VERSION == b2_matching.B2_B4_OB_SORT_VERSION == 1
             assert b2_matching.ob_sort_key is automation.ob_sort_key
             assert b2_page.OB_SORT_VERSION == automation.OB_SORT_VERSION
@@ -763,13 +763,32 @@ class StartupTests(unittest.TestCase):
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'b2_matching', 'b2_page'} <= refreshed
-            assert b2_matching.B2_MATCHING_VERSION == 7
+            assert b2_matching.B2_MATCHING_VERSION == 8
             assert b2_page.B2_COMPACT_DOWNLOADS_VERSION == 1
             assert b2_page.B4_PAGE_VERSION == 2
             assert callable(b2_page.no_matching_rows_message)
             assert refresh_application_modules() == set()
         """)
 
+
+    def test_cached_bucket_contact_mapping_refreshes_to_primary_headers(self):
+        self.run_isolated("""
+            import b2_matching, b2_page
+            from autostat import ContactSheet
+            del b2_matching.B2_B4_CONTACT_HEADERS_VERSION
+            b2_matching._b4_contact_sheet = lambda sheet, account_column: sheet
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'b2_matching', 'b2_page'} <= refreshed
+            sheet = ContactSheet('Sheet1', 1,
+                ('Contract Number', 'Phone (01)', 'Email (01)', 'Mobile 1', 'Email (1)'),
+                0, (2, 4), (1, 3))
+            contacts = b2_matching._b4_contact_sheet(sheet, 0)
+            assert contacts.email_columns == (4,)
+            assert contacts.phone_columns == (3,)
+            assert b2_page.B2_B4_CONTACT_HEADERS_VERSION == 1
+            assert refresh_application_modules() == set()
+        """)
 
     def test_cached_autostat_pages_refresh_for_b4_templates_uploads_and_clear_all(self):
         self.run_isolated("""

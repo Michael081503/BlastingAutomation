@@ -18,7 +18,7 @@ from b2_matching import B2_TEMPLATE_HEADERS, build_b4_exports
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADERS = ["Account Key", "Contract Number", "Bucket Code", "Product Category Code",
-           "Mobile 1", "Email (02)", "Phone (01)", "Email (01)", "Name"]
+           "Mobile 2", "Email (02)", "Phone (01)", "Email (01)", "Name"]
 GRID_HEADERS = ["Account No.", "Financing/Card No.", "Old I.C."]
 
 
@@ -67,6 +67,61 @@ class Upload(BytesIO):
 
 
 class B4MatchingTests(unittest.TestCase):
+    def test_primary_mobile_and_email_headers_override_legacy_contacts(self):
+        for primary_email in ('Email (1)', ' EMAIL (01) '):
+            with self.subTest(primary_email=primary_email):
+                headers = ['Account Key', 'Contract Number', 'Bucket Code', 'Product Category Code',
+                           'Phone (01)', 'Email (02)', ' MOBILE 1 ', primary_email]
+                raw = workbook_data(headers, [
+                    ['0001', '000001', 4, 'MC', '09171234567', 'old@example.com',
+                     '+63 918 123 4567', 'primary@example.com'],
+                    ['BEL-2', 'BEL-002', 4, 'BEL', '09191234567', 'other@example.com',
+                     '09201234567', 'invalid'],
+                    ['0003', '000003', 4, 'MC', '09211234567', 'fallback@example.com',
+                     '123', 'invalid'],
+                    ['0004', '000004', 4, 'MC', '09221234567', 'fallback@example.com',
+                     None, None],
+                    ['0005', '000005', 4, 'MC', '09231234567', 'old@example.com',
+                     '123', 'email-only@example.com'],
+                ])
+                grid = workbook_data(GRID_HEADERS, [
+                    ['0001', '000001', 'IC1'], ['BEL-2', 'BEL-002', 'IC2'],
+                    ['0003', '000003', 'IC3'], ['0004', '000004', 'IC4'], ['0005', '000005', 'IC5'],
+                ])
+                result = build_b4_exports(selection('NEGATIVE B4 DATABASE.xlsx', raw), selection('list.xlsx', grid))
+                output = {row['primary_key']: row for file in result.bundle.files for row in rows(file)}
+                self.assertEqual(set(output), {'0001', 'BEL-2', '0005'})
+                self.assertEqual((output['0001']['email'], output['0001']['phone']),
+                                 ('primary@example.com', '9181234567'))
+                self.assertEqual((output['BEL-2']['email'], output['BEL-2']['phone']), ('', '9201234567'))
+                self.assertEqual((output['0005']['email'], output['0005']['phone']), ('email-only@example.com', ''))
+                self.assertEqual(result.bundle.summary[0]['No valid contact'], 2)
+
+    def test_email_1_precedes_email_01_without_row_fallback(self):
+        headers = ['Account Key', 'Contract Number', 'Bucket Code', 'Product Category Code',
+                   'Email (01)', 'Email (1)', 'Mobile 1']
+        raw = workbook_data(headers, [
+            ['0001', '000001', 4, 'MC', 'legacy@example.com', 'primary@example.com', '09171234567'],
+            ['0002', '000002', 4, 'MC', 'fallback@example.com', None, '09181234567'],
+        ])
+        grid = workbook_data(GRID_HEADERS, [['0001', '000001', 'IC1'], ['0002', '000002', 'IC2']])
+        result = build_b4_exports(selection('database.xlsx', raw), selection('list.xlsx', grid))
+        output = {row['primary_key']: row for file in result.bundle.files for row in rows(file)}
+        self.assertEqual(output['0001']['email'], 'primary@example.com')
+        self.assertEqual(output['0002']['email'], '')
+
+    def test_duplicate_primary_contact_headers_are_rejected(self):
+        for duplicated in ('Email (1)', 'Mobile 1'):
+            with self.subTest(duplicated=duplicated):
+                headers = ['Account Key', 'Contract Number', 'Bucket Code', 'Product Category Code',
+                           'Email (1)', 'Mobile 1', duplicated.lower().replace(' ', '')]
+                raw = workbook_data(headers, [
+                    ['0001', '000001', 4, 'MC', 'first@example.com', '09171234567', 'other@example.com'],
+                ])
+                grid = workbook_data(GRID_HEADERS, [['0001', '000001', 'IC1']])
+                with self.assertRaisesRegex(AutomationError, 'ambiguous'):
+                    build_b4_exports(selection('database.xlsx', raw), selection('list.xlsx', grid))
+
     def test_exact_01_contacts_b4_bucket_and_template_with_matching_audit(self):
         raw, grid = fixtures()
         result = build_b4_exports(selection("endorsement.xlsx", raw), selection("NEGATIVE B4 DB.xlsx", grid))
@@ -129,6 +184,25 @@ class B4MatchingTests(unittest.TestCase):
 
 
 class B4PageTests(unittest.TestCase):
+    def test_database_with_mobile_1_and_email_1_prepares_downloads(self):
+        raw = workbook_data(
+            ['Account Key', 'Contract Number', 'Bucket Code', 'Product Category Code', 'Mobile 1', 'Email (1)'],
+            [['0001', '000001', 4, 'MC', '+63 918 123 4567', 'first@example.com'],
+             ['BEL-2', 'BEL-002', 4, 'BEL', '09191234567', 'bel@example.com']],
+        )
+        grid = workbook_data(GRID_HEADERS, [['0001', '000001', 'IC1'], ['BEL-2', 'BEL-002', 'IC2']])
+        uploads = {'b4_database_upload': Upload('NEGATIVE B4 DATABASE.xlsx', raw),
+                   'b4_grid_upload': Upload('list.xlsx', grid)}
+        with patch('streamlit.file_uploader', side_effect=lambda label, **kw: uploads.get(kw['key'])):
+            app = AppTest.from_file(str(ROOT / 'pages' / 'NEGATIVE_B2.py')).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state['b4_result']['matched']
+            self.assertEqual([file.count for file in result.bundle.files], [1, 1])
+            self.assertEqual(rows(result.bundle.files[0])[0]['phone'], '9181234567')
+            self.assertEqual(rows(result.bundle.files[0])[0]['email'], 'first@example.com')
+            self.assertEqual(len(app.get('download_button')), 3)
+
     def test_b2_only_database_explains_zero_rows_and_never_offers_empty_downloads(self):
         _, grid = fixtures()
         wrong_raw = workbook_data(HEADERS, [

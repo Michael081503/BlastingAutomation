@@ -103,6 +103,7 @@ def refresh_application_modules() -> set[str]:
             "B2_MATCHING_VERSION", "build_b2_exports", "DATAGRID_ROUTING_VERSION", "is_datagrid_sheet",
             "B2_TEMPLATE_VERSION", "B2_TEMPLATE_HEADERS",
             "B2_CONTACT_PRIORITY_VERSION",
+            "B2_B4_CONTACT_HEADERS_VERSION",
             "B2_BUCKET_DIAGNOSTICS_VERSION",
             "B2_UPLOAD_ROLES_VERSION", "is_sbc_database_sheet", "validate_b2_source",
             "B4_MATCHING_VERSION", "build_b4_exports", "B2_B4_AGENTS_VERSION",

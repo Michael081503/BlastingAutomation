@@ -11,7 +11,7 @@ from automation import AutomationError, CSV_OUTPUT_ENCODINGS, MAPPING_VERSION, O
 from autostat import AUTOSTAT_VERSION, SourceSelection, inspect_contact_source
 from b2_matching import (
     B2_MATCHING_VERSION, B2_TEMPLATE_HEADERS, B2_TEMPLATE_VERSION, B2_B4_AGENTS_VERSION, B2_B4_OB_SORT_VERSION,
-    B4_MATCHING_VERSION, build_b2_exports, build_b4_exports,
+    B4_MATCHING_VERSION, B2_B4_CONTACT_HEADERS_VERSION, build_b2_exports, build_b4_exports,
     is_datagrid_sheet, is_sbc_database_sheet, matching_sheet_score, validate_b2_source,
 )
 from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES
@@ -37,7 +37,7 @@ def no_matching_rows_message(result, *, bucket: int) -> str:
         return f"The matched accounts are outside B{bucket} in this database. Upload the current B{bucket} database."
     if stats["Unsupported product"]:
         return f"No supported B{bucket} CARDS or BEL accounts with valid contacts were found. Check Details."
-    contacts = "Email (01) or Phone (01)" if bucket == 4 else "email or mobile contacts"
+    contacts = "primary email or Mobile 1 contacts" if bucket == 4 else "email or mobile contacts"
     return f"No matched B{bucket} accounts have valid {contacts}. Check the contact database."
 
 
@@ -56,7 +56,8 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
         database_upload = st.file_uploader(
             "1. Latest full SBC database" if bucket == 2 else "1. B4 contact database", type=["xlsx"],
             key=upload_widget_key(f"{prefix}database_upload"),
-            help="Use the full SBC sheet containing accounts for this bucket. For B4, use the B4 endorsement/contact database.",
+            help=(f"Use NEGATIVE B{bucket} DATABASE.xlsx or the full contact database for this bucket. "
+                  "Contacts come from Email (1) / Email (01) and Mobile 1."),
         )
     with right:
         grid_upload = datagrid_upload if datagrid_upload is not None else st.file_uploader(
@@ -149,7 +150,7 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
     signature = (tuple(signatures), encoding, B2_MATCHING_VERSION, B2_TEMPLATE_VERSION, B2_TEMPLATE_HEADERS,
                  AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION, bucket, B4_MATCHING_VERSION,
                  B2_B4_AGENTS_VERSION, B2_B4_OB_SORT_VERSION, OB_SORT_VERSION,
-                 tuple(filenames.items()), B2_COMPACT_DOWNLOADS_VERSION)
+                 tuple(filenames.items()), B2_COMPACT_DOWNLOADS_VERSION, B2_B4_CONTACT_HEADERS_VERSION)
     prepared = st.session_state.get(result_key)
     if prepared is None or prepared["signature"] != signature:
         st.session_state.pop(result_key, None)

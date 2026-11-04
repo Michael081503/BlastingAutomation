@@ -17,14 +17,15 @@ from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES, COLLECTI
 from exports import export_filename
 
 
-B2_MATCHING_VERSION = 7
+B2_MATCHING_VERSION = 8
 B2_B4_OB_SORT_VERSION = 1
 B2_BUCKET_DIAGNOSTICS_VERSION = 1
-B4_MATCHING_VERSION = 1
+B4_MATCHING_VERSION = 2
 B2_B4_AGENTS_VERSION = 1
 B2_UPLOAD_ROLES_VERSION = 1
 B2_TEMPLATE_VERSION = 2
 B2_CONTACT_PRIORITY_VERSION = 1
+B2_B4_CONTACT_HEADERS_VERSION = 1
 # Exact header order from 1EMAIL_Blasting - Template.xlsx; no sample rows are used.
 B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
 DATAGRID_ROUTING_VERSION = 1
@@ -136,22 +137,34 @@ def _detail_columns(source: SourceSelection, fields: dict[str, tuple[str, ...]])
     return result
 
 
-def _preferred_contact_columns(sheet: ContactSheet, columns: tuple[int, ...], preferred: str) -> tuple[int, ...]:
-    preferred = normalize_header(preferred)
-    return tuple(sorted(columns, key=lambda index: normalize_header(sheet.headers[index]) != preferred))
+def _preferred_contact_columns(sheet: ContactSheet, columns: tuple[int, ...], *preferred: str) -> tuple[int, ...]:
+    labels = [normalize_header(sheet.headers[index]) for index in columns]
+    priorities = [normalize_header(header) for header in preferred]
+    for header, label in zip(preferred, priorities):
+        if labels.count(label) > 1:
+            raise AutomationError(f"{sheet.name}: ambiguous {header} column in the contact database.")
+    return tuple(sorted(columns, key=lambda index: (
+        priorities.index(normalize_header(sheet.headers[index]))
+        if normalize_header(sheet.headers[index]) in priorities else len(priorities)
+    )))
 
 
 def _b4_contact_sheet(sheet: ContactSheet, account_column: int) -> ContactSheet:
     labels = [normalize_header(header) for header in sheet.headers]
 
-    def column(header):
-        matches = [index for index, label in enumerate(labels) if label == normalize_header(header)]
-        if len(matches) != 1:
-            raise AutomationError(f"{sheet.name}: B4 needs one unambiguous {header} column in the endorsement database.")
-        return matches[0]
+    def column(*headers):
+        for header in headers:
+            matches = [index for index, label in enumerate(labels) if label == normalize_header(header)]
+            if len(matches) > 1:
+                raise AutomationError(f"{sheet.name}: ambiguous {header} column in the B4 contact database.")
+            if matches:
+                return matches[0]
+        raise AutomationError(
+            f"{sheet.name}: B4 needs one unambiguous {' or '.join(headers)} column in the contact database."
+        )
 
-    return replace(sheet, account_column=account_column, email_columns=(column("Email (01)"),),
-                   phone_columns=(column("Phone (01)"),))
+    return replace(sheet, account_column=account_column, email_columns=(column("Email (1)", "Email (01)"),),
+                   phone_columns=(column("Mobile 1", "Phone (01)"),))
 
 
 def _campaign_record(
@@ -241,13 +254,14 @@ def build_b2_exports(
     grid_columns = _columns(datagrid, database=False)
     raw_details = _detail_columns(database, RAW_DETAILS)
     grid_details = _detail_columns(datagrid, GRID_DETAILS)
-    contacts_sheet = replace(
-        database.sheet, account_column=raw_columns["contract"],
-        email_columns=_preferred_contact_columns(database.sheet, database.sheet.email_columns, "EMAIL (01)"),
-        phone_columns=_preferred_contact_columns(database.sheet, database.sheet.phone_columns, "Mobile 1"),
-    )
     if bucket == 4:
         contacts_sheet = _b4_contact_sheet(database.sheet, raw_columns["contract"])
+    else:
+        contacts_sheet = replace(
+            database.sheet, account_column=raw_columns["contract"],
+            email_columns=_preferred_contact_columns(database.sheet, database.sheet.email_columns, "Email (1)", "Email (01)"),
+            phone_columns=_preferred_contact_columns(database.sheet, database.sheet.phone_columns, "Mobile 1"),
+        )
     selected_raw = (set(raw_columns.values()) | set(raw_details.values())
                     | set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns))
     raw_rows = list(_rows(
@@ -345,5 +359,5 @@ def build_b2_exports(
 def build_b4_exports(
     database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252",
 ) -> B2MatchResult:
-    """Match verified B4 accounts using exactly Email (01) and Phone (01)."""
+    """Match verified B4 accounts using the primary email and Mobile 1 headers."""
     return build_b2_exports(database, datagrid, encoding=encoding, bucket=4)
