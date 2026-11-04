@@ -11,6 +11,19 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_agent_ui_refreshes_to_native_rows_and_absence_checkboxes(self):
+        self.run_isolated("""
+            import agent_order, agent_availability_page, agent_cycle_page
+            del agent_order.AGENT_NATIVE_ROWS_VERSION
+            del agent_availability_page.AGENT_ABSENCE_CHECKBOX_VERSION
+            from app_startup import refresh_application_modules
+            refreshed = refresh_application_modules()
+            assert {'agent_order', 'agent_availability_page', 'agent_cycle_page', 'b2_page'} <= refreshed
+            assert agent_order.AGENT_NATIVE_ROWS_VERSION == 1
+            assert agent_cycle_page.render_agent_order is agent_order.render_agent_order
+            assert refresh_application_modules() == set()
+        """)
+
     def test_cached_autostat_refreshes_to_24_hour_timestamps(self):
         self.run_isolated("""
             from datetime import datetime

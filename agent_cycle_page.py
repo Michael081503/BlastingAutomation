@@ -10,7 +10,6 @@ import streamlit as st
 
 from agent_cycle import AgentCycle, cycle_agents, default_cycle, load_cycle, reorder_cycle, save_cycle
 from agent_order import render_agent_order
-from agent_availability_page import render_agent_availability
 from automation import AutomationError
 from export_config import GEO_RECO_AGENTS
 from folder_output import MANILA_TIMEZONE
@@ -68,12 +67,13 @@ def render_agent_cycle():
             return None
         agents = cycle_agents(cycle, assignment_date)
         revision = _cycle_revision(cycle)
-        st.caption("Drag agents into first, second and third position, or use the arrows. Changes save automatically for the selected date.")
+        st.caption("Check Absent beside unavailable agents. Use the arrows to change the order. Changes save automatically.")
         component_key = f"agent_cycle_drag_{assignment_date.isoformat()}"
         error = st.session_state.get("agent_cycle_order_error", {})
         save_error = error.get("message") if error.get("key") == component_key else None
-        render_agent_order(
+        available = render_agent_order(
             agents, key=component_key, revision=revision, save_error=save_error,
+            assignment_date=assignment_date,
             on_change=partial(_save_agent_order, component_key, assignment_date),
         )
         if save_error:
@@ -115,7 +115,6 @@ def render_agent_cycle():
             st.caption("This cycle applies only to RECO and is stored on the computer or server running this app.")
         if st.session_state.pop("agent_cycle_saved", False):
             st.success("Agent cycle saved.")
-        available = render_agent_availability("geo_reco", assignment_date, agents, key_prefix="reco")
         if available is None:
             return None
     return assignment_date, available

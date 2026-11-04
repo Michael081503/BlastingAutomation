@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import unittest
 from datetime import datetime
 from io import BytesIO, StringIO
@@ -29,7 +28,7 @@ from automation import (
     inspect_workbook,
     read_source,
 )
-from export_config import CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, OUTPUT_FILENAMES
+from export_config import CHANNEL_SUFFIXES, GEO_OUTPUT_FILENAMES, GEO_RECO_AGENTS, OUTPUT_FILENAMES
 from email_validation import validated_email
 from exports import (
     GEO_REVIEW_GROUP_KEYS, build_geo_exports, build_negative_exports, build_sheet_exports,
@@ -1420,7 +1419,10 @@ class AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             self.assertEqual(len(app.session_state["result"]["files"]), 14)
-            first_agent = json.loads(app.get("component_instance")[0].proto.json_args)["data"][0]
+            first_checkbox = next(widget for widget in app.checkbox
+                                  if widget.key and widget.key.startswith("agent_availability_"))
+            first_agent = next(agent for agent in GEO_RECO_AGENTS
+                               if first_checkbox.key.endswith(f"_{agent[1]}_absent"))
             for file in app.session_state["result"]["files"]:
                 self.assertEqual(csv_template_headers(file.data), list(DEFAULT_TEMPLATE_HEADERS))
                 rows = list(csv.DictReader(StringIO(file.data.decode("utf-8-sig"))))
@@ -1431,12 +1433,12 @@ class AppTests(unittest.TestCase):
                     for header in ("AREA", "NewEndo"):
                         self.assertEqual(row[header], "")
                     self.assertEqual((row["Monthly"], row["Terms"]),
-                                     (first_agent["name"], first_agent["code"]))
+                                     first_agent)
             preview = app.main.dataframe[-1].value
             self.assertEqual(list(preview.columns), list(DEFAULT_TEMPLATE_HEADERS))
             self.assertEqual(preview.loc[0, "Level"], "Level 1")
             self.assertEqual(preview.loc[0, "Product"], "CARDS")
-            self.assertEqual(preview.loc[0, "Monthly"], first_agent["name"])
+            self.assertEqual(preview.loc[0, "Monthly"], first_agent[0])
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")
             self.assertEqual(len(app.get("download_button")), 7)

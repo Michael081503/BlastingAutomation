@@ -28,6 +28,18 @@ for flow in ('b2', 'b4'):
 """
 
 
+def absence_controls(app, flow=None):
+    prefix = f"agent_availability_{flow}_" if flow else "agent_availability_"
+    return [widget for widget in app.checkbox if widget.key.startswith(prefix)]
+
+
+def set_available(app, codes, flow="b2"):
+    for widget in absence_controls(app, flow):
+        code = next(code for _, code in COLLECTION_AGENTS if widget.key.endswith(f"_{code}_absent"))
+        widget.set_value(code not in codes)
+    return app.run(timeout=20)
+
+
 class AgentAvailabilityTests(unittest.TestCase):
     def setUp(self):
         directory = TemporaryDirectory()
@@ -98,45 +110,46 @@ class AgentAvailabilityTests(unittest.TestCase):
     def test_shared_widgets_synchronize_both_directions_and_block_an_empty_day(self):
         app = AppTest.from_string(APP).run(timeout=20)
         self.assertEqual(len(app.exception), 0)
-        first, second = app.multiselect
-        self.assertEqual(first.value, ["AMRANCELI", "KPALIMA"])
-        first.set_value(["KPALIMA"]).run(timeout=20)
+        self.assertEqual(len(absence_controls(app)), 4)
+        self.assertTrue(all(not widget.value for widget in absence_controls(app)))
+        self.assertEqual(len(app.multiselect), 0)
+        set_available(app, ["KPALIMA"])
         self.assertEqual(len(app.exception), 0)
-        self.assertTrue(all(widget.value == ["KPALIMA"] for widget in app.multiselect))
+        self.assertEqual([widget.value for widget in absence_controls(app)], [True, False, True, False])
         self.assertEqual([item.value for item in app.text], ["b2:KPALIMA", "b4:KPALIMA"])
-        app.multiselect[1].set_value([]).run(timeout=20)
+        set_available(app, [], flow="b4")
         self.assertEqual(len(app.exception), 0)
-        self.assertTrue(all(widget.value == [] for widget in app.multiselect))
+        self.assertTrue(all(widget.value for widget in absence_controls(app)))
         self.assertEqual([item.value for item in app.text], ["b2:blocked", "b4:blocked"])
-        app.multiselect[0].set_value(["AMRANCELI"]).run(timeout=20)
-        self.assertTrue(all(widget.value == ["AMRANCELI"] for widget in app.multiselect))
+        set_available(app, ["AMRANCELI"])
+        self.assertEqual([widget.value for widget in absence_controls(app)], [False, True, False, True])
         self.assertEqual([item.value for item in app.text], ["b2:AMRANCELI", "b4:AMRANCELI"])
 
     def test_widgets_restore_each_dates_saved_selection_and_new_sessions(self):
         app = AppTest.from_string(APP).run(timeout=20)
-        app.multiselect[0].set_value(["KPALIMA"]).run(timeout=20)
+        set_available(app, ["KPALIMA"])
         app.date_input(key="day").set_value(TODAY + timedelta(days=1)).run(timeout=20)
-        self.assertTrue(all(widget.value == ["AMRANCELI", "KPALIMA"] for widget in app.multiselect))
+        self.assertTrue(all(not widget.value for widget in absence_controls(app)))
         app.date_input(key="day").set_value(TODAY).run(timeout=20)
-        self.assertTrue(all(widget.value == ["KPALIMA"] for widget in app.multiselect))
+        self.assertEqual([widget.value for widget in absence_controls(app)], [True, False, True, False])
         reopened = AppTest.from_string(APP).run(timeout=20)
-        self.assertTrue(all(widget.value == ["KPALIMA"] for widget in reopened.multiselect))
+        self.assertEqual([widget.value for widget in absence_controls(reopened)], [True, False, True, False])
 
     def test_save_errors_block_results_until_retry_succeeds(self):
         app = AppTest.from_string(APP).run(timeout=20)
         app.session_state["b2_result"] = {"old": True}
         app.session_state["b4_result"] = {"old": True}
         with patch("agent_availability_page.save_available_agents", side_effect=AutomationError("Cannot save availability")):
-            app.multiselect[0].set_value(["KPALIMA"]).run(timeout=20)
+            set_available(app, ["KPALIMA"])
         self.assertNotIn("b2_result", app.session_state)
         self.assertNotIn("b4_result", app.session_state)
         self.assertTrue(any(error.value == "Cannot save availability" for error in app.error))
         self.assertEqual([item.value for item in app.text], ["b2:blocked", "b4:blocked"])
-        self.assertTrue(all(widget.value == ["KPALIMA"] for widget in app.multiselect))
+        self.assertEqual([widget.value for widget in absence_controls(app)], [True, False, True, False])
         app.button[0].click().run(timeout=20)
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.error), 0)
-        self.assertTrue(all(widget.value == ["KPALIMA"] for widget in app.multiselect))
+        self.assertEqual([widget.value for widget in absence_controls(app)], [True, False, True, False])
 
     def test_clear_files_keeps_availability_preferences_and_saved_day(self):
         save_available_agents("b2_b4", TODAY, ["KPALIMA"])

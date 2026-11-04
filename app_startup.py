@@ -63,7 +63,7 @@ def refresh_application_modules() -> set[str]:
             "AGENT_AVAILABILITY_VERSION", "agent_roster", "available_agents", "save_available_agents",
         ), ("automation", "export_config")),
         ("agent_availability_page", (
-            "AGENT_AVAILABILITY_PAGE_VERSION", "render_agent_availability",
+            "AGENT_AVAILABILITY_PAGE_VERSION", "AGENT_ABSENCE_CHECKBOX_VERSION", "render_agent_availability",
         ), ("agent_availability", "automation")),
         ("exports", (
             "GEO_GROUP_LABELS", "GEO_PRODUCT_GROUP_LABELS", "GEO_REVIEW_GROUP_KEYS", "build_geo_exports",
@@ -83,7 +83,7 @@ def refresh_application_modules() -> set[str]:
             "NEGATIVE_MEMBERSHIP_VERSION", "source_account_counts", "validate_negative_exports",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
-        ("agent_order", ("AGENT_ORDER_VERSION", "AGENT_ORDER_CALLBACK_VERSION", "render_agent_order"), ()),
+        ("agent_order", ("AGENT_ORDER_VERSION", "AGENT_ORDER_CALLBACK_VERSION", "AGENT_NATIVE_ROWS_VERSION", "render_agent_order"), ("agent_availability_page",)),
         ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "AGENT_DRAG_ORDER_VERSION", "AGENT_STABLE_ORDER_VERSION", "RECO_AGENT_AVAILABILITY_VERSION", "render_agent_cycle"), ("agent_cycle", "agent_order", "folder_output", "agent_availability_page")),
         ("autostat", (
             "AUTOSTAT_VERSION", "AUTOSTAT_REMARK_BY", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",

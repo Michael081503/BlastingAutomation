@@ -10,7 +10,6 @@ from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from uuid import uuid4
 from zipfile import ZipFile
 
 from openpyxl import Workbook, load_workbook
@@ -38,22 +37,28 @@ def rows(file):
     return list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
 
 
-def agent_order_args(app):
-    return json.loads(app.get("component_instance")[0].proto.json_args)
-
-
 def displayed_agent_codes(app):
-    return [agent["code"] for agent in agent_order_args(app)["data"]]
+    return [code for widget in app.checkbox for _, code in GEO_RECO_AGENTS
+            if widget.key and widget.key.startswith("agent_availability_")
+            and widget.key.endswith(f"_{code}_absent")]
 
 
-def change_agent_order(app, codes, *, revision=None):
-    args = agent_order_args(app)
-    states = app._tree.get_widget_states()
-    states.widgets.add(
-        id=app.get("component_instance")[0].proto.id,
-        json_value=json.dumps({"order": codes, "revision": revision or args["revision"], "event_id": str(uuid4())}),
-    )
-    return app._run(widget_state=states, timeout=20)
+def change_agent_order(app, codes):
+    for target, code in enumerate(codes):
+        while displayed_agent_codes(app).index(code) > target:
+            button = next(widget for widget in app.button if widget.key.endswith(f"_{code}_up"))
+            button.click().run(timeout=20)
+            if app.error or app.exception:
+                return app
+    return app
+
+
+def set_available_agents(app, codes):
+    for widget in app.checkbox:
+        if widget.key and widget.key.startswith("agent_availability_"):
+            code = next(code for _, code in GEO_RECO_AGENTS if widget.key.endswith(f"_{code}_absent"))
+            widget.set_value(code not in codes)
+    return app.run(timeout=20)
 
 
 class AgentCycleTests(unittest.TestCase):
@@ -270,9 +275,7 @@ class AgentCyclePageTests(unittest.TestCase):
                           Upload(geo=geo) if kw.get("key") == "source_upload" else None):
                 app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
                 self.assertEqual(len(app.exception), 0)
-                selection = next(widget for widget in app.multiselect
-                                 if widget.key.startswith("agent_availability_"))
-                selection.set_value(["ROSVINOYA"]).run(timeout=20)
+                set_available_agents(app, ["ROSVINOYA"])
                 self.assertEqual(len(app.exception), 0)
                 self.assertEqual(len(app.error), 0)
                 self.assertTrue(all(record["Monthly"] == "Rosalie Vinoya" and record["Terms"] == "ROSVINOYA"
@@ -281,10 +284,10 @@ class AgentCyclePageTests(unittest.TestCase):
                     self.assertEqual(displayed_agent_codes(app), ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
                 self.assertFalse(self.path.exists())
                 fresh = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-                selection = next(widget for widget in fresh.multiselect
-                                 if widget.key.startswith("agent_availability_"))
-                self.assertEqual(selection.value, ["ROSVINOYA"])
-                selection.set_value([]).run(timeout=20)
+                for widget in fresh.checkbox:
+                    if widget.key and widget.key.startswith("agent_availability_"):
+                        self.assertEqual(widget.value, not widget.key.endswith("_ROSVINOYA_absent"))
+                set_available_agents(fresh, [])
                 self.assertEqual(len(fresh.exception), 0)
                 self.assertNotIn("result", fresh.session_state)
                 self.assertNotIn("geo_autostat_result", fresh.session_state)
@@ -295,13 +298,11 @@ class AgentCyclePageTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw:
                    Upload() if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-            next(widget for widget in app.multiselect if widget.key.startswith("agent_availability_")).set_value(
-                ["JBATALLER"]).run(timeout=20)
+            set_available_agents(app, ["JBATALLER"])
             app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(TODAY + timedelta(days=1)).run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual(next(widget for widget in app.multiselect
-                                  if widget.key.startswith("agent_availability_")).value,
-                             ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
+            self.assertTrue(all(not widget.value for widget in app.checkbox
+                                if widget.key and widget.key.startswith("agent_availability_")))
             self.assertEqual(displayed_agent_codes(app), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
             self.assertEqual({record["Terms"] for file in app.session_state["result"]["files"]
                               for record in file.records}, {"APMAMARIL", "ROSVINOYA", "JBATALLER"})
@@ -334,7 +335,7 @@ class AgentCyclePageTests(unittest.TestCase):
             fresh = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             self.assertEqual(displayed_agent_codes(fresh), ["ROSVINOYA", "JBATALLER", "APMAMARIL"])
 
-    def test_dragging_for_a_rotated_date_saves_order_and_updates_reco_exports(self):
+    def test_native_arrows_for_a_rotated_date_save_order_and_update_reco_exports(self):
         upload = Upload()
         selected_date = TODAY + timedelta(days=1)
         codes = ["JBATALLER", "ROSVINOYA", "APMAMARIL"]
@@ -343,7 +344,7 @@ class AgentCyclePageTests(unittest.TestCase):
             app.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(selected_date).run(timeout=20)
             app.run(timeout=20)
             self.assertIn("result", app.session_state)
-            component_id = app.get("component_instance")[0].proto.id
+            self.assertEqual(len(app.get("component_instance")), 0)
             with patch("agent_cycle_page.st.rerun", side_effect=AssertionError("Reordering should not force another rerun")):
                 change_agent_order(app, codes)
             self.assertEqual(len(app.exception), 0)
@@ -351,7 +352,7 @@ class AgentCyclePageTests(unittest.TestCase):
             self.assertEqual(app.session_state["result"]["files"][0].records[0]["Terms"], "JBATALLER")
             self.assertEqual(load_cycle().start_date, default_cycle().start_date)
             self.assertEqual(displayed_agent_codes(app), codes)
-            self.assertEqual(app.get("component_instance")[0].proto.id, component_id)
+            self.assertEqual(len(app.get("component_instance")), 0)
             self.assertEqual([code for _, code in cycle_agents(load_cycle(), selected_date)], codes)
             self.assertEqual(app.table[0].value.iloc[1]["First"], "ROSVINOYA")
             app.run(timeout=20)
@@ -364,7 +365,7 @@ class AgentCyclePageTests(unittest.TestCase):
             fresh.date_input(key=f"agent_cycle_date_{TODAY.isoformat()}").set_value(selected_date).run(timeout=20)
             self.assertEqual(displayed_agent_codes(fresh), codes)
 
-    def test_failed_drag_save_blocks_prepared_downloads_and_keeps_saved_order(self):
+    def test_failed_arrow_save_blocks_prepared_downloads_and_keeps_saved_order(self):
         upload = Upload()
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
@@ -380,13 +381,14 @@ class AgentCyclePageTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(displayed_agent_codes(app), ["JBATALLER", "ROSVINOYA", "APMAMARIL"])
 
-    def test_saved_drag_event_does_not_reapply_on_reruns_or_sidebar_changes(self):
+    def test_saved_arrow_click_does_not_reapply_on_reruns_or_sidebar_changes(self):
         with patch("streamlit.file_uploader", return_value=None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
             with patch("agent_cycle_page.save_cycle", wraps=save_cycle) as save:
                 change_agent_order(app, ["JBATALLER", "APMAMARIL", "ROSVINOYA"])
+                saved_count = save.call_count
                 app.run(timeout=20)
-                self.assertEqual(save.call_count, 1)
+                self.assertEqual(save.call_count, saved_count)
             save_cycle(default_cycle())
             app.run(timeout=20)
             self.assertEqual(displayed_agent_codes(app), ["APMAMARIL", "ROSVINOYA", "JBATALLER"])
@@ -394,13 +396,12 @@ class AgentCyclePageTests(unittest.TestCase):
             self.assertEqual(displayed_agent_codes(app), ["JBATALLER", "APMAMARIL", "ROSVINOYA"])
             self.assertEqual(load_cycle().agent_codes[0], "JBATALLER")
 
-    def test_stale_drag_event_keeps_the_newer_saved_cycle_and_can_be_retried(self):
+    def test_stale_arrow_click_keeps_the_newer_saved_cycle_and_can_be_retried(self):
         with patch("streamlit.file_uploader", return_value=None):
             app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
-            old_revision = agent_order_args(app)["revision"]
             newer_cycle = AgentCycle(TODAY, ("ROSVINOYA", "APMAMARIL", "JBATALLER"))
             save_cycle(newer_cycle)
-            change_agent_order(app, ["JBATALLER", "APMAMARIL", "ROSVINOYA"], revision=old_revision)
+            change_agent_order(app, ["JBATALLER", "APMAMARIL", "ROSVINOYA"])
             self.assertEqual(len(app.exception), 0)
             self.assertTrue(any("cycle changed" in error.value for error in app.error))
             self.assertEqual(load_cycle(), newer_cycle)
@@ -473,8 +474,8 @@ class AgentCyclePageTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertFalse(any(widget.key in ("geo_agent_name", "geo_agent_code") for widget in app.text_input))
-            self.assertEqual(list(app.table[0].value["Monthly"]), [name for name, _ in GEO_AGENTS])
-            self.assertEqual(list(app.table[0].value["Terms"]), [code for _, code in GEO_AGENTS])
+            self.assertEqual(displayed_agent_codes(app), [code for _, code in GEO_AGENTS])
+            self.assertTrue(all(any(name in row.value for row in app.markdown) for name, _ in GEO_AGENTS))
             for mode in ("Separate Area and Christmas Amnesty groups", "All accounts in one group"):
                 with self.subTest(mode=mode):
                     app.radio[0].set_value(mode).run(timeout=20)

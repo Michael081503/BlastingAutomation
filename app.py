@@ -299,10 +299,6 @@ def render_workbook_page() -> None:
                 st.session_state.pop("geo_autostat_result", None)
                 download_area.error("Select at least one available GEO agent in Optional settings before preparing files.")
                 return
-            st.table([
-                {"Order": number, "Monthly": name, "Terms": code}
-                for number, (name, code) in enumerate(agents, start=1)
-            ])
             st.caption(
                 "Accounts follow the order above after sorting each group by OB, highest first. "
                 "They are split evenly, with any extra accounts assigned from the top of the order. "
