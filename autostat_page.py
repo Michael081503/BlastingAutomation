@@ -305,7 +305,8 @@ def _render_autostat_uploads(
         )
     if not excel_output and not compact:
         st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use the Excel download for viewing and editing.")
-    with options.expander("Preview") if compact else st.expander("Preview"):
+    with st.container(key=f"{state_prefix}preview_section"):
+        st.subheader("Preview")
         filename = st.selectbox(
             "File to preview", [file.filename for file in bundle.files],
             key=f"{state_prefix}preview_{hash(signature)}",

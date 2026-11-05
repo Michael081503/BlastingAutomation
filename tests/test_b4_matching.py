@@ -280,7 +280,7 @@ class B4PageTests(unittest.TestCase):
             self.assertTrue(any("No account numbers from this B4 list match" in item.value for item in app.error))
             self.assertEqual(len(app.get("download_button")), 0)
 
-    def test_uploads_automatically_prepare_once_with_details_and_options_collapsed(self):
+    def test_uploads_automatically_prepare_once_with_visible_details_and_collapsed_options(self):
         raw, grid = fixtures()
         uploads = {"b4_database_upload": Upload("B4.xlsx", raw), "b4_grid_upload": Upload("list.xlsx", grid)}
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
@@ -291,6 +291,8 @@ class B4PageTests(unittest.TestCase):
             self.assertEqual(len(app.get("download_button")), 3)
             self.assertFalse(any(widget.key == "b4_prepare" for widget in app.button))
             self.assertTrue(all(not panel.proto.expanded for panel in app.expander))
+            self.assertFalse(any(panel.label == "B4 details" for panel in app.expander))
+            self.assertTrue(any(heading.value == "B4 details" for heading in app.subheader))
             self.assertEqual(len(app.metric), 0)
             app.run(timeout=20)
             self.assertEqual(prepare.call_count, 1)

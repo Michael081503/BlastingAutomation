@@ -51,8 +51,10 @@ class AutomaticPreparationTests(unittest.TestCase):
             self.assertEqual(len(app.error), 0)
             self.assertEqual(app.session_state["result"]["count"], 2)
             self.assertFalse(any(button.label == "Preview and prepare files" for button in app.button))
-            for label in ("Optional settings", "Preview and other downloads"):
-                self.assertFalse(next(item for item in app.expander if item.label == label).proto.expanded)
+            self.assertTrue(next(item for item in app.expander if item.label == "Optional settings").proto.expanded)
+            self.assertFalse(any(item.label == "Preview and other downloads" for item in app.expander))
+            self.assertTrue(any(heading.value == "Preview and other downloads" for heading in app.subheader))
+            self.assertTrue(any(metric.label == "Accounts included" for metric in app.metric))
             self.assertFalse(any(item.label in ("AUTOSTAT logs (optional)", "AutoStat log settings")
                                  for item in app.expander))
             self.assertTrue({"geo_autostat_email_excel", "geo_autostat_viber_excel"} <=

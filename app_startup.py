@@ -138,7 +138,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("agent_order", ("AGENT_ORDER_VERSION", "AGENT_ORDER_CALLBACK_VERSION", "AGENT_NATIVE_ROWS_VERSION", "render_agent_order"), ("agent_availability_page",)),
-        ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "AGENT_DRAG_ORDER_VERSION", "AGENT_STABLE_ORDER_VERSION", "RECO_AGENT_AVAILABILITY_VERSION", "render_agent_cycle"), ("agent_cycle", "agent_order", "folder_output", "agent_availability_page")),
+        ("agent_cycle_page", ("AGENT_CYCLE_PAGE_VERSION", "AGENT_DRAG_ORDER_VERSION", "AGENT_STABLE_ORDER_VERSION", "RECO_AGENT_AVAILABILITY_VERSION", "RECO_AGENT_VISIBLE_SECTION_VERSION", "RECO_AGENT_IMMEDIATE_PANEL_VERSION", "render_agent_cycle"), ("agent_cycle", "agent_order", "folder_output", "agent_availability_page")),
         ("autostat", (
             "AUTOSTAT_VERSION", "AUTOSTAT_REMARK_BY", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "AUTOSTAT_24_HOUR_TIME_VERSION",

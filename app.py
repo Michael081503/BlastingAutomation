@@ -142,9 +142,10 @@ def render_workbook_page() -> None:
         st.caption("Download the ZIP or individual files to your computer.")
 
     source_file = st.file_uploader("Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
+    assignment_panel = st.container(key="agent_assignment_section")
     download_area = st.container()
     autostat_panel = st.container(key="geo_autostat_section")
-    settings = st.expander("Optional settings", expanded=False)
+    settings = st.expander("Optional settings", expanded=True)
     if source_file is not None:
         source_bytes = source_file.getvalue()
         try:
@@ -165,7 +166,7 @@ def render_workbook_page() -> None:
     if source_file is None:
         st.session_state.pop("result", None)
         st.session_state.pop("geo_autostat_result", None)
-        with settings:
+        with assignment_panel:
             render_agent_cycle()
         st.info("Upload a source workbook to prepare your files.")
         return
@@ -211,7 +212,7 @@ def render_workbook_page() -> None:
                 template_info = None
                 st.caption("Outputs keep the template's column order. CSV output separates columns with commas.")
 
-        with st.expander("Header rows", expanded=False):
+        with st.sidebar.expander("Header rows", expanded=False):
             st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
             header_left, header_right = st.columns(2)
             with header_left:
@@ -245,7 +246,7 @@ def render_workbook_page() -> None:
         missing_contact = not {"email", "phone"}.intersection(defaults)
         missing_account = not {"primary_key", "cardnumber"}.intersection(defaults)
         source_columns = None
-        with st.expander("Source columns", expanded=missing_contact or missing_account):
+        with st.sidebar.expander("Source columns", expanded=missing_contact or missing_account):
             st.caption("Check the actual column names and sample values. Change Header rows above if the labels are on a different row.")
             preview_key = (source_digest, source_sheet, source_header, MAPPING_VERSION)
             previews = st.session_state.setdefault("source_previews", {})
@@ -282,7 +283,7 @@ def render_workbook_page() -> None:
         can_prepare = bool({"email", "phone"}.intersection(source_info.available_fields)
                            and {"primary_key", "cardnumber"}.intersection(source_info.available_fields))
         if not can_prepare:
-            st.info("Select an email or phone column and an account-number column under Source columns to prepare the template.")
+            st.info("Select an email or phone column and an account-number column under Source columns in the sidebar to prepare the template.")
             st.session_state.pop("result", None)
         missing_fields = [target for target in TARGET_HEADERS if target not in source_info.available_fields]
         if missing_fields:
@@ -290,13 +291,14 @@ def render_workbook_page() -> None:
         geo = source_info.has_area
         assignment_date, agents = None, None
         if geo:
-            st.subheader("GEO agent assignment")
             availability_date = manila_today()
-            agents = render_agent_availability("geo_reco", availability_date, GEO_AGENTS, key_prefix="geo")
+            with assignment_panel:
+                st.subheader("GEO agent assignment")
+                agents = render_agent_availability("geo_reco", availability_date, GEO_AGENTS, key_prefix="geo")
             if agents is None:
                 st.session_state.pop("result", None)
                 st.session_state.pop("geo_autostat_result", None)
-                download_area.error("Select at least one available GEO agent in Optional settings before preparing files.")
+                download_area.error("Select at least one available GEO agent in GEO agent assignment before preparing files.")
                 return
             st.caption(
                 "Accounts follow the order above after sorting each group by OB, highest first. "
@@ -304,11 +306,12 @@ def render_workbook_page() -> None:
                 "The same account keeps its agent in Email and Viber. Available agents keep this fixed order."
             )
         else:
-            agent_plan = render_agent_cycle()
+            with assignment_panel:
+                agent_plan = render_agent_cycle()
             if agent_plan is None:
                 st.session_state.pop("result", None)
                 st.session_state.pop("geo_autostat_result", None)
-                download_area.error("Check the RECO agent settings in Optional settings before files can be prepared.")
+                download_area.error("Check the RECO agent cycle before files can be prepared.")
                 return
             assignment_date, agents = agent_plan
         if geo:
@@ -382,7 +385,7 @@ def render_workbook_page() -> None:
 
     if not can_prepare:
         st.session_state.pop("geo_autostat_result", None)
-        st.warning("Open Optional settings > Source columns and select a contact column and an account-number column.")
+        st.warning("Open Source columns in the sidebar and select a contact column and an account-number column.")
         return
 
     if st.session_state.get("result") is None:
@@ -483,7 +486,8 @@ def render_workbook_page() -> None:
             source_columns if source_columns is not None else defaults, encoding=encoding,
         )
 
-    with st.expander("Preview and other downloads", expanded=False):
+    with st.container(key="campaign_preview_section"):
+        st.subheader("Preview and other downloads")
         count_col, blank_col, excluded_col, email_col = st.columns(4)
         count_col.metric("Accounts included", f"{result['count']:,}")
         blank_col.metric("Empty rows skipped", f"{result['blank_rows']:,}")

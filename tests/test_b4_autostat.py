@@ -99,6 +99,8 @@ class B4AutostatPageTests(unittest.TestCase):
             self.assertEqual(len(app.metric), 0)
             self.assertFalse(any(widget.key == "autostat_b4_prepare" for widget in app.button))
             self.assertTrue(all(not panel.proto.expanded for panel in app.expander))
+            self.assertFalse(any(panel.label == "Preview" for panel in app.expander))
+            self.assertTrue(any(heading.value == "Preview" for heading in app.subheader))
             bundle = app.session_state["autostat_b4_result"]["bundle"]
             self.assertEqual([file.count for file in bundle.files], [2, 2, 2])
             calls = {call.kwargs.get("key"): call for call in download.call_args_list}

@@ -19,6 +19,8 @@ AGENT_CYCLE_PAGE_VERSION = 4
 AGENT_DRAG_ORDER_VERSION = 1
 AGENT_STABLE_ORDER_VERSION = 1
 RECO_AGENT_AVAILABILITY_VERSION = 1
+RECO_AGENT_VISIBLE_SECTION_VERSION = 1
+RECO_AGENT_IMMEDIATE_PANEL_VERSION = 1
 
 
 def manila_today():
@@ -57,7 +59,8 @@ def render_agent_cycle():
                 st.error(str(error))
         return None
     today = manila_today()
-    with st.expander("RECO agent cycle", expanded=True):
+    with st.container(border=True, key="reco_agent_cycle_panel"):
+        st.subheader("RECO agent cycle")
         assignment_date = st.date_input(
             "Assignment date (Asia/Manila)", today, key=f"agent_cycle_date_{today.isoformat()}",
             help="Defaults to today's Manila date each day. Choose another date to preview or prepare that day's assignments.",

@@ -190,7 +190,8 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
             if file.count:
                 st.download_button(f"Download {file.filename}", file.data, file.filename, mime="text/csv",
                                    key=f"{prefix}download_{index}", on_click="ignore")
-    with st.expander(f"{bucket_label} details"):
+    with st.container(key=f"{prefix}details_section"):
+        st.subheader(f"{bucket_label} details")
         st.dataframe(pd.DataFrame(bundle.summary), hide_index=True, width="stretch")
         st.dataframe(pd.DataFrame(result.stats.items(), columns=["Check", "Count"]), hide_index=True, width="stretch")
         if result.audit:
