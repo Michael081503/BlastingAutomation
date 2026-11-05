@@ -1,6 +1,6 @@
 # Blasting Automation
 
-A local Streamlit app that exports **only the NEGATIVE worksheet** from a GEO or RECO workbook into your template's column layout. It separates Christmas Amnesty, product and level, followed by Email and Viber files for every group. When NEGATIVE has an Area column, GEO first separates Mindanao and R3 and combines levels within each product. Other worksheets, including OVERALL and RPC NO PTP, are never substituted or combined with NEGATIVE.
+A local Streamlit app that exports **only your selected worksheet** from a GEO or RECO workbook into your template's column layout. Choose **Source sheet** directly below the upload. It separates Christmas Amnesty, product and level, followed by Email and Viber files for every group. When the selected sheet has an Area column, GEO first separates Mindanao and R3 and combines levels within each product. Accounts from other worksheets are never combined with your selection.
 
 ## Run
 
@@ -24,9 +24,9 @@ Workbooks stay on the page you select. A DataGrid-looking sheet does not switch 
 
 Use **Clear all files** with the gold Batman-style icon in the upper-right of the workspace header on any page to empty every upload box at once, including GEO/RECO sources and templates, all AUTOSTAT modes, and the B2/B4 database/account-list uploads. It also clears prepared downloads, previews and source mappings across all pages. Log settings and output preferences are kept. Files already saved to a folder are kept. You can immediately upload a new batch after clearing.
 
-## NEGATIVE-only source protection
+## Selected worksheet protection
 
-Both GEO and RECO require the NEGATIVE worksheet in the currently uploaded workbook. Source selection cannot be changed to another sheet. Each campaign CSV and Excel record is checked against NEGATIVE's complete account/card/reference identity and duplicate count before downloads are offered. Inconsistent or outside accounts block both campaign and automatic activity downloads. Upload content hashes and the source-policy version invalidate old prepared results, including same-filename replacements and sessions open before this change. Existing files already downloaded to your computer are not rewritten; generate a fresh ZIP after uploading the current workbook.
+Both GEO and RECO offer a **Source sheet** dropdown with every worksheet in the uploaded workbook. NEGATIVE is selected by default when usable; workbooks without it can use another sheet. Each campaign CSV and Excel record is checked against the selected sheet's complete account/card/reference identity and duplicate count before downloads are offered. Inconsistent or outside accounts block both campaign and automatic activity downloads. Changing sheets rebuilds campaign files and automatic AUTOSTAT logs using only that sheet, with separate header and column mapping settings. An empty or unusable selection does not substitute accounts from another sheet. Upload content hashes and the source-policy version invalidate old prepared results, including same-filename replacements and sessions open before this change. Existing downloaded files are not rewritten; generate a fresh ZIP after changing your selection.
 
 ## Automatic AUTOSTAT on GEO & RECO
 
@@ -226,7 +226,7 @@ GEO follows **Andrea Mamaril / APMAMARIL**, then **Rosalie Vinoya / ROSVINOYA**,
 
 **GEO and RECO normalize Product first:** `MC` becomes `CARDS` before any Area, Christmas Amnesty, product, level, or Email/Viber split. Matching ignores capitalization and surrounding spaces, so `mc` and ` MC ` also become `CARDS`. These accounts follow the existing CARDS destination rules, and the exported Product value is `CARDS` in previews, CSVs, Excel files and ZIPs, including all-accounts mode. Other products retain their values. Original uploaded workbooks are unchanged.
 
-The following rules apply only to the uploaded workbook's **NEGATIVE** worksheet. The source sheet is fixed and read-only for both GEO and RECO. A missing or ambiguous NEGATIVE worksheet stops processing; an empty NEGATIVE produces no account files. There is no fallback to OVERALL or another worksheet. Configured group filenames remain unchanged.
+The following grouping rules apply only to the uploaded workbook's **selected worksheet**. Choose it using **Source sheet** on GEO & RECO. An empty selection produces no account files and never pulls accounts from another worksheet. NEGATIVE keeps the configured group filenames; other sheets add their sheet name as a filename prefix.
 
 | Christmas Amnesty | Product | Level | Base filename |
 | --- | --- | --- | --- |
@@ -240,7 +240,7 @@ The following rules apply only to the uploaded workbook's **NEGATIVE** worksheet
 
 The template's `ChristmasAmnesty` column contains `QUALIFIED` when the source is qualified; otherwise it is blank. Matching ignores case and surrounding whitespace. `LEVEL 1` and `Level 1` belong to the same group. BEL includes every level.
 
-Accounts are removed when **there is no valid `debtor_email` and `phone_1` is empty**. An account with a valid email or a phone number is kept in its matching channel file(s). Whitespace-only cells count as empty. This condition applies to all qualified and blank groups within NEGATIVE. The app displays the number of accounts removed separately from entirely empty rows and the number of invalid emails removed.
+Accounts are removed when **there is no valid `debtor_email` and `phone_1` is empty**. An account with a valid email or a phone number is kept in its matching channel file(s). Whitespace-only cells count as empty. This condition applies to all qualified and blank groups within the selected sheet. The app displays the number of accounts removed separately from entirely empty rows and the number of invalid emails removed.
 
 Empty groups produce no file. Qualified rows outside the product/level rules and blank-status CARDS at levels other than 1 or 6 are put in separate, clearly identified review groups with Email/Viber files. They are never mixed into the other-products group. Every account with at least one contact field is assigned to exactly one group, then routed to its matching channel(s).
 
@@ -272,7 +272,7 @@ Every nonempty group then produces Email and Viber CSV files, so five populated 
 
 The GEO source headers `email`, `old_ic`, `account`, `card_no`, `assign_date`, `placement`, `Product`, `OB (MASTERLIST}`, and `Phone 1` are accepted. `assign_date` supplies `EndoDate`; `placement` supplies `Level`. The source Area is copied into `AREA`, preserving `Region 3` as the source value even though its group is named R3. The `doclass` template column is filled automatically with **`SBC GEO Mindanao`** for Mindanao accounts and **`SBC GEO R3`** for Region 3 / R3 accounts, ignoring capitalization, spacing, and punctuation in Area. This applies to both Email and Viber files, previews, ZIPs, and the all-accounts mode. Other or missing Areas leave `doclass` blank. Area is optional for existing workbooks. GEO grouped exports require an AREA template header; the built-in 16-column template already includes AREA and doclass.
 
-GEO grouping reads **NEGATIVE only**, with the Area column determining GEO routing. Other worksheets are ignored even if they contain an Area column. The source workbook filename and required worksheet appear above the downloads.
+GEO grouping reads **the selected sheet only**, with that sheet's Area column determining GEO routing. Other worksheets are ignored even if they contain an Area column. The source workbook filename and selected worksheet appear above the downloads.
 
 Edit the GEO filenames directly in `GEO_OUTPUT_FILENAMES` at the top of [export_config.py](export_config.py). Mindanao and R3 each have five entries, followed by the review filenames. Each quoted value is the full base name for that Area and group. The app appends `_Email` or `_Viber` and `.csv`. For example, `CS AMNESTY GEO CARDS_MINDANAO` produces `CS AMNESTY GEO CARDS_MINDANAO_Email.csv` and `CS AMNESTY GEO CARDS_MINDANAO_Viber.csv`. Change the ZIP name in `GEO_ZIP_FILENAME`.
 

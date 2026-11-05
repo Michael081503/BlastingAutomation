@@ -64,7 +64,7 @@ RECO_ONLY_AGENTS_VERSION = 1
 GEO_FIXED_AGENTS_VERSION = 1
 GEO_AGENT_AVAILABILITY_VERSION = 1
 RECO_DOCLASS_VERSION = 1
-NEGATIVE_MEMBERSHIP_VERSION = 1
+SOURCE_MEMBERSHIP_VERSION = 1
 SOURCE_ACCOUNT_FIELDS = ("primary_key", "cardnumber", "indexoneuid")
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
@@ -118,12 +118,12 @@ def source_account_counts(records: list[dict[str, Any]]) -> Counter[tuple[str, .
     )
 
 
-def validate_negative_exports(
+def validate_source_exports(
     files: list[ExportFile], source_accounts: Counter[tuple[str, ...]], *, source_sheet: str,
 ) -> None:
-    """Block CSV and Excel downloads that cannot be traced to this NEGATIVE source."""
-    if normalize_header(source_sheet) != "negative":
-        raise AutomationError("Downloads blocked: GEO and RECO must use the NEGATIVE worksheet only.")
+    """Block CSV and Excel downloads outside the selected sheet's account counts."""
+    if not source_sheet.strip():
+        raise AutomationError("Downloads blocked: select a source worksheet first.")
     channels = defaultdict(Counter)
     for file in files:
         encoding = "utf-8-sig" if file.data.startswith(b"\xef\xbb\xbf") else "cp1252"
@@ -141,7 +141,7 @@ def validate_negative_exports(
         channels[file.channel].update(csv_accounts)
     if any(accounts - source_accounts for accounts in channels.values()):
         raise AutomationError(
-            "Downloads blocked: an output account is not verified against this upload's NEGATIVE worksheet. "
+            f'Downloads blocked: an output account is not verified against the selected worksheet "{source_sheet}". '
             "Clear all files and upload the current source workbook again."
         )
 

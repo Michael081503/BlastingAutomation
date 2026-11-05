@@ -26,7 +26,7 @@ from exports import (
     EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
     RECO_DOCLASS_VERSION, GEO_FIXED_AGENTS_VERSION, GEO_AGENT_AVAILABILITY_VERSION,
-    NEGATIVE_MEMBERSHIP_VERSION, source_account_counts, validate_negative_exports,
+    SOURCE_MEMBERSHIP_VERSION, source_account_counts, validate_source_exports,
     build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
@@ -46,14 +46,14 @@ from automation import (
     MAPPING_VERSION,
     OB_SORT_VERSION,
     WORKBOOK_READER_VERSION,
-    NEGATIVE_SOURCE_ONLY_VERSION,
+    SOURCE_SHEET_SELECTION_VERSION,
     OPTIONAL_FIELD_MAPPING,
     TARGET_HEADERS,
     XLSX_MIME,
     AutomationError,
     create_default_csv_template,
     csv_template_headers,
-    negative_source_sheet,
+    default_source_sheet,
     inspect_workbook,
     inspect_source_sheet,
     preview_source_rows,
@@ -98,7 +98,7 @@ def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
 def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
-    st.write("Upload your GEO or RECO workbook. Only its NEGATIVE worksheet is exported; your output ZIP is prepared automatically.")
+    st.write("Upload your GEO or RECO workbook and choose a source sheet. Only that sheet's accounts are exported; your output ZIP is prepared automatically.")
     if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
         st.session_state["campaign_output_format"] = "CSV (.csv)"
         st.session_state["campaign_csv_default_version"] = CSV_CAMPAIGN_DEFAULT_VERSION
@@ -142,6 +142,7 @@ def render_workbook_page() -> None:
         st.caption("Download the ZIP or individual files to your computer.")
 
     source_file = st.file_uploader("Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
+    source_panel = st.container()
     assignment_panel = st.container(key="agent_assignment_section")
     download_area = st.container()
     autostat_panel = st.container(key="geo_autostat_section")
@@ -177,8 +178,7 @@ def render_workbook_page() -> None:
     source_digest = hashlib.sha256(source_bytes).hexdigest()
     template_digest = hashlib.sha256(template_bytes).hexdigest()
     try:
-        source_info = negative_source_sheet(source_sheets)
-        source_sheet = source_info.name
+        default_sheet = default_source_sheet(source_sheets)
         template_sheets = (
             workbook_info(template_bytes, template=True) if template_extension == ".xlsx" else []
         )
@@ -190,28 +190,31 @@ def render_workbook_page() -> None:
         st.error(str(exc))
         return
 
+    source_names = [sheet.name for sheet in source_sheets]
+    with source_panel:
+        source_sheet = st.selectbox(
+            "Source sheet", source_names, index=source_names.index(default_sheet),
+            key=f"source_sheet_{source_digest}_{SOURCE_SHEET_SELECTION_VERSION}",
+            help="Only accounts from this worksheet are used for campaign files and automatic AUTOSTAT logs. Changing sheets rebuilds the outputs.",
+        )
+    source_info = next(sheet for sheet in source_sheets if sheet.name == source_sheet)
     download_area.caption(f"Source workbook: {source_file.name} | Worksheet: {source_sheet} only.")
     with settings:
-        st.subheader("NEGATIVE source settings")
-        sheet_left, sheet_right = st.columns(2)
-        with sheet_left:
-            st.text_input("Source sheet", value=source_sheet, disabled=True,
-                          help="Both GEO and RECO are restricted to NEGATIVE. Other worksheets are never exported.")
-        with sheet_right:
-            if template_sheets:
-                best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
-                template_names = [sheet.name for sheet in template_sheets]
-                template_sheet = st.selectbox(
-                    "Template sheet",
-                    template_names,
-                    index=template_names.index(best_template.name),
-                    key=f"template_sheet_{template_digest}",
-                )
-                template_info = next(sheet for sheet in template_sheets if sheet.name == template_sheet)
-            else:
-                template_sheet = ""
-                template_info = None
-                st.caption("Outputs keep the template's column order. CSV output separates columns with commas.")
+        st.subheader("Template settings")
+        if template_sheets:
+            best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
+            template_names = [sheet.name for sheet in template_sheets]
+            template_sheet = st.selectbox(
+                "Template sheet",
+                template_names,
+                index=template_names.index(best_template.name),
+                key=f"template_sheet_{template_digest}",
+            )
+            template_info = next(sheet for sheet in template_sheets if sheet.name == template_sheet)
+        else:
+            template_sheet = ""
+            template_info = None
+            st.caption("Outputs keep the template's column order. CSV output separates columns with commas.")
 
         with st.sidebar.expander("Header rows", expanded=False):
             st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
@@ -370,7 +373,7 @@ def render_workbook_page() -> None:
         TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
-        "automatic-preparation-v1", NEGATIVE_SOURCE_ONLY_VERSION, NEGATIVE_MEMBERSHIP_VERSION,
+        "automatic-preparation-v2-selected-sheet", SOURCE_SHEET_SELECTION_VERSION, SOURCE_MEMBERSHIP_VERSION,
         GEO_FILENAME_CONFIG_VERSION, GROUPED_SHEET_EXPORT_VERSION, OB_SORT_VERSION,
         EXCEL_EXPORT_VERSION,
         CAMPAIGN_OUTPUT_FORMAT_VERSION, campaign_format, EXCEL_SAFE_CSV_VERSION,
@@ -419,7 +422,7 @@ def render_workbook_page() -> None:
                         "zip_data": bundle.zip_data,
                         "zip_filename": bundle.zip_filename,
                     }
-                    validate_negative_exports(bundle.files, source_accounts, source_sheet=source_sheet)
+                    validate_source_exports(bundle.files, source_accounts, source_sheet=source_sheet)
                 st.session_state["result"] = {
                     "signature": signature,
                     "source_sha256": source_digest,
@@ -457,8 +460,8 @@ def render_workbook_page() -> None:
         return
     try:
         if result.get("source_sha256") != source_digest or result.get("source_sheet") != source_sheet:
-            raise AutomationError("Downloads blocked: the prepared files do not match the current NEGATIVE upload. Upload the source again.")
-        validate_negative_exports(result.get("files", []), result["source_accounts"], source_sheet=source_sheet)
+            raise AutomationError("Downloads blocked: the prepared files do not match the current upload and selected worksheet. Upload the source again.")
+        validate_source_exports(result.get("files", []), result["source_accounts"], source_sheet=source_sheet)
     except AutomationError as exc:
         st.session_state["result"] = {"signature": signature, "error": str(exc)}
         st.session_state.pop("geo_autostat_result", None)

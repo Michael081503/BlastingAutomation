@@ -174,8 +174,8 @@ class WorkflowPageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(app.title[0].value, "GEO & RECO")
             self.assertEqual({call.kwargs["key"] for call in uploader.call_args_list}, {"source_upload", "template_upload"})
-            source = next(widget for widget in app.text_input if widget.label == "Source sheet")
-            self.assertTrue(source.disabled)
+            source = next(widget for widget in app.selectbox if widget.label == "Source sheet")
+            self.assertFalse(source.disabled)
             self.assertEqual(source.value, "NEGATIVE")
             self.assert_no_embedded_b2(app)
 
