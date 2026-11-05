@@ -59,7 +59,7 @@ def render_agent_cycle():
                 st.error(str(error))
         return None
     today = manila_today()
-    with st.container(border=True, key="reco_agent_cycle_panel"):
+    with st.container(key="reco_agent_cycle_panel"):
         st.subheader("RECO agent cycle")
         assignment_date = st.date_input(
             "Assignment date (Asia/Manila)", today, key=f"agent_cycle_date_{today.isoformat()}",
@@ -87,7 +87,8 @@ def render_agent_cycle():
             "The same account keeps its agent in Email and Viber. The first agent moves to the end each calendar day."
         )
         st.caption("The top agent receives the first account. Names fill Monthly and codes fill Terms. Change the cycle start date in the sidebar.")
-        with st.expander("See upcoming days"):
+        with st.container():
+            st.caption("Upcoming days")
             st.table([
                 {"Date": (assignment_date + timedelta(days=day)).isoformat(),
                  **{label: code for label, (_, code) in zip(("First", "Second", "Third"), cycle_agents(cycle, assignment_date + timedelta(days=day)))}}

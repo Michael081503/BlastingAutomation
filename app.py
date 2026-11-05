@@ -145,7 +145,8 @@ def render_workbook_page() -> None:
     assignment_panel = st.container(key="agent_assignment_section")
     download_area = st.container()
     autostat_panel = st.container(key="geo_autostat_section")
-    settings = st.expander("Optional settings", expanded=True)
+    settings = st.container(key="optional_settings_section")
+    settings.subheader("Optional settings")
     if source_file is not None:
         source_bytes = source_file.getvalue()
         try:
