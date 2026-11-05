@@ -214,7 +214,6 @@ def render_workbook_page() -> None:
         else:
             template_sheet = ""
             template_info = None
-            st.caption("Outputs keep the template's column order. CSV output separates columns with commas.")
 
         with st.sidebar.expander("Header rows", expanded=False):
             st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
@@ -320,15 +319,6 @@ def render_workbook_page() -> None:
             assignment_date, agents = agent_plan
         if geo:
             st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
-        st.caption("Accounts are excluded when they have neither a valid email address nor a phone number.")
-        st.caption(
-            "Every group produces Email and Viber CSV files using the same headers. "
-            "Accounts with both contact details appear in both files."
-        )
-        st.caption(
-            "Invalid email formats are removed from Email files. Spaces around valid addresses are trimmed. "
-            "This checks the address format; it does not confirm that a mailbox exists or can receive mail."
-        )
         grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
         grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
         if not geo:
