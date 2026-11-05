@@ -72,7 +72,6 @@ def render_agent_availability(
     save_error = st.session_state.get(_error_key(group, assignment_date))
     displayed_codes = save_error["codes"] if save_error else list(saved_codes)
     st.session_state[key] = displayed_codes
-    st.caption(f"Mark absent agents for {assignment_date.isoformat()}. Accounts go to the remaining agents.")
     for index, (name, code) in enumerate(agents):
         columns = st.columns([6, 2, 1, 1] if on_move else [6, 2], vertical_alignment="center")
         columns[0].markdown(f"**{index + 1}. {name}**  \n{code}")
@@ -103,5 +102,4 @@ def render_agent_availability(
     if not selected:
         st.info("All agents are marked absent. Uncheck Absent for at least one agent before preparing files.")
         return None
-    st.caption("Availability is saved for this date. Each new day starts with all agents available.")
     return selected

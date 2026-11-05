@@ -92,13 +92,12 @@ def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
         hide_index=True,
         width="stretch",
     )
-    st.caption(f"Showing the first {min(count, 100):,} rows. The file contains all {count:,} rows.")
+    st.caption(f"{min(count, 100):,} / {count:,} rows")
 
 
 def render_workbook_page() -> None:
     render_bank_branding()
     st.title("GEO & RECO")
-    st.write("Upload your GEO or RECO workbook and choose a source sheet. Only that sheet's accounts are exported; your output ZIP is prepared automatically.")
     if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
         st.session_state["campaign_output_format"] = "CSV (.csv)"
         st.session_state["campaign_csv_default_version"] = CSV_CAMPAIGN_DEFAULT_VERSION
@@ -107,7 +106,6 @@ def render_workbook_page() -> None:
             "Output files", ("CSV (.csv)", "Excel (.xlsx)"), key="campaign_output_format",
             help="CSV is the default for GEO and RECO uploads. Excel copies remain optional.",
         )
-        st.caption("Account numbers are automatically protected in every GEO and RECO CSV export.")
         csv_format = st.selectbox(
             "CSV file type", list(CSV_OUTPUT_ENCODINGS), key="csv_file_type",
             help="Use CSV UTF-8 for names or other text that the standard CSV format cannot represent.",
@@ -119,19 +117,13 @@ def render_workbook_page() -> None:
         st.session_state["blank_template_headers"] = (DEFAULT_TEMPLATE_HEADERS, encoding)
     blank_template = st.session_state["blank_template"]
 
-    with st.sidebar:
-        st.subheader("Your field mapping")
+    with st.sidebar.expander("Field mapping"):
         st.dataframe(
             pd.DataFrame({**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items(), columns=["Source header", "Template header"]),
             hide_index=True,
             width="stretch",
         )
-        st.caption(
-            "Headers ignore case, spacing, and punctuation. "
-            "GEO aliases are accepted, including email, account, card_no, assign_date, and placement. "
-            "Area is copied when present; it is optional for other workbooks."
-        )
-        st.divider()
+    with st.sidebar:
         st.download_button(
             "Download blank template",
             data=blank_template,
@@ -139,7 +131,6 @@ def render_workbook_page() -> None:
             mime="text/csv",
             on_click="ignore",
         )
-        st.caption("Download the ZIP or individual files to your computer.")
 
     source_file = st.file_uploader("Source workbook", type=["xlsx"], key=upload_widget_key("source_upload"))
     source_panel = st.container()
@@ -147,7 +138,6 @@ def render_workbook_page() -> None:
     download_area = st.container()
     autostat_panel = st.container(key="geo_autostat_section")
     settings = st.container(key="optional_settings_section")
-    settings.subheader("Optional settings")
     if source_file is not None:
         source_bytes = source_file.getvalue()
         try:
@@ -170,7 +160,6 @@ def render_workbook_page() -> None:
         st.session_state.pop("geo_autostat_result", None)
         with assignment_panel:
             render_agent_cycle()
-        st.info("Upload a source workbook to prepare your files.")
         return
 
     template_bytes = template_file.getvalue() if template_file is not None else blank_template
@@ -198,7 +187,6 @@ def render_workbook_page() -> None:
             help="Only accounts from this worksheet are used for campaign files and automatic AUTOSTAT logs. Changing sheets rebuilds the outputs.",
         )
     source_info = next(sheet for sheet in source_sheets if sheet.name == source_sheet)
-    download_area.caption(f"Source workbook: {source_file.name} | Worksheet: {source_sheet} only.")
     with settings:
         if template_sheets:
             best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
@@ -215,7 +203,6 @@ def render_workbook_page() -> None:
             template_info = None
 
         with st.sidebar.expander("Header rows", expanded=False):
-            st.caption("Headers are detected within the first 50 rows. Change a row number if needed.")
             header_left, header_right = st.columns(2)
             with header_left:
                 source_header = int(st.number_input(
@@ -249,7 +236,6 @@ def render_workbook_page() -> None:
         missing_account = not {"primary_key", "cardnumber"}.intersection(defaults)
         source_columns = None
         with st.sidebar.expander("Source columns", expanded=missing_contact or missing_account):
-            st.caption("Check the actual column names and sample values. Change Header rows above if the labels are on a different row.")
             preview_key = (source_digest, source_sheet, source_header, MAPPING_VERSION)
             previews = st.session_state.setdefault("source_previews", {})
             if preview_key not in previews:
@@ -264,7 +250,6 @@ def render_workbook_page() -> None:
                 key=f"manual_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
             )
             if manual:
-                st.caption("Choose which source column supplies each template field. Leave fields without a source as Not available.")
                 source_columns = {}
                 options = [None, *range(len(source_info.headers))]
                 fields = st.columns(3)
@@ -454,7 +439,7 @@ def render_workbook_page() -> None:
         )
 
     with st.container(key="campaign_preview_section"):
-        st.subheader("Preview and other downloads")
+        st.subheader("Results")
         count_col, blank_col, excluded_col, email_col = st.columns(4)
         count_col.metric("Accounts included", f"{result['count']:,}")
         blank_col.metric("Empty rows skipped", f"{result['blank_rows']:,}")
@@ -465,11 +450,6 @@ def render_workbook_page() -> None:
         valid_col.metric("Valid email formats", f"{result['valid_emails']:,}")
         invalid_col.metric("Invalid emails removed", f"{result['invalid_emails']:,}")
         missing_col.metric("Missing emails", f"{result['missing_email_rows']:,}")
-        if result["invalid_emails"]:
-            st.info(
-                f"Removed {result['invalid_emails']:,} invalid email address(es) from Email exports. "
-                "Accounts with a phone number are still included in Viber exports."
-            )
         if not result["count"]:
             return
         files = result["files"]
@@ -477,7 +457,6 @@ def render_workbook_page() -> None:
         labels = (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet}
         review_keys = GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS
         by_channel = {(file.group_key, file.channel): file for file in files}
-        st.subheader("Separated files")
         st.dataframe(pd.DataFrame([
             {
                 "Group": label,
@@ -488,10 +467,6 @@ def render_workbook_page() -> None:
             for key, label in labels.items()
             if key not in review_keys or counts[key]
         ]), hide_index=True, width="stretch")
-        st.caption(
-            "Accounts with both contact details are counted once under Accounts and appear in both files. "
-            "Email files leave phone blank; Viber files leave email blank. All headers are retained."
-        )
         if result["grouped"]:
             for key in labels:
                 if key in review_keys and counts[key]:
@@ -499,9 +474,6 @@ def render_workbook_page() -> None:
                         f"{counts[key]:,} rows need review ({labels[key]}). "
                         "They are included in a separate review file."
                     )
-        if excel_output:
-            st.caption("Excel copies keep account identifiers and phones as Text, with numeric balances and native dates.")
-        st.subheader("Download and preview an export")
         selected_file = st.selectbox(
             "File to preview", [file.filename for file in files],
             format_func=(lambda name: Path(name).with_suffix(".xlsx").name) if excel_output else str,
@@ -517,19 +489,6 @@ def render_workbook_page() -> None:
             help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
             "CSV identifiers include a leading tab to retain all digits in Excel.",
         )
-        if not excel_output:
-            with st.expander("CSV account-number protection"):
-                st.write(
-                    "Account-number protection is always on for GEO and RECO CSV exports. Fields for primary_key, cardnumber, indexoneuid "
-                    "and phone include a leading tab that keeps them as text when opened and saved in Excel. "
-                    "The digits are unchanged; amounts and other columns have no added prefix. AUTOSTAT removes the "
-                    "surrounding whitespace when reading account numbers."
-                )
-                st.write(
-                    "Keep account columns as text when editing. Converting them to numbers or removing their protective prefix "
-                    "can let Excel remove leading zeros or round long numbers. Digits already missing from the source cannot be restored. "
-                    "[Microsoft's instructions](https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers)."
-                )
         show_preview(file.preview, file.count, file.headers)
 
 

@@ -38,17 +38,7 @@ AUTOSTAT_VISIBLE_SETTINGS_VERSION = 1
 
 def render_autostat() -> None:
     st.title("AUTOSTAT")
-    st.write(
-        "Upload the automation's output files to prepare activity logs automatically. "
-        "The original workbook or endorsement database is not needed."
-    )
     upload_type = st.radio("Upload type", ("Standard", "B2", "B4"), horizontal=True, key="autostat_upload_type")
-    if upload_type == "Standard":
-        st.caption(
-            "Standard uses the same Email and Viber templates as GEO & RECO. "
-            "Upload the generated Email and Viber files together to include both channels. "
-            "Use B2 or B4 for those bucket outputs."
-        )
     _render_autostat_uploads(b2=upload_type != "Standard", bucket=4 if upload_type == "B4" else 2,
                              compact=upload_type == "B4")
 
@@ -61,14 +51,6 @@ def _render_autostat_uploads(
     bucket_label = f"B{bucket}"
     workbook_name = f"AUTOSTAT_{bucket_label}" if b2 else "AUTOSTAT"
     options = st.container(border=True) if compact else None
-    if compact:
-        options.caption(f"{bucket_label} AutoStat options")
-    if b2 and not compact:
-        st.subheader(f"{bucket_label} activity logs")
-        st.caption(
-            f"Upload {bucket_label} account files to fill the Email, SMS and Viber templates. "
-            "Names are copied from the source; Terms supplies the collector agent code when available."
-        )
     with st.sidebar:
         output_format = st.selectbox(
             "Output files", ("Excel (.xlsx)", "CSV (.csv)"), key=f"{state_prefix}output_format",
@@ -86,8 +68,6 @@ def _render_autostat_uploads(
     fixed_timestamp = None
     default_collector = ""
     with options if compact else st.container(border=True):
-        if not compact:
-            st.caption("Log settings")
         st.session_state[f"{state_prefix}remark_by"] = AUTOSTAT_REMARK_BY
         st.text_input("Remarks By" if b2 else "Remark By", key=f"{state_prefix}remark_by", disabled=True)
         remark_by = AUTOSTAT_REMARK_BY
@@ -177,8 +157,6 @@ def _render_autostat_uploads(
                         index=account_options.index(sheet.account_column), format_func=label,
                         key=f"{column_key}_account", disabled=primary_key_account,
                     )
-                    if primary_key_account:
-                        st.caption(f"primary_key supplies the account number in all three {bucket_label} logs.")
                     email_columns = st.multiselect(
                         "Email columns", columns, default=list(sheet.email_columns),
                         format_func=label, key=f"{column_key}_emails",
@@ -224,7 +202,6 @@ def _render_autostat_uploads(
         with st.expander(f"Excluded files ({len(excluded_names)})"):
             for name in excluded_names:
                 st.write(name)
-            st.caption("Standard excludes SBC INSURANCE, B2 and B4 files and sheets. Use the matching bucket mode for B2/B4 outputs.")
     for problem in problems:
         st.error(problem)
     if not sources:
@@ -298,13 +275,6 @@ def _render_autostat_uploads(
         bundle, state_prefix=state_prefix, workbook_name=workbook_name, excel_output=excel_output,
         show_counts=False, compact=compact,
     )
-    if not compact:
-        st.caption(
-            f"Open {workbook_name}.xlsx in Excel to keep account numbers as text. Whole-number accounts have no .0 suffix. "
-            "When copying elsewhere, format the destination account column as Text before pasting."
-        )
-    if not excel_output and not compact:
-        st.caption("Opening CSV files directly in Excel can round account digits to zeros. Use the Excel download for viewing and editing.")
     with st.container(key=f"{state_prefix}preview_section"):
         st.subheader("Preview")
         filename = st.selectbox(
@@ -313,4 +283,4 @@ def _render_autostat_uploads(
         )
         file = next(file for file in bundle.files if file.filename == filename)
         st.dataframe(pd.DataFrame(file.preview, columns=file.headers), hide_index=True, width="stretch")
-        st.caption(f"Showing the first {min(file.count, 100):,} of {file.count:,} rows.")
+        st.caption(f"{min(file.count, 100):,} / {file.count:,} rows")

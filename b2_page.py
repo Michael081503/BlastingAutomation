@@ -196,9 +196,6 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
         st.dataframe(pd.DataFrame(result.stats.items(), columns=["Check", "Count"]), hide_index=True, width="stretch")
         if result.audit:
             st.dataframe(pd.DataFrame(result.audit), hide_index=True, width="stretch")
-        st.caption("Account No. matches Account Key; Financing/Card No. matches Contract Number. Both must agree when supplied.")
-        st.caption("Monthly and Terms divide accounts evenly among today's available agents in each CARDS/BEL output: "
-                   + ", ".join(f"{name} / {code}" for name, code in agents) + ".")
         selected = st.selectbox(f"{bucket_label} file to preview", [file.filename for file in bundle.files], key=f"{prefix}preview_{hash(signature)}")
         file = next(file for file in bundle.files if file.filename == selected)
         st.dataframe(pd.DataFrame(file.preview, columns=file.headers), hide_index=True, width="stretch")

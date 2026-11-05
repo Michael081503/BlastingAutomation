@@ -59,11 +59,10 @@ def render_geo_autostat(
     st.subheader("AUTOSTAT — Email and Viber")
     if autostat_source_excluded(name) or autostat_source_excluded(sheet_name):
         st.session_state.pop("geo_autostat_result", None)
-        st.caption("AUTOSTAT excludes SBC INSURANCE, B2 and B4 files and worksheets.")
+        st.info("AUTOSTAT unavailable for this file or sheet type.")
         return
     downloads = st.container(key="geo_autostat_downloads")
     with st.container(border=True, key="geo_autostat_settings"):
-        st.caption("AutoStat log settings")
         st.session_state["geo_autostat_remark_by"] = AUTOSTAT_REMARK_BY
         st.text_input("Remark By", key="geo_autostat_remark_by", disabled=True)
         remark_by = AUTOSTAT_REMARK_BY
@@ -98,13 +97,8 @@ def render_geo_autostat(
             "or formulas without saved values. Only valid rows are included in AUTOSTAT."
         )
     if not (email_count or phone_count):
-        st.caption("No valid email or mobile contacts with account numbers were found for AUTOSTAT.")
+        st.info("No valid contacts for AUTOSTAT.")
         return
-    st.caption(
-        f"Ready from {sheet_name}: {email_count:,} Email accounts and {phone_count:,} Viber accounts. "
-        "No second upload is needed. Financing/Card No. (cardnumber) supplies Account No. when available. "
-        "Account numbers stay as text; each log is sorted by OB, highest first."
-    )
     if any(row["Account precision issues"] for row in bundle.summary):
         st.warning(
             "Some source account cells are numeric and may already be rounded. "

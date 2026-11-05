@@ -61,7 +61,6 @@ def render_bank_branding() -> None:
             st.html(
                 '<div class="sbc-workspace-meta">'
                 '<span class="sbc-workspace-name">Blasting Automation</span>'
-                '<span class="sbc-season-tag"><span aria-hidden="true">&#127875;</span> Halloween edition</span>'
                 '</div>'
             )
             render_clear_all_files()

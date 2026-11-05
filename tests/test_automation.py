@@ -1277,7 +1277,7 @@ class AppTests(unittest.TestCase):
     def test_initial_screen(self):
         app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
         self.assertEqual(len(app.exception), 0)
-        self.assertIn("Upload a source workbook", app.info[0].value)
+        self.assertNotIn("result", app.session_state)
 
     def test_upload_preview_download_and_invalidation(self):
         workbook = loaded(source_file())
@@ -1414,7 +1414,6 @@ class AppTests(unittest.TestCase):
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(APP_PATH)).run(timeout=20)
             self.assertEqual(app.radio[0].value, "Separate Christmas Amnesty groups")
-            self.assertTrue(any("export_config.py" in caption.value for caption in app.caption))
             app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)

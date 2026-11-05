@@ -70,7 +70,6 @@ def render_agent_cycle():
             return None
         agents = cycle_agents(cycle, assignment_date)
         revision = _cycle_revision(cycle)
-        st.caption("Check Absent beside unavailable agents. Use the arrows to change the order. Changes save automatically.")
         component_key = f"agent_cycle_drag_{assignment_date.isoformat()}"
         error = st.session_state.get("agent_cycle_order_error", {})
         save_error = error.get("message") if error.get("key") == component_key else None
@@ -82,13 +81,7 @@ def render_agent_cycle():
         if save_error:
             st.error(save_error)
             return None
-        st.caption(
-            "Accounts in each output group are split evenly in this order, starting with the highest OB. "
-            "The same account keeps its agent in Email and Viber. The first agent moves to the end each calendar day."
-        )
-        st.caption("The top agent receives the first account. Names fill Monthly and codes fill Terms. Change the cycle start date in the sidebar.")
-        with st.container():
-            st.caption("Upcoming days")
+        with st.expander("Upcoming assignments"):
             st.table([
                 {"Date": (assignment_date + timedelta(days=day)).isoformat(),
                  **{label: code for label, (_, code) in zip(("First", "Second", "Third"), cycle_agents(cycle, assignment_date + timedelta(days=day)))}}
@@ -116,7 +109,6 @@ def render_agent_cycle():
                     st.rerun()
                 except AutomationError as exc:
                     st.error(str(exc))
-            st.caption("This cycle applies only to RECO and is stored on the computer or server running this app.")
         if st.session_state.pop("agent_cycle_saved", False):
             st.success("Agent cycle saved.")
         if available is None:
