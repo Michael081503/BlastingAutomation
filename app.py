@@ -200,7 +200,6 @@ def render_workbook_page() -> None:
     source_info = next(sheet for sheet in source_sheets if sheet.name == source_sheet)
     download_area.caption(f"Source workbook: {source_file.name} | Worksheet: {source_sheet} only.")
     with settings:
-        st.subheader("Template settings")
         if template_sheets:
             best_template = max(template_sheets, key=lambda sheet: sheet.matched_fields)
             template_names = [sheet.name for sheet in template_sheets]
@@ -303,11 +302,6 @@ def render_workbook_page() -> None:
                 st.session_state.pop("geo_autostat_result", None)
                 download_area.error("Select at least one available GEO agent in GEO agent assignment before preparing files.")
                 return
-            st.caption(
-                "Accounts follow the order above after sorting each group by OB, highest first. "
-                "They are split evenly, with any extra accounts assigned from the top of the order. "
-                "The same account keeps its agent in Email and Viber. Available agents keep this fixed order."
-            )
         else:
             with assignment_panel:
                 agent_plan = render_agent_cycle()
@@ -317,16 +311,12 @@ def render_workbook_page() -> None:
                 download_area.error("Check the RECO agent cycle before files can be prepared.")
                 return
             assignment_date, agents = agent_plan
-        if geo:
-            st.caption("doclass is filled automatically: Mindanao = SBC GEO Mindanao; Region 3 / R3 = SBC GEO R3.")
         grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
         grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
         if not geo:
             grouping_fields["level"] = "level"
         missing_grouping = [label for field, label in grouping_fields.items() if field not in source_info.available_fields]
         output_modes = ["All accounts in one group"] if missing_grouping else [grouped_label, "All accounts in one group"]
-        if missing_grouping:
-            st.caption("Grouping columns are missing: " + ", ".join(missing_grouping) + ". All available accounts will be prepared as Email and Viber files.")
         saved_modes = st.session_state.setdefault("sheet_output_modes", {})
         mode_key = (source_digest, source_sheet, source_header)
         previous_mode = saved_modes.get(mode_key, output_modes[0])
@@ -335,27 +325,10 @@ def render_workbook_page() -> None:
             output_modes,
             index=output_modes.index(previous_mode) if previous_mode in output_modes else 0,
             key=f"output_mode_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}",
+            label_visibility="collapsed",
         )
         saved_modes[mode_key] = output_mode
         grouped = output_mode == grouped_label
-        if grouped:
-            if geo:
-                st.caption(
-                    "Mindanao and R3 (Region 3) are separated first. "
-                    "Other or missing Area values go to separate review files. AREA retains its source value."
-                )
-                st.caption(
-                    "CSL, PL and SLA go directly to GEO NEGA LOANS for their Area, at every Christmas Amnesty status. "
-                    "CARDS and BEL are separated by QUALIFIED or BLANK status. "
-                    "Each product group combines all levels. Empty groups produce no file. "
-                    "Unrecognized qualified products go to a separate review group."
-                )
-            else:
-                st.caption(
-                    "QUALIFIED: CARDS Level 1, CARDS Level 6, and BEL at all levels. "
-                    "BLANK: the same three groups, plus other products. Empty groups produce no file."
-                )
-        st.caption("Output filenames are set in export_config.py. Edits are applied automatically.")
 
     signature = (
         source_digest, source_file.name, template_digest, source_sheet, source_header,
