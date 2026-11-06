@@ -273,7 +273,7 @@ def _render_autostat_uploads(
             )
     render_autostat_downloads(
         bundle, state_prefix=state_prefix, workbook_name=workbook_name, excel_output=excel_output,
-        show_counts=False, compact=compact,
+        show_counts=False, compact=compact, protect_csv_identifiers=b2,
     )
     with st.container(key=f"{state_prefix}preview_section"):
         st.subheader("Preview")

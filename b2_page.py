@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -17,6 +18,7 @@ from b2_matching import (
     is_datagrid_sheet, is_sbc_database_sheet, matching_sheet_score, validate_b2_source,
 )
 from export_config import AUTOSTAT_B2_FILENAMES, AUTOSTAT_B4_FILENAMES, COLLECTION_AGENTS
+from exports import EXCEL_SAFE_CSV_VERSION, build_csv_zip, build_export_csv
 from folder_output import MANILA_TIMEZONE
 from upload_state import upload_widget_key
 
@@ -25,6 +27,7 @@ B4_PAGE_VERSION = 2
 B2_COMPACT_DOWNLOADS_VERSION = 1
 ZIP_FORMAT_VERSION = 1
 BROWSER_DOWNLOADS_ONLY_VERSION = 1
+B2_B4_CSV_PROTECTION_VERSION = 1
 
 
 def no_matching_rows_message(result, *, bucket: int) -> str:
@@ -160,7 +163,8 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
                  AUTOSTAT_VERSION, MAPPING_VERSION, WORKBOOK_READER_VERSION, bucket, B4_MATCHING_VERSION,
                  B2_B4_AGENTS_VERSION, B2_B4_OB_SORT_VERSION, OB_SORT_VERSION,
                  tuple(filenames.items()), B2_COMPACT_DOWNLOADS_VERSION, B2_B4_CONTACT_HEADERS_VERSION,
-                 assignment_date.isoformat(), agents, B2_B4_AVAILABILITY_VERSION)
+                 assignment_date.isoformat(), agents, B2_B4_AVAILABILITY_VERSION,
+                 B2_B4_CSV_PROTECTION_VERSION, EXCEL_SAFE_CSV_VERSION)
     prepared = st.session_state.get(result_key)
     if prepared is None or prepared["signature"] != signature:
         st.session_state.pop(result_key, None)
@@ -184,11 +188,11 @@ def render_b2_page(*, datagrid_upload=None, encoding: str | None = None, bucket:
         st.error(no_matching_rows_message(result, bucket=bucket))
     else:
         if len(nonempty) == len(bundle.files):
-            st.download_button(f"Download {bucket_label} CSV ZIP (.csv files)", bundle.zip_data, f"NEGATIVE {bucket_label}_CSV.zip",
+            st.download_button(f"Download {bucket_label} CSV ZIP (.csv files)", partial(build_csv_zip, bundle.files), f"NEGATIVE {bucket_label}_CSV.zip",
                                mime="application/zip", key=f"{prefix}zip", on_click="ignore")
         for index, file in enumerate(bundle.files):
             if file.count:
-                st.download_button(f"Download {file.filename}", file.data, file.filename, mime="text/csv",
+                st.download_button(f"Download {file.filename}", partial(build_export_csv, file), file.filename, mime="text/csv",
                                    key=f"{prefix}download_{index}", on_click="ignore")
     with st.container(key=f"{prefix}details_section"):
         st.subheader(f"{bucket_label} details")

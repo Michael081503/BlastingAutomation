@@ -67,6 +67,8 @@ Select **Upload type → B2** and use **B2 output files** to upload the Excel or
 
 B2 and B4 activity files use their respective modes to map source **`primary_key`** to Email **`Account No.`** and SMS/Viber **`Account number`**, even when `cardnumber` is also present. GEO and RECO use Financing/Card No. instead. This mapping applies to previews, CSVs, Excel files, ZIPs, and account deduplication uses the same identifier. Blank primary keys are excluded without substituting another identifier. Header matching ignores case, spaces and punctuation. When a source has no `primary_key` header, the existing account-column detection and manual selection remain available for account-only files and the supplied activity layouts.
 
+B2/B4 AUTOSTAT CSV downloads and CSV ZIPs protect their account and mobile columns with the same leading tab as campaign CSVs, preserving full digits and leading zeros when opened and resaved in Excel. Excel downloads use literal Text cells, and previews show the original account values.
+
 The built-in layouts copy the headers, status codes and remark formats from **BUCKET 2 EMAIL AS 10212026.xlsx**, **FOR AS SMS BLASTING 10212026.xlsx**, and **FOR AS VIBER BLASTING 10212026.xlsx**. Email has `Name`, `Account No.`, `STATUS CODE`, `REMARKS`, `REMARKS BY`, `REMARKS DATE`, `Email`, and `Collector`. SMS and Viber have `Account number`, `Name`, `STATUS CODE`, `REMARKS`, `REMARKS BY`, `REMARKS DATE`, and `Mobile Number`; the unused trailing blank column in the Viber sample is omitted.
 
 Email remarks use `<email> | EMAIL SENT | <collector>`. SMS remarks use `<mobile> |  SMS SENT` (including the template's two spaces), and Viber remarks use `<mobile> | VIBER SENT`. Status codes are respectively `EMAIL BLAST SENT - WAITING FOR REPLY`, `SMS BLAST SENT - WAITING FOR REPLY`, and `VIBER BLAST SENT - WAITING FOR REPLY`. Mobile numbers use the template's local eleven-digit format (`09171234567`); both phone channels use the first valid mobile per account.
@@ -99,7 +101,9 @@ The first valid email and first valid mobile come from the matched database reco
 
 DataGrid Old I.C. supplies `indexoneuid`. Database Name, Total Outstanding, Assignment Date, and Area supply `FullName`, `OB`, `EndoDate`, and `AREA`; recognized DataGrid fields supply these when database values are missing. `Product` is CARDS or BEL and `doclass` is SBC CARDS B2 or SBC BEL B2. **Monthly contains the assigned agent name and Terms contains the matching agent code**, using the even assignment below. Level, ChristmasAmnesty, and NewEndo are copied only when explicitly present; other unavailable fields stay blank. Dates use ISO text. B2 blasting exports have no activity statuses, remarks, author, or log timestamp; the AUTOSTAT page's B2 mode prepares activity logs from those exports.
 
-Review matching and contact counts, preview either group, download the two CSVs or their ZIP, or save both to a folder. B2 names are configurable in `AUTOSTAT_B2_FILENAMES` in `export_config.py`.
+Review matching and contact counts, preview either group, and download the CSVs or their ZIP. B2 names are configurable in `AUTOSTAT_B2_FILENAMES` in `export_config.py`.
+
+B2 and B4 campaign CSV downloads, including every file in their ZIPs, use the same Excel protection as GEO/RECO: a leading tab keeps `primary_key`, `cardnumber`, `indexoneuid`, and phone values as text when Excel opens and resaves the CSV. This preserves leading zeros and account digits beyond Excel's numeric precision limit. Previews retain the original values, and AUTOSTAT removes the surrounding tab when reading identifiers and contacts. Generate fresh downloads from the original source workbooks; this cannot recover digits already changed by Excel in older CSVs.
 
 ### B4 matching on the NEGATIVE B2 & B4 page
 

@@ -128,6 +128,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",
             "CAMPAIGN_OUTPUT_FORMAT_VERSION", "CSV_CAMPAIGN_DEFAULT_VERSION", "campaign_output_files",
             "EXCEL_SAFE_CSV_VERSION", "build_export_csv", "build_csv_zip",
+            "ACTIVITY_CSV_IDENTIFIERS_VERSION",
             "REQUIRED_CSV_PROTECTION_VERSION",
             "AGENT_ASSIGNMENT_EXPORT_VERSION",
             "RECO_ONLY_AGENTS_VERSION",
@@ -154,7 +155,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "build_autostat_channel_excel", "build_autostat_excel_zip",
             "ContactRows.__dataclass_fields__.email_ob_values", "ContactRows.__dataclass_fields__.phone_ob_values",
         ), ("automation", "email_validation", "export_config", "exports")),
-        ("autostat_downloads", ("AUTOSTAT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "render_autostat_downloads"), ("autostat", "automation")),
+        ("autostat_downloads", ("AUTOSTAT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "render_autostat_downloads"), ("autostat", "automation", "exports")),
         ("geo_autostat", (
             "GEO_AUTOSTAT_VERSION", "GEO_FINANCING_ACCOUNT_VERSION", "mapped_contact_source", "render_geo_autostat",
             "GEO_AUTOSTAT_CHANNEL_DOWNLOADS_VERSION",
@@ -172,7 +173,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "B2_B4_OB_SORT_VERSION",
             "B2_B4_AVAILABILITY_VERSION",
         ), ("autostat", "automation", "export_config")),
-        ("b2_page", ("render_b2_page", "BROWSER_DOWNLOADS_ONLY_VERSION", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "upload_widget_key", "render_agent_availability"), ("b2_matching", "autostat", "automation", "folder_output", "export_config", "upload_state", "agent_availability_page")),
+        ("b2_page", ("render_b2_page", "BROWSER_DOWNLOADS_ONLY_VERSION", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "B2_B4_CSV_PROTECTION_VERSION", "upload_widget_key", "render_agent_availability"), ("b2_matching", "autostat", "automation", "exports", "folder_output", "export_config", "upload_state", "agent_availability_page")),
         ("b2_autostat", (
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",

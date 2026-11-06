@@ -141,7 +141,7 @@ class WorkflowPageTests(unittest.TestCase):
                         calls = {call.kwargs.get("key"): call for call in download.call_args_list}
                         zip_call = calls[prefix + "zip"]
                         self.assertTrue(zip_call.args[2].endswith("_Excel.zip" if excel else "_CSV.zip"))
-                        data = zip_call.args[1]() if excel else zip_call.args[1]
+                        data = zip_call.args[1]()
                         with ZipFile(BytesIO(data)) as archive:
                             expected_names = [f"AUTOSTAT_B{bucket}_{channel}.{'xlsx' if excel else 'csv'}" for channel in ("Email", "SMS", "Viber")]
                             self.assertEqual(archive.namelist(), expected_names)
@@ -155,7 +155,13 @@ class WorkflowPageTests(unittest.TestCase):
                                                         and cell.number_format == "@" for cell in book.active[account_column][1:]))
                                     book.close()
                                 else:
-                                    self.assertEqual(archive.read(name), single.args[1])
+                                    self.assertEqual(archive.read(name), single.args[1]())
+                                    rows = list(csv.DictReader(StringIO(archive.read(name).decode('cp1252'))))
+                                    original = csv_rows(result['bundle'].files[index])
+                                    for row, source in zip(rows, original, strict=True):
+                                        for header, value in source.items():
+                                            expected = '\t' + value if value and header in ('Account No.', 'Account number', 'Mobile Number') else value
+                                            self.assertEqual(row[header], expected)
                     replacement = Upload(b"cardnumber,primary_key,email,phone\nCARD9,000009,updated@example.com,09191234567\n")
                     replacement.name = csv_upload.name
                     files[0] = replacement

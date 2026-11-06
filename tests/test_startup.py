@@ -11,6 +11,36 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_activity_downloads_refresh_to_protected_bucket_csvs(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import exports, autostat_downloads, autostat_page
+            del exports.ACTIVITY_CSV_IDENTIFIERS_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'exports', 'autostat_downloads', 'autostat_page', 'b2_page'} <= refreshed
+            assert autostat_downloads.build_export_csv is exports.build_export_csv
+            assert autostat_downloads.build_csv_zip is exports.build_csv_zip
+            assert autostat_page.render_autostat_downloads is autostat_downloads.render_autostat_downloads
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
+    def test_cached_bucket_page_refreshes_to_protected_csv_downloads(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import b2_page, exports
+            del b2_page.B2_B4_CSV_PROTECTION_VERSION
+            b2_page.render_b2_page = lambda: None
+            refreshed = app_startup.refresh_application_modules()
+            assert 'b2_page' in refreshed
+            assert b2_page.B2_B4_CSV_PROTECTION_VERSION == 1
+            assert b2_page.build_export_csv is exports.build_export_csv
+            assert b2_page.build_csv_zip is exports.build_csv_zip
+            assert b2_page.render_b2_page.__name__ == 'render_b2_page'
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_startup_recovers_a_module_evicted_during_import_or_reload(self):
         self.run_isolated("""
             import importlib, sys

@@ -58,6 +58,7 @@ TYPED_EXCEL_EXPORT_VERSION = 1
 CAMPAIGN_OUTPUT_FORMAT_VERSION = 2
 CSV_CAMPAIGN_DEFAULT_VERSION = 1
 EXCEL_SAFE_CSV_VERSION = 2
+ACTIVITY_CSV_IDENTIFIERS_VERSION = 1
 REQUIRED_CSV_PROTECTION_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
 RECO_ONLY_AGENTS_VERSION = 1
@@ -181,7 +182,8 @@ def build_export_csv(file: ExportFile, *, protect_identifiers: bool = True) -> b
     headers = next(rows)
     writer.writerow(headers)
     fields = {normalize_header(field) for field in IDENTIFIER_FIELDS}
-    columns = [index for index, header in enumerate(headers) if normalize_header(header) in fields]
+    columns = {index for index, header in enumerate(headers) if normalize_header(header) in fields}
+    columns.update(index for target, index in source_column_positions(headers).items() if target in IDENTIFIER_FIELDS)
     for row in rows:
         for column in columns:
             if row[column] and not row[column].startswith("\t"):
