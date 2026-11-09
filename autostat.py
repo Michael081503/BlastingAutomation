@@ -19,7 +19,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 
 from automation import (
     AutomationError, _encode_csv, _identifier, normalize_header, ob_sort_key,
-    source_column_positions, write_text_csv_sheet,
+    source_column_positions, uses_campaign_headers, write_text_csv_sheet,
 )
 from email_validation import validated_email
 from export_config import AUTOSTAT_BEL_FILENAMES
@@ -139,6 +139,10 @@ def _sheet_info(name: str, rows: list[tuple[Any, ...]], header_row: int | None) 
     labels = [normalize_header(value) for value in headers]
     account_column = next((labels.index(normalize_header(alias)) for alias in ACCOUNT_ALIASES
                            if normalize_header(alias) in labels), None)
+    if uses_campaign_headers(headers):
+        campaign_account = source_column_positions(headers).get("cardnumber")
+        if campaign_account is not None:
+            account_column = campaign_account
     kinds = [_contact_kind(value) for value in headers]
     return ContactSheet(
         name, header_row, tuple("" if value is None else str(value) for value in headers),

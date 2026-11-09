@@ -39,9 +39,7 @@ from agent_availability_page import render_agent_availability
 
 from automation import (
     CSV_OUTPUT_ENCODINGS,
-    ASSIGNMENT_TEMPLATE_HEADERS,
     DEFAULT_TEMPLATE_HEADERS,
-    DERIVED_TEMPLATE_HEADERS,
     FIELD_MAPPING,
     MAPPING_VERSION,
     OB_SORT_VERSION,
@@ -52,12 +50,14 @@ from automation import (
     XLSX_MIME,
     AutomationError,
     create_default_csv_template,
+    campaign_output_headers,
     csv_template_headers,
     default_source_sheet,
     inspect_workbook,
     inspect_source_sheet,
     preview_source_rows,
     source_column_positions,
+    template_column_positions,
     normalize_header,
     output_filename,
     read_source,
@@ -77,11 +77,8 @@ def workbook_info(data: bytes, *, template: bool = False):
 
 
 def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
-    targets = {
-        normalize_header(target): target
-        for target in (*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values(), *DERIVED_TEMPLATE_HEADERS, *ASSIGNMENT_TEMPLATE_HEADERS)
-    }
-    columns = [targets.get(normalize_header(header)) for header in headers]
+    targets = {column: target for target, column in template_column_positions(headers).items()}
+    columns = [targets.get(column) for column in range(len(headers))]
     preview = pd.DataFrame(
         [[record.get(target) for target in columns] for record in records],
         columns=headers,
@@ -119,7 +116,11 @@ def render_workbook_page() -> None:
 
     with st.sidebar.expander("Field mapping"):
         st.dataframe(
-            pd.DataFrame({**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items(), columns=["Source header", "Template header"]),
+            pd.DataFrame(
+                [(source, campaign_output_headers([target])[0])
+                 for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items()],
+                columns=["Source header", "Template header"],
+            ),
             hide_index=True,
             width="stretch",
         )

@@ -16,6 +16,7 @@ from streamlit.testing.v1 import AppTest
 
 from automation import (
     DEFAULT_TEMPLATE_HEADERS,
+    campaign_output_headers,
     FIELD_MAPPING,
     TARGET_HEADERS,
     AutomationError,
@@ -252,9 +253,9 @@ class MappingTests(unittest.TestCase):
         result = loaded(fill_excel_template(save(template), records, "Destination", 1))
         self.addCleanup(result.close)
         sheet = result.active
-        self.assertEqual([cell.value for cell in sheet[1]], headers)
-        actual = dict(zip(headers, [cell.value for cell in sheet[2]]))
-        expected = {target: sample_row()[source] for source, target in FIELD_MAPPING.items()}
+        self.assertEqual([cell.value for cell in sheet[1]], campaign_output_headers(headers))
+        actual = dict(zip(campaign_output_headers(headers), [cell.value for cell in sheet[2]]))
+        expected = {campaign_output_headers([target])[0]: sample_row()[source] for source, target in FIELD_MAPPING.items()}
         expected["Extra"] = None
         self.assertEqual(actual, expected)
         for column in ("primary_key", "cardnumber", "phone", "indexoneuid"):
@@ -286,7 +287,7 @@ class MappingTests(unittest.TestCase):
         workbook.active.append(template_headers)
         result = loaded(fill_excel_template(save(workbook), records, "Sheet", 1))
         self.addCleanup(result.close)
-        self.assertEqual([cell.value for cell in result.active[1]], template_headers)
+        self.assertEqual([cell.value for cell in result.active[1]], campaign_output_headers(template_headers))
         output = dict(zip(template_headers, [cell.value for cell in result.active[2]]))
         self.assertEqual(output["Product"], "Card")
         self.assertEqual(output["Level"], 2)
@@ -380,8 +381,8 @@ class TemplateTests(unittest.TestCase):
 
     def test_default_templates_include_all_sixteen_campaign_headers(self):
         expected = [
-            "email", "primary_key", "indexoneuid", "cardnumber", "FullName", "phone", "OB",
-            "Monthly", "Terms", "doclass", "Level", "Product", "EndoDate", "AREA",
+            "email", "primary_key", "indexoneuid", "Terms", "FullName", "phone", "OB",
+            "Monthly", "CHCode", "doclass", "Level", "Promo", "EndoDate", "AREA",
             "ChristmasAmnesty", "NewEndo",
         ]
         self.assertEqual(csv_template_headers(create_default_csv_template()), expected)
@@ -439,7 +440,7 @@ class TemplateTests(unittest.TestCase):
         output = fill_csv_template(template, self.records)
         self.assertFalse(output.startswith(b"\xef\xbb\xbf"))
         rows = list(csv.reader(StringIO(output.decode("cp1252"))))
-        self.assertEqual(rows[0], headers)
+        self.assertEqual(rows[0], campaign_output_headers(headers))
         row = dict(zip(headers, rows[1]))
         self.assertEqual(row["primary_key"], "0000000456")
         self.assertEqual(row["FullName"], 'Peña, Ana "A"')
@@ -606,7 +607,7 @@ class SeparationTests(unittest.TestCase):
         bundle = build_negative_exports(template, records, "", 1, ".csv")
         for file in bundle.files:
             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
-            self.assertEqual(rows[0], [*headers, "doclass"])
+            self.assertEqual(rows[0], [*campaign_output_headers(headers), "doclass"])
             self.assertEqual(rows[1][headers.index("ChristmasAmnesty")], "" if file.group_key.startswith("blank_") else "QUALIFIED")
             self.assertEqual(rows[1][headers.index("phone" if file.channel == "email" else "email")], "")
             self.assertTrue(file.filename.endswith(".csv"))
@@ -663,7 +664,7 @@ class ChannelTests(unittest.TestCase):
         expected_records = {record["primary_key"]: record for record in records}
         for file in bundle.files:
             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
-            self.assertEqual(rows[0], headers)
+            self.assertEqual(rows[0], campaign_output_headers(headers))
             self.assertEqual(len(rows), 3)
             for row in rows[1:]:
                 values = dict(zip(headers, row))
@@ -723,14 +724,14 @@ class ChannelTests(unittest.TestCase):
         )
         for file in bundle.files:
             rows = list(csv.reader(StringIO(file.data.decode("cp1252"))))
-            self.assertEqual(rows[0], headers)
+            self.assertEqual(rows[0], campaign_output_headers(headers))
             expected_keys = ["0001", "0003"] if file.channel == "email" else ["0002", "0003"]
             self.assertEqual([row[headers.index("primary_key")] for row in rows[1:]], expected_keys)
             self.assertTrue(all(row[headers.index("phone" if file.channel == "email" else "email")] == "" for row in rows[1:]))
         bundle = build_sheet_exports(
             template, [self.records()[0]], "", 1, base_name="Only email", label="Test", template_extension=".csv",
         )
-        self.assertEqual(list(csv.reader(StringIO(bundle.files[1].data.decode("cp1252")))), [headers])
+        self.assertEqual(list(csv.reader(StringIO(bundle.files[1].data.decode("cp1252")))), [campaign_output_headers(headers)])
 
     def test_channel_suffix_names_can_be_edited_and_must_be_unique(self):
         self.assertEqual(channel_filename("My campaign.xlsx", "email", ".csv"), "My campaign_Email.csv")
@@ -1008,8 +1009,8 @@ class AppTests(unittest.TestCase):
                 self.assertEqual([file.count for file in result['files']], [1, 0])
                 values = list(csv.DictReader(StringIO(result['files'][0].data.decode('cp1252'))))[0]
                 self.assertEqual(values['FullName'], 'Ana Cruz')
-                self.assertEqual(values['cardnumber'], sample_row()['financing/Card no.'])
-                for field in ('EndoDate', 'Level', 'Product', 'OB', 'phone', 'ChristmasAmnesty'):
+                self.assertEqual(values['Terms'], sample_row()['financing/Card no.'])
+                for field in ('EndoDate', 'Level', 'Promo', 'OB', 'phone', 'ChristmasAmnesty'):
                     self.assertEqual(values[field], '')
 
     def test_partial_upload_keeps_grouping_when_group_fields_are_present(self):
@@ -1331,7 +1332,7 @@ class AppTests(unittest.TestCase):
                 "source_NEGATIVE_filled_Email.csv", "source_NEGATIVE_filled_Viber.csv",
             ])
             preview = app.main.dataframe[-1].value
-            self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms", "doclass"])
+            self.assertEqual(list(preview.columns), [*campaign_output_headers(headers), "Monthly", "CHCode", "doclass"])
             self.assertEqual(preview.loc[0, "Custom Field"], "")
             self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
             upload = FakeUpload("bad.xlsx", source_file(headers=[header for header in FIELD_MAPPING if header != "phone_1"]))
@@ -1372,7 +1373,7 @@ class AppTests(unittest.TestCase):
                     result = app.session_state["result"]
                     self.assertEqual(len(result["files"]), 2)
                     preview = app.main.dataframe[-1].value
-                    self.assertEqual(list(preview.columns), [*headers, "Monthly", "Terms", "doclass"])
+                    self.assertEqual(list(preview.columns), [*campaign_output_headers(headers), "Monthly", "CHCode", "doclass"])
                     self.assertEqual(preview.loc[0, "Extra"], "")
                     self.assertEqual(preview.loc[0, "FullName"], "Ana Cruz")
                     self.assertEqual(preview.loc[0, "endodate"], "2026-10-26 00:00:00")
@@ -1382,7 +1383,7 @@ class AppTests(unittest.TestCase):
                             self.assertTrue(file.filename.endswith(".csv"))
                             self.assertEqual(archive.read(file.filename), file.data)
                             rows = list(csv.reader(StringIO(file.data.decode("utf-8-sig"))))
-                            self.assertEqual(rows[0], [*headers, "Monthly", "Terms", "doclass"])
+                            self.assertEqual(rows[0], [*campaign_output_headers(headers), "Monthly", "CHCode", "doclass"])
                             self.assertEqual(len(rows), 2)
                             values = dict(zip(headers, rows[1]))
                             self.assertEqual(values["Extra"], "")
@@ -1431,12 +1432,12 @@ class AppTests(unittest.TestCase):
                     self.assertEqual(row["doclass"], expected_class)
                     for header in ("AREA", "NewEndo"):
                         self.assertEqual(row[header], "")
-                    self.assertEqual((row["Monthly"], row["Terms"]),
+                    self.assertEqual((row["Monthly"], row["CHCode"]),
                                      first_agent)
             preview = app.main.dataframe[-1].value
             self.assertEqual(list(preview.columns), list(DEFAULT_TEMPLATE_HEADERS))
             self.assertEqual(preview.loc[0, "Level"], "Level 1")
-            self.assertEqual(preview.loc[0, "Product"], "CARDS")
+            self.assertEqual(preview.loc[0, "Promo"], "CARDS")
             self.assertEqual(preview.loc[0, "Monthly"], first_agent[0])
             self.assertEqual(app.session_state["result"]["no_contact_rows"], 2)
             self.assertEqual(app.metric[2].value, "2")

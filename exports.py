@@ -17,6 +17,8 @@ from automation import (
     AutomationError,
     IDENTIFIER_FIELDS,
     csv_template_headers,
+    campaign_output_headers,
+    template_column_positions,
     excel_template_to_csv,
     fill_csv_template,
     geo_doclass,
@@ -334,8 +336,11 @@ def _build_channel_files(
     if agents is not None:
         records = assign_agents_to_accounts(records, agents)
     headers = csv_template_headers(template)
-    required = (("Monthly", "Terms") if agents is not None else ()) + (("doclass",) if reco else ())
-    missing = [header for header in required if normalize_header(header) not in {normalize_header(value) for value in headers}]
+    required = [("Monthly", "Monthly"), ("Terms", "CHCode")] if agents is not None else []
+    if reco:
+        required.append(("doclass", "doclass"))
+    positions = template_column_positions(headers)
+    missing = [header for target, header in required if target not in positions]
     if missing:
         output = StringIO(newline="")
         csv.writer(output).writerow([*headers, *missing])
@@ -384,7 +389,9 @@ def _csv_export_template(
     if template_extension == ".xlsx":
         return excel_template_to_csv(template, sheet_name, header_row)
     if template_extension == ".csv":
-        return template
+        output = StringIO(newline="")
+        csv.writer(output).writerow(campaign_output_headers(csv_template_headers(template)))
+        return output.getvalue().encode("utf-8-sig")
     raise AutomationError("Upload an .xlsx or .csv template. Outputs are always CSV.")
 
 

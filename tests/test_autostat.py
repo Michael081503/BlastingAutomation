@@ -666,10 +666,10 @@ class AutostatAppTests(unittest.TestCase):
         source_csv = StringIO(newline="")
         csv.writer(source_csv).writerows([
             DEFAULT_TEMPLATE_HEADERS,
-            *[[record.get(header, record.get(header.lower(), "")) for header in DEFAULT_TEMPLATE_HEADERS]
+            *[[record.get({"Terms": "cardnumber", "Promo": "product"}.get(header, header), record.get(header.lower(), "")) for header in DEFAULT_TEMPLATE_HEADERS]
               for record in records],
         ])
-        positions = {header: DEFAULT_TEMPLATE_HEADERS.index(header)
+        positions = {header: DEFAULT_TEMPLATE_HEADERS.index("Terms" if header == "cardnumber" else header)
                      for header in ("primary_key", "cardnumber", "indexoneuid", "email", "phone", "OB")}
         original = mapped_contact_source(
             "original.csv", source_csv.getvalue().encode(), "CSV", 1, len(DEFAULT_TEMPLATE_HEADERS), positions,

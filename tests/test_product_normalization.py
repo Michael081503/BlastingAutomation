@@ -31,13 +31,13 @@ class ProductNormalizationTests(unittest.TestCase):
                 for row in exported:
                     original = expected[row["primary_key"]]
                     product = "CARDS" if original["product"].strip().casefold() == "mc" else original["product"]
-                    self.assertEqual(row["Product"], product)
-                    self.assertEqual(row["cardnumber"], original["cardnumber"])
-                self.assertEqual([row["product"] for row in file.preview], [row["Product"] for row in exported])
+                    self.assertEqual(row["Promo"], product)
+                    self.assertEqual(row["Terms"], original["cardnumber"])
+                self.assertEqual([row["product"] for row in file.preview], [row["Promo"] for row in exported])
                 workbook = load_workbook(BytesIO(build_export_excel(file)))
                 headers = [cell.value for cell in workbook.active[1]]
-                self.assertEqual([row[headers.index("Product")] for row in list(workbook.active.values)[1:]],
-                                 [row["Product"] for row in exported])
+                self.assertEqual([row[headers.index("Promo")] for row in list(workbook.active.values)[1:]],
+                                 [row["Promo"] for row in exported])
                 workbook.close()
 
     def test_source_product_type_and_manual_product_mapping_normalize_before_export(self):

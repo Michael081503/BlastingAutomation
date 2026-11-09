@@ -338,7 +338,7 @@ class StartupTests(unittest.TestCase):
             geo = exports.build_geo_exports(template, records, '', 1, '.csv')
             assert geo.counts['mindanao_blank_cards'] == 1
             assert all(file.preview[0]['product'] == 'CARDS' for bundle in (reco, geo) for file in bundle.files)
-            assert automation.MAPPING_VERSION == 8
+            assert automation.MAPPING_VERSION == 9
             assert refresh_application_modules() == set()
         """)
 
@@ -615,8 +615,8 @@ class StartupTests(unittest.TestCase):
             del automation.geo_doclass
             del automation.DERIVED_TEMPLATE_HEADERS
             import app
-            assert app.MAPPING_VERSION == 8
-            assert 'doclass' in app.DERIVED_TEMPLATE_HEADERS
+            assert app.MAPPING_VERSION == 9
+            assert 'doclass' in automation.DERIVED_TEMPLATE_HEADERS
             assert exports.geo_doclass is automation.geo_doclass
             assert folder_output.AutomationError is automation.AutomationError
             bundle = exports.build_sheet_exports(
@@ -685,7 +685,7 @@ class StartupTests(unittest.TestCase):
             del automation.SheetInfo.available_fields
             del automation.inspect_source_sheet
             import app
-            assert app.MAPPING_VERSION == 8
+            assert app.MAPPING_VERSION == 9
             assert exports.AutomationError is automation.AutomationError
             workbook = Workbook()
             workbook.active.append(['primary_key', 'email', 'PHONE'])
@@ -710,7 +710,7 @@ class StartupTests(unittest.TestCase):
             del export_config.AUTOSTAT_B2_FILENAMES
             del b2_matching.build_b2_exports
             import app
-            assert app.MAPPING_VERSION == 8
+            assert app.MAPPING_VERSION == 9
             assert automation.WORKBOOK_READER_VERSION == 1
             assert b2_page.build_b2_exports is b2_matching.build_b2_exports
             assert export_config.AUTOSTAT_B2_FILENAMES['CARDS'] == 'NEGATIVE B2 - CARDS'
@@ -835,7 +835,7 @@ class StartupTests(unittest.TestCase):
             refreshed = refresh_application_modules()
             assert {'export_config', 'b2_matching', 'b2_page', 'upload_state'} <= refreshed
             assert b2_page.build_b4_exports is b2_matching.build_b4_exports
-            assert b2_matching.B2_TEMPLATE_VERSION == 2
+            assert b2_matching.B2_TEMPLATE_VERSION == 3
             assert export_config.AUTOSTAT_B4_FILENAMES['CARDS'] == 'NEGATIVE B4 - CARDS'
             assert export_config.COLLECTION_AGENTS == (('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA'))
             assert 'b4_database_upload' in upload_state.UPLOAD_KEYS

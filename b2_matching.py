@@ -23,12 +23,13 @@ B2_BUCKET_DIAGNOSTICS_VERSION = 1
 B4_MATCHING_VERSION = 2
 B2_B4_AGENTS_VERSION = 1
 B2_UPLOAD_ROLES_VERSION = 1
-B2_TEMPLATE_VERSION = 2
+B2_TEMPLATE_VERSION = 3
 B2_CONTACT_PRIORITY_VERSION = 1
 B2_B4_CONTACT_HEADERS_VERSION = 1
 B2_B4_AVAILABILITY_VERSION = 1
-# Exact header order from 1EMAIL_Blasting - Template.xlsx; no sample rows are used.
+# Shared campaign layout, including the renamed Terms, CHCode and Promo headers.
 B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
+CAMPAIGN_RECORD_FIELDS = {"Terms": "cardnumber", "CHCode": "Terms", "Promo": "Product"}
 DATAGRID_ROUTING_VERSION = 1
 RAW_FIELDS = {
     "account_key": ("Account Key",),
@@ -358,9 +359,10 @@ def build_b2_exports(
             record.update({"email": emails.get(account, ""), "phone": phones.get(account, "")})
             agent_name, agent_code = selected_agents[len(rows) % len(selected_agents)]
             record.update({"Monthly": agent_name, "Terms": agent_code})
-            rows.append({header: _template_text(record[header]) for header in B2_TEMPLATE_HEADERS})
+            rows.append({header: _template_text(record[CAMPAIGN_RECORD_FIELDS.get(header, header)])
+                         for header in B2_TEMPLATE_HEADERS})
         summaries.append({"Group": group, "Accounts exported": len(rows), **_contact_summary(database, contacts),
-                          **{f"{code} accounts": sum(row["Terms"] == code for row in rows) for _, code in COLLECTION_AGENTS}})
+                          **{f"{code} accounts": sum(row["CHCode"] == code for row in rows) for _, code in COLLECTION_AGENTS}})
         files.append(_log_file(names[group], B2_TEMPLATE_HEADERS, rows, encoding))
     return B2MatchResult(_bundle(files, summaries), stats, audit)
 

@@ -68,15 +68,15 @@ class AgentCycleTests(unittest.TestCase):
         assignments, groups = {}, {}
         for file in bundle.files:
             for row in rows(file):
-                code = row["Terms"]
+                code = row["CHCode"]
                 self.assertIn(code, ("ROSVINOYA", "JBATALLER"))
                 self.assertEqual(assignments.setdefault(row["primary_key"], code), code)
                 groups.setdefault(file.group_key, {})[row["primary_key"]] = code
             self.assertEqual(file.records[0]["Terms"], "ROSVINOYA")
             workbook = load_workbook(BytesIO(build_export_excel(file)))
             headers = [cell.value for cell in workbook.active[1]]
-            self.assertEqual([row[headers.index("Terms")] for row in list(workbook.active.values)[1:]],
-                             [row["Terms"] for row in rows(file)])
+            self.assertEqual([row[headers.index("CHCode")] for row in list(workbook.active.values)[1:]],
+                             [row["CHCode"] for row in rows(file)])
             workbook.close()
         for accounts in groups.values():
             counts = Counter(accounts.values())
@@ -143,7 +143,7 @@ class AgentCycleTests(unittest.TestCase):
     def test_reco_and_all_accounts_use_balanced_paired_assignments_in_all_formats(self):
         source = records()
         original = [dict(row) for row in source]
-        headers = [header for header in DEFAULT_TEMPLATE_HEADERS if header not in ("Monthly", "Terms")]
+        headers = [header for header in DEFAULT_TEMPLATE_HEADERS if header not in ("Monthly", "CHCode")]
         for mode in ("RECO", "All accounts"):
             for include_headers in (True, False):
                 with self.subTest(mode=mode, include_headers=include_headers):
@@ -158,15 +158,15 @@ class AgentCycleTests(unittest.TestCase):
                     for file in bundle.files:
                         exported = rows(file)
                         for row in exported:
-                            pair = row["Monthly"], row["Terms"]
+                            pair = row["Monthly"], row["CHCode"]
                             self.assertIn(pair, GEO_RECO_AGENTS)
                             self.assertEqual(assignments.setdefault(row["primary_key"], pair), pair)
-                            group_accounts.setdefault(file.group_key, {})[row["primary_key"]] = row["Terms"]
+                            group_accounts.setdefault(file.group_key, {})[row["primary_key"]] = row["CHCode"]
                         self.assertEqual([row["Monthly"] for row in exported], [row["Monthly"] for row in file.preview])
                         workbook = load_workbook(BytesIO(build_export_excel(file)))
                         saved_headers = [cell.value for cell in workbook.active[1]]
                         saved_rows = list(workbook.active.values)[1:]
-                        self.assertEqual([row[saved_headers.index("Terms")] for row in saved_rows], [row["Terms"] for row in exported])
+                        self.assertEqual([row[saved_headers.index("CHCode")] for row in saved_rows], [row["CHCode"] for row in exported])
                         self.assertEqual([row[saved_headers.index("Monthly")] for row in saved_rows], [row["Monthly"] for row in exported])
                         workbook.close()
                     self.assertEqual(len(assignments), len(source))
@@ -187,12 +187,12 @@ class AgentCycleTests(unittest.TestCase):
         rotated_agents = GEO_RECO_AGENTS[1:] + GEO_RECO_AGENTS[:1]
         bundle = build_geo_exports(create_default_csv_template(), source, "", 1, ".csv", agents=rotated_agents)
         for file in bundle.files:
-            self.assertTrue(all((row["Monthly"], row["Terms"]) in GEO_AGENTS for row in rows(file)))
+            self.assertTrue(all((row["Monthly"], row["CHCode"]) in GEO_AGENTS for row in rows(file)))
             self.assertEqual((file.records[0]["Monthly"], file.records[0]["Terms"]), GEO_AGENTS[0])
             workbook = load_workbook(BytesIO(build_export_excel(file)))
             headers = [cell.value for cell in workbook.active[1]]
             for row in list(workbook.active.values)[1:]:
-                self.assertIn((row[headers.index("Monthly")], row[headers.index("Terms")]), GEO_AGENTS)
+                self.assertIn((row[headers.index("Monthly")], row[headers.index("CHCode")]), GEO_AGENTS)
             workbook.close()
         self.assertTrue(all("Monthly" not in row and "Terms" not in row for row in source))
 
@@ -205,26 +205,26 @@ class AgentCycleTests(unittest.TestCase):
         expected_codes = {1: "APMAMARIL", 2: "JBATALLER", 3: "ROSVINOYA", 4: "APMAMARIL", 5: "JBATALLER",
                           6: "ROSVINOYA", 7: "APMAMARIL", 8: "APMAMARIL", 9: "JBATALLER", 10: "ROSVINOYA", 11: "APMAMARIL"}
         names = {code: name for name, code in GEO_AGENTS}
-        headers = [header for header in reversed(DEFAULT_TEMPLATE_HEADERS) if header not in ("Monthly", "Terms")]
+        headers = [header for header in reversed(DEFAULT_TEMPLATE_HEADERS) if header not in ("Monthly", "CHCode")]
         template = (",".join(headers) + "\n").encode()
         bundle = build_geo_exports(template, source, "", 1, ".csv", agents=GEO_RECO_AGENTS)
         assignments = {}
         with ZipFile(BytesIO(bundle.zip_data)) as csv_zip, ZipFile(BytesIO(build_excel_zip(bundle.files))) as excel_zip:
             for file in bundle.files:
-                self.assertEqual(file.headers, [*headers, "Monthly", "Terms"])
+                self.assertEqual(file.headers, [*headers, "Monthly", "CHCode"])
                 exported = rows(file)
                 for row in exported:
                     code = expected_codes[int(row["primary_key"])]
-                    self.assertEqual((row["Monthly"], row["Terms"]), (names[code], code))
+                    self.assertEqual((row["Monthly"], row["CHCode"]), (names[code], code))
                     self.assertEqual(assignments.setdefault(row["primary_key"], code), code)
                 self.assertEqual(csv_zip.read(file.filename), file.data)
                 self.assertEqual([(row["Monthly"], row["Terms"]) for row in file.preview],
-                                 [(row["Monthly"], row["Terms"]) for row in exported])
+                                 [(row["Monthly"], row["CHCode"]) for row in exported])
                 workbook = load_workbook(BytesIO(excel_zip.read(Path(file.filename).with_suffix(".xlsx").name)))
                 saved_headers = [cell.value for cell in workbook.active[1]]
                 for row, expected in zip(list(workbook.active.values)[1:], exported):
-                    self.assertEqual((row[saved_headers.index("Monthly")], row[saved_headers.index("Terms")]),
-                                     (expected["Monthly"], expected["Terms"]))
+                    self.assertEqual((row[saved_headers.index("Monthly")], row[saved_headers.index("CHCode")]),
+                                     (expected["Monthly"], expected["CHCode"]))
                 workbook.close()
         self.assertEqual(len(assignments), 11)
         self.assertEqual(sum(bundle.counts.values()), 12)
@@ -454,7 +454,7 @@ class AgentCyclePageTests(unittest.TestCase):
                     result = app.session_state["result"]
                     self.assertTrue(result["geo"])
                     for file in result["files"]:
-                        self.assertTrue(all((row["Monthly"], row["Terms"]) in GEO_AGENTS for row in rows(file)))
+                        self.assertTrue(all((row["Monthly"], row["CHCode"]) in GEO_AGENTS for row in rows(file)))
                         self.assertEqual((file.records[0]["Monthly"], file.records[0]["Terms"]), GEO_AGENTS[0])
                     signature = result["signature"]
                     zip_data = result["zip_data"]
@@ -486,7 +486,7 @@ class AgentCyclePageTests(unittest.TestCase):
                     accounts = {}
                     for file in result["files"]:
                         for row in rows(file):
-                            pair = row["Monthly"], row["Terms"]
+                            pair = row["Monthly"], row["CHCode"]
                             self.assertIn(pair, GEO_AGENTS)
                             key = file.group_key, row["primary_key"]
                             self.assertEqual(accounts.setdefault(key, pair), pair)

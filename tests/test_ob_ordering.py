@@ -88,7 +88,7 @@ class OBOrderingTests(unittest.TestCase):
                         self.assertEqual([row["FullName"] for row in rows], expected)
                         self.assertEqual([row["FullName"] for row in file.preview], expected)
                         self.assertEqual([row["OB"] for row in rows], [values[label] for label in expected])
-                        self.assertEqual([(row["Monthly"], row["Terms"]) for row in rows],
+                        self.assertEqual([(row["Monthly"], row["CHCode"]) for row in rows],
                                          [COLLECTION_AGENTS[index % len(COLLECTION_AGENTS)] for index in range(len(expected))])
                         self.assertEqual(archive.read(file.filename), file.data)
                         self.assertEqual((folder / file.filename).read_bytes(), file.data)

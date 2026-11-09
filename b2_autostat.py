@@ -17,7 +17,7 @@ B2_AUTOSTAT_VERSION = 7
 B4_AUTOSTAT_VERSION = 3
 B2_B4_REMARK_DATE_VERSION = 1
 B2_PRIMARY_KEY_VERSION = 1
-B2_COLLECTOR_TERMS_VERSION = 1
+B2_COLLECTOR_TERMS_VERSION = 2
 B2_EMAIL_HEADERS = (
     "Name", "Account No.", "STATUS CODE", "REMARKS", "REMARKS BY", "REMARKS DATE", "Email", "Collector",
 )
@@ -48,7 +48,10 @@ def b2_metadata_columns(headers: tuple[str, ...]) -> tuple[int | None, int | Non
     def find(aliases):
         return next((labels.index(alias) for alias in aliases if labels.count(alias) == 1), None)
 
-    return find(("fullname", "name", "debtorname", "customername")), find(("terms", "collector", "collectory", "collectorcode"))
+    collectors = ("chcode", "collector", "collectory", "collectorcode") if "promo" in labels or "chcode" in labels else (
+        "terms", "collector", "collectory", "collectorcode",
+    )
+    return find(("fullname", "name", "debtorname", "customername")), find(collectors)
 
 
 def _text(value) -> str:
@@ -145,6 +148,6 @@ def build_b4_autostat_exports(
     sources: list[B2ActivitySource], *, timestamp: datetime | None,
     remark_by: str = AUTOSTAT_REMARK_BY, default_collector: str = "", encoding: str = "cp1252",
 ) -> AutostatBundle:
-    """Use the B2 layouts for B4, retaining primary_key and Terms collector codes."""
+    """Use the B2 layouts for B4, retaining primary_key and collector codes."""
     return build_b2_autostat_exports(sources, timestamp=timestamp, remark_by=remark_by,
                                      default_collector=default_collector, encoding=encoding, bucket=4)

@@ -61,7 +61,7 @@ class GeoLoanRoutingTests(unittest.TestCase):
                     file = next(file for file in bundle.files if file.filename == filename)
                     self.assertEqual(csv_zip.read(filename), file.data)
                     self.assertEqual({row["primary_key"] for row in csv_rows(file)}, ids)
-                    self.assertEqual({row["Product"].strip().upper() for row in csv_rows(file)}, {"CSL", "PL", "SLA"})
+                    self.assertEqual({row["Promo"].strip().upper() for row in csv_rows(file)}, {"CSL", "PL", "SLA"})
                     self.assertEqual({row["ChristmasAmnesty"] for row in csv_rows(file)}, {"", "QUALIFIED"})
                     self.assertIn("LOANS", file.label)
                     workbook = load_workbook(BytesIO(excel_zip.read(Path(filename).with_suffix(".xlsx").name)))
@@ -106,7 +106,7 @@ class GeoLoanRoutingTests(unittest.TestCase):
                     headers = next(rows)
                     data = [dict(zip(headers, row)) for row in rows]
                     self.assertEqual(len(data), 48)
-                    self.assertEqual({row["Product"].strip().upper() for row in data}, {"CSL", "PL", "SLA"})
+                    self.assertEqual({row["Promo"].strip().upper() for row in data}, {"CSL", "PL", "SLA"})
                     self.assertEqual({row["ChristmasAmnesty"] for row in data}, {None, "QUALIFIED"})
                     workbook.close()
 
@@ -118,7 +118,7 @@ class GeoLoanRoutingTests(unittest.TestCase):
             "NEGATIVE_QUALIFIED_REVIEW_Email.csv", "NEGATIVE_QUALIFIED_REVIEW_Viber.csv",
         })
         for file in bundle.files:
-            self.assertEqual({row["primary_key"]: row["Product"] for row in csv_rows(file)},
+            self.assertEqual({row["primary_key"]: row["Promo"] for row in csv_rows(file)},
                              {row["primary_key"]: row["product"] for row in source
                               if bool(row["ChristmasAmnesty"]) == (file.group_key == "qualified_review")})
 

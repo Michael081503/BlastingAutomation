@@ -99,6 +99,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "create_default_csv_template",
             "DERIVED_TEMPLATE_HEADERS", "geo_doclass",
             "ASSIGNMENT_TEMPLATE_HEADERS",
+            "campaign_output_headers", "template_column_positions",
             "SheetInfo.available_fields", "inspect_source_sheet",
             "SheetInfo.headers", "source_column_positions", "preview_source_rows",
             "WORKBOOK_READER_VERSION",

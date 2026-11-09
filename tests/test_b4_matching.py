@@ -75,7 +75,7 @@ class B4MatchingTests(unittest.TestCase):
         result = build_b4_exports(database, accounts, agents=(available,))
         for file, summary in zip(result.bundle.files, result.bundle.summary):
             self.assertGreater(file.count, 0)
-            self.assertEqual({(row['Monthly'], row['Terms']) for row in rows(file)}, {available})
+            self.assertEqual({(row['Monthly'], row['CHCode']) for row in rows(file)}, {available})
             self.assertEqual(summary[f'{available[1]} accounts'], file.count)
             self.assertEqual(summary[f'{COLLECTION_AGENTS[0][1]} accounts'], 0)
         with self.assertRaises(AutomationError):
@@ -148,7 +148,7 @@ class B4MatchingTests(unittest.TestCase):
         self.assertEqual(result.stats["Unmatched rows"], 1)
         output = {row["primary_key"]: row for file in result.bundle.files for row in rows(file)}
         self.assertEqual((output["00001"]["email"], output["00001"]["phone"]), ("first@example.com", "9171234567"))
-        self.assertEqual(output["00001"]["cardnumber"], "000000000000000001")
+        self.assertEqual(output["00001"]["Terms"], "000000000000000001")
         self.assertEqual(output["00001"]["doclass"], "SBC CARDS B4")
         self.assertEqual(output["BEL-2"]["email"], "")
         self.assertEqual(output["BEL-2"]["phone"], "9181234567")
@@ -158,7 +158,7 @@ class B4MatchingTests(unittest.TestCase):
         self.assertEqual(result.bundle.summary[0]["No valid contact"], 1)
         for file in result.bundle.files:
             self.assertEqual(file.headers, B2_TEMPLATE_HEADERS)
-            self.assertEqual([(row["Monthly"], row["Terms"]) for row in rows(file)],
+            self.assertEqual([(row["Monthly"], row["CHCode"]) for row in rows(file)],
                              [("Almera Ranceli", "AMRANCELI"), ("Kyarill Palima", "KPALIMA")][:file.count])
         with ZipFile(BytesIO(result.bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in result.bundle.files])
@@ -171,7 +171,7 @@ class B4MatchingTests(unittest.TestCase):
         sources = []
         for file in matched.bundle.files:
             sheet = inspect_contact_source(file.data, ".csv")[0]
-            self.assertEqual(sheet.headers[sheet.account_column], "cardnumber")  # Generic detection.
+            self.assertEqual(sheet.headers[sheet.account_column], "Terms")  # Generic detection.
             sources.append(B2ActivitySource(SourceSelection(file.filename, file.data, sheet),
                                            *b2_metadata_columns(sheet.headers)))
         bundle = build_b2_autostat_exports(sources, timestamp=None)
@@ -212,7 +212,7 @@ class B4PageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             current = app.session_state['b4_result']
             self.assertNotEqual(current['signature'], original['signature'])
-            self.assertEqual({row['Terms'] for file in current['matched'].bundle.files for row in rows(file)},
+            self.assertEqual({row['CHCode'] for file in current['matched'].bundle.files for row in rows(file)},
                              {COLLECTION_AGENTS[0][1]})
             self.assertEqual(len(app.get('download_button')), 3)
             availability.return_value = None

@@ -93,7 +93,7 @@ class B2Tests(unittest.TestCase):
                 result = build_b2_exports(database, accounts, agents=(available,))
                 for file, summary in zip(result.bundle.files, result.bundle.summary):
                     self.assertGreater(file.count, 0)
-                    self.assertEqual({(row['Monthly'], row['Terms']) for row in csv_rows(file)}, {available})
+                    self.assertEqual({(row['Monthly'], row['CHCode']) for row in csv_rows(file)}, {available})
                     self.assertEqual(summary[f'{available[1]} accounts'], file.count)
                     for _, code in COLLECTION_AGENTS:
                         if code != available[1]:
@@ -103,7 +103,7 @@ class B2Tests(unittest.TestCase):
         raw, grid = fixtures()
         database, accounts = selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False)
         result = build_b2_exports(database, accounts, agents=tuple(reversed(COLLECTION_AGENTS)))
-        self.assertEqual([(row['Monthly'], row['Terms']) for row in csv_rows(result.bundle.files[0])][:2],
+        self.assertEqual([(row['Monthly'], row['CHCode']) for row in csv_rows(result.bundle.files[0])][:2],
                          list(COLLECTION_AGENTS))
         for invalid in ((), (('Unknown', 'UNKNOWN'),), ((COLLECTION_AGENTS[0][0], COLLECTION_AGENTS[1][1]),),
                         (COLLECTION_AGENTS[0], COLLECTION_AGENTS[0])):
@@ -113,7 +113,7 @@ class B2Tests(unittest.TestCase):
     def test_even_agent_assignment_survives_template_to_autostat_processing(self):
         raw, grid = fixtures()
         result = build_b2_exports(selection('database.xlsx', raw, True), selection('grid.xlsx', grid, False))
-        expected = {row['primary_key']: row['Terms'] for file in result.bundle.files for row in csv_rows(file)}
+        expected = {row['primary_key']: row['CHCode'] for file in result.bundle.files for row in csv_rows(file)}
         sources = []
         for file in result.bundle.files:
             sheet = inspect_contact_source(file.data, '.csv')[0]
@@ -142,7 +142,7 @@ class B2Tests(unittest.TestCase):
         database = selection('database.xlsx', raw, True)
         result = build_b2_exports(database, selection('grid.xlsx', grid, False))
         self.assertEqual([file.count for file in result.bundle.files], [2, 1])
-        rows = {row['cardnumber']: row for file in result.bundle.files for row in csv_rows(file)}
+        rows = {row['Terms']: row for file in result.bundle.files for row in csv_rows(file)}
         self.assertEqual((rows['000001']['email'], rows['000001']['phone']),
                          ('preferred@example.com', '9181234567'))
         self.assertEqual((rows['BEL-002']['email'], rows['BEL-002']['phone']),
@@ -212,18 +212,18 @@ class B2Tests(unittest.TestCase):
         cards, bel = result.bundle.files
         self.assertEqual([file.filename for file in result.bundle.files], ['NEGATIVE B2 - CARDS.csv', 'NEGATIVE B2 - BEL.csv'])
         self.assertEqual([file.count for file in result.bundle.files], [3, 1])
-        self.assertEqual({row['cardnumber'] for row in csv_rows(cards)}, {'0000000000000001', '0009', '000123'})
+        self.assertEqual({row['Terms'] for row in csv_rows(cards)}, {'0000000000000001', '0009', '000123'})
         self.assertEqual({row['primary_key'] for row in csv_rows(cards)}, {'00001', '00009', '00010'})
-        self.assertEqual({row['cardnumber'] for row in csv_rows(bel)}, {'@BEL-1'})
+        self.assertEqual({row['Terms'] for row in csv_rows(bel)}, {'@BEL-1'})
         self.assertEqual(result.bundle.summary[0]['No valid contact'], 1)
         self.assertEqual(result.bundle.summary[0]['Accounts exported'], 3)
         for file in result.bundle.files:
             rows = csv_rows(file)
             self.assertEqual(tuple(rows[0]), B2_TEMPLATE_HEADERS)
-            identities = [row['cardnumber'] for row in rows]
+            identities = [row['Terms'] for row in rows]
             self.assertEqual(len(identities), len(set(identities)))
             for index, row in enumerate(rows):
-                self.assertEqual((row['Monthly'], row['Terms']),
+                self.assertEqual((row['Monthly'], row['CHCode']),
                                  [('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA')][index % 2])
                 self.assertTrue(row['email'] or row['phone'])
                 self.assertTrue(not row['phone'] or re.fullmatch(r'9[0-9]{9}', row['phone']))
@@ -237,8 +237,8 @@ class B2Tests(unittest.TestCase):
 
     def test_exact_blasting_headers_metadata_and_one_row_with_both_contacts(self):
         self.assertEqual(B2_TEMPLATE_HEADERS, (
-            'email', 'primary_key', 'indexoneuid', 'cardnumber', 'FullName', 'phone', 'OB',
-            'Monthly', 'Terms', 'doclass', 'Level', 'Product', 'EndoDate', 'AREA', 'ChristmasAmnesty', 'NewEndo',
+            'email', 'primary_key', 'indexoneuid', 'Terms', 'FullName', 'phone', 'OB',
+            'Monthly', 'CHCode', 'doclass', 'Level', 'Promo', 'EndoDate', 'AREA', 'ChristmasAmnesty', 'NewEndo',
         ))
         raw = workbook_data(RAW_HEADERS + ['Name', 'Total Outstanding', 'Assignment Date', 'Area', 'Monthly', 'Terms'], [
             ['0001', '000001', 'MC', 2, '09171234567', None, 'first@example.com', None,
@@ -257,7 +257,7 @@ class B2Tests(unittest.TestCase):
         cards, bel = [csv_rows(file) for file in result.bundle.files]
         self.assertEqual([len(cards), len(bel)], [2, 1])
         self.assertEqual(cards[0]['primary_key'], '0001')
-        self.assertEqual(cards[0]['cardnumber'], '000001')
+        self.assertEqual(cards[0]['Terms'], '000001')
         self.assertEqual(cards[0]['indexoneuid'], 'SBCC03-001')
         self.assertEqual(cards[0]['FullName'], 'Database name')
         self.assertEqual(cards[0]['OB'], '1234.5')
@@ -275,15 +275,15 @@ class B2Tests(unittest.TestCase):
         self.assertEqual(bel[0]['email'], '')
         self.assertEqual(bel[0]['phone'], '9181234567')
         self.assertEqual(bel[0]['doclass'], 'SBC BEL B2')
-        self.assertEqual(bel[0]['Product'], 'BEL')
+        self.assertEqual(bel[0]['Promo'], 'BEL')
         for row in cards + bel:
             for column in ('Level', 'ChristmasAmnesty', 'NewEndo'):
                 self.assertEqual(row[column], '')
             self.assertNotIn('Time', row)
             self.assertNotIn('Remark', row)
-        self.assertEqual([(row['Monthly'], row['Terms']) for row in cards],
+        self.assertEqual([(row['Monthly'], row['CHCode']) for row in cards],
                          [('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA')])
-        self.assertEqual((bel[0]['Monthly'], bel[0]['Terms']), ('Almera Ranceli', 'AMRANCELI'))
+        self.assertEqual((bel[0]['Monthly'], bel[0]['CHCode']), ('Almera Ranceli', 'AMRANCELI'))
 
     def test_incorrect_excel_dimensions_do_not_hide_headers_or_rows_in_either_reader(self):
         raw, grid = fixtures()
@@ -338,7 +338,7 @@ class B2AppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             current = app.session_state['b2_result']
             self.assertNotEqual(current['signature'], original['signature'])
-            self.assertEqual({row['Terms'] for file in current['matched'].bundle.files for row in csv_rows(file)},
+            self.assertEqual({row['CHCode'] for file in current['matched'].bundle.files for row in csv_rows(file)},
                              {COLLECTION_AGENTS[1][1]})
             self.assertEqual(len(app.get('download_button')), 3)
             availability.return_value = None

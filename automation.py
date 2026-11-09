@@ -41,14 +41,14 @@ OPTIONAL_FIELD_MAPPING = {"Area": "AREA"}
 SOURCE_ALIASES = {
     "debtor_email": ("email", "email address", "e-mail address", "email 1", "debtor email address", "email id"),
     "Account no.": ("account", "account number", "acct no", "acct number"),
-    "financing/Card no.": ("card_no",),
+    "financing/Card no.": ("card_no", "cardbnumber"),
     "endo date": ("assign_date",),
     "level": ("placement",),
-    "product": ("Product Type",),
+    "product": ("Product Type", "Promo"),
     "OB (Masterlist)": ("OB",),
     "phone_1": ("phone number", "phone no", "mobile", "mobile number", "mobile no", "contact number", "contact no", "cellphone", "cellphone number"),
 }
-MAPPING_VERSION = 8
+MAPPING_VERSION = 9
 PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 SOURCE_SHEET_SELECTION_VERSION = 1
@@ -65,8 +65,8 @@ GEO_DOCLASS_BY_AREA = {
 }
 # Keep the full campaign layout separate from the fields required for mapping.
 DEFAULT_TEMPLATE_HEADERS = (
-    "email", "primary_key", "indexoneuid", "cardnumber", "FullName", "phone", "OB",
-    "Monthly", "Terms", "doclass", "Level", "Product", "EndoDate", "AREA",
+    "email", "primary_key", "indexoneuid", "Terms", "FullName", "phone", "OB",
+    "Monthly", "CHCode", "doclass", "Level", "Promo", "EndoDate", "AREA",
     "ChristmasAmnesty", "NewEndo",
 )
 CSV_OUTPUT_ENCODINGS = {
@@ -108,6 +108,30 @@ def normalize_header(value: Any) -> str:
     return "".join(character for character in text if character.isalnum())
 
 
+def uses_campaign_headers(headers: list[Any] | tuple[str, ...]) -> bool:
+    """Distinguish the renamed account Terms column from legacy agent Terms."""
+    return any(normalize_header(header) in {"chcode", "promo"} for header in headers)
+
+
+def campaign_output_headers(headers: list[Any] | tuple[str, ...]) -> list[Any]:
+    """Rename campaign labels once, retaining their positions and data mappings."""
+    renamed = uses_campaign_headers(headers)
+    replacements = {"cardnumber": "Terms", "cardbnumber": "Terms", "product": "Promo"}
+    if not renamed:
+        replacements["terms"] = "CHCode"
+    return [replacements.get(normalize_header(header), header) for header in headers]
+
+
+def _template_aliases(target: str, *, renamed: bool) -> set[str]:
+    if target == "cardnumber":
+        return {"cardnumber", "cardbnumber", "terms"} if renamed else {"cardnumber", "cardbnumber"}
+    if target == "Terms":
+        return {"chcode"} if renamed else {"terms"}
+    if target == "product":
+        return {"product", "promo"}
+    return {normalize_header(target)}
+
+
 def normalize_product(value: Any) -> Any:
     """Convert the MC product code to CARDS before campaign routing."""
     return "CARDS" if isinstance(value, str) and value.strip().casefold() == "mc" else value
@@ -141,9 +165,13 @@ def _source_aliases(source: str) -> set[str]:
 def source_column_positions(headers: list[Any] | tuple[str, ...]) -> dict[str, int]:
     """Find unambiguous defaults for the source-column mapping controls."""
     labels = [normalize_header(value) for value in headers]
+    renamed = uses_campaign_headers(headers)
     positions = {}
     for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items():
-        matches = [index for index, label in enumerate(labels) if label in _source_aliases(source)]
+        aliases = _source_aliases(source)
+        if renamed and target == "cardnumber":
+            aliases.add("terms")
+        matches = [index for index, label in enumerate(labels) if label in aliases]
         if len(matches) == 1:
             positions[target] = matches[0]
     return positions
@@ -172,7 +200,8 @@ def _check_header_row(row: int) -> None:
 
 def _header_groups(template: bool) -> list[set[str]]:
     if template:
-        return [{normalize_header(header)} for header in TARGET_HEADERS]
+        return [_template_aliases(header, renamed=False) | _template_aliases(header, renamed=True)
+                for header in TARGET_HEADERS]
     return [_source_aliases(source) for source in FIELD_MAPPING]
 
 
@@ -262,6 +291,7 @@ def _column_lookup(
 ) -> dict[str, int]:
     """Resolve required fields by column position; reject ambiguous headers."""
     normalized = [normalize_header(value) for value in headers]
+    renamed = uses_campaign_headers(headers)
     positions = {}
     missing = []
     fields = {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}
@@ -280,7 +310,9 @@ def _column_lookup(
                 raise AutomationError(f'Choose an existing source column for "{target}".')
             positions[target] = column
             continue
-        aliases = {normalize_header(target)} if template else _source_aliases(source)
+        aliases = _template_aliases(target, renamed=renamed) if template else _source_aliases(source)
+        if not template and target == "cardnumber" and renamed:
+            aliases.add("terms")
         matches = [index for index, value in enumerate(normalized) if value in aliases]
         label = target if template else source
         if not matches and source in FIELD_MAPPING:
@@ -299,6 +331,11 @@ def _column_lookup(
             "Check the selected sheet and header row."
         )
     return positions
+
+
+def template_column_positions(headers: list[str]) -> dict[str, int]:
+    """Resolve both legacy and renamed campaign layouts to internal record fields."""
+    return _column_lookup(headers, template=True)
 
 
 def _is_blank(value: Any) -> bool:
@@ -438,7 +475,7 @@ def fill_excel_template(
     sheet_name: str,
     header_row: int,
 ) -> bytes:
-    """Keep template headers, column order, styles, and other sheets in a new file.
+    """Rename campaign headers, retaining column order, styles, and other sheets.
 
     The chosen sheet's data area is replaced. Non-mapped template columns are
     left blank; this prevents old example data from leaking into a fresh output.
@@ -451,6 +488,9 @@ def fill_excel_template(
         sheet = _worksheet(workbook, sheet_name)
         headers = _headers(sheet, header_row)
         positions = _column_lookup(headers, template=True)
+        output_headers = campaign_output_headers(headers)
+        for column, header in enumerate(output_headers, 1):
+            sheet.cell(header_row, column, header)
         if any(area.max_row > header_row for area in sheet.merged_cells.ranges):
             raise AutomationError(
                 "The template has merged cells in its data area. "
@@ -498,6 +538,8 @@ def fill_excel_template(
                 table.autoFilter.sortState = None
             for column in table.tableColumns:
                 column.calculatedColumnFormula = None
+            for index, column in enumerate(table.tableColumns, min_column - 1):
+                column.name = str(output_headers[index])
         output = BytesIO()
         workbook.save(output)
         return output.getvalue()
@@ -550,6 +592,8 @@ def write_text_csv_sheet(workbook: Workbook, data: bytes, title: str):
     for row_index, row in enumerate(csv.reader(StringIO(data.decode(encoding), newline=""))):
         if row_index == 0:
             text_columns = {column for column, header in enumerate(row, 1) if normalize_header(header) in identifier_headers}
+            text_columns.update(index + 1 for target, index in source_column_positions(row).items()
+                                if target in IDENTIFIER_FIELDS)
         cells = []
         for column, value in enumerate(row, 1):
             if row_index == 0:
@@ -572,7 +616,7 @@ def write_typed_template_sheet(
     sheet = workbook.create_sheet(title)
     sheet.freeze_panes = "A2"
     header_cells = []
-    for column, header in enumerate(headers, 1):
+    for column, header in enumerate(campaign_output_headers(headers), 1):
         sheet.column_dimensions[get_column_letter(column)].width = 24
         cell = WriteOnlyCell(sheet)
         _write_excel_value(cell, header)
@@ -608,7 +652,7 @@ def excel_template_to_csv(template: bytes, sheet_name: str, header_row: int) -> 
     try:
         headers = _headers(_worksheet(workbook, sheet_name), header_row)
         _column_lookup(headers, template=True)
-        return _csv_header(headers)
+        return _csv_header(campaign_output_headers(headers))
     finally:
         workbook.close()
 
@@ -622,7 +666,7 @@ def fill_csv_template(
     positions = _column_lookup(headers, template=True)
     output = StringIO(newline="")
     writer = csv.writer(output, delimiter=",", lineterminator="\r\n")
-    writer.writerow(headers)
+    writer.writerow(campaign_output_headers(headers))
     for record in records:
         row = [""] * len(headers)
         for target, position in positions.items():

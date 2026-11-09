@@ -38,7 +38,7 @@ class ExcelCsvRoundtripTests(unittest.TestCase):
                         product="MC", level=1, ChristmasAmnesty="QUALIFIED", AREA="Mindanao")
                    for index, (key, card, reference) in enumerate(identifiers)]
         # indexoneuid is intentionally plain CSV; Excel may infer its cell type.
-        fields = ("primary_key", "cardnumber", "phone")
+        fields = ("primary_key", "Terms", "phone")
         with TemporaryDirectory(prefix="campaign-excel-csv-") as directory:
             folder = Path(directory)
             manifest = []
@@ -48,7 +48,8 @@ class ExcelCsvRoundtripTests(unittest.TestCase):
                     for file in bundle.files:
                         path = folder / f"{workflow}-{encoding}-{file.channel}.csv"
                         path.write_bytes(build_export_csv(file))
-                        expected = [["\t" + str(row[field]) if row.get(field) else "" for field in fields]
+                        expected = [["\t" + str(row[target]) if row.get(target) else ""
+                                     for target in ("primary_key", "cardnumber", "phone")]
                                     for row in file.records]
                         manifest.append({"path": str(path), "columns": [file.headers.index(field) + 1 for field in fields],
                                          "fields": fields, "expected": expected})
