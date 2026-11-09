@@ -487,7 +487,7 @@ def render_workbook_page() -> None:
             key=f"excel_download_{file.key}" if excel_output else f"download_{file.key}",
             on_click="ignore", type="primary",
             help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
-            "CSV identifiers include a leading tab to retain all digits in Excel.",
+            "CSV account numbers and phones include a leading tab to retain all digits in Excel. indexoneuid has no added prefix.",
         )
         show_preview(file.preview, file.count, file.headers)
 

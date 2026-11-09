@@ -285,7 +285,8 @@ class ExcelExportTests(unittest.TestCase):
                                         self.assertEqual(archive.read(filename), expected_data)
                                         row = next(csv.DictReader(StringIO(expected_data.decode("cp1252"))))
                                         prefix = "\t" if protected else ""
-                                        self.assertEqual((row["primary_key"], row["cardnumber"], row["indexoneuid"]), tuple(prefix + value for value in values[:3]))
+                                        self.assertEqual((row["primary_key"], row["cardnumber"]), tuple(prefix + value for value in values[:2]))
+                                        self.assertEqual(row["indexoneuid"], values[2])
                                         self.assertEqual(row["OB"], "1234.5")
                                         self.assertEqual(row["Product"], "CARDS")
                                         if file.key == result["files"][0].key:

@@ -128,6 +128,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "TYPED_EXCEL_EXPORT_VERSION", "ExportFile.__dataclass_fields__.records",
             "CAMPAIGN_OUTPUT_FORMAT_VERSION", "CSV_CAMPAIGN_DEFAULT_VERSION", "campaign_output_files",
             "EXCEL_SAFE_CSV_VERSION", "build_export_csv", "build_csv_zip",
+            "CSV_PROTECTED_IDENTIFIER_FIELDS",
             "ACTIVITY_CSV_IDENTIFIERS_VERSION",
             "REQUIRED_CSV_PROTECTION_VERSION",
             "AGENT_ASSIGNMENT_EXPORT_VERSION",

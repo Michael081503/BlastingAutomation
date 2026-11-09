@@ -57,7 +57,8 @@ EXCEL_EXPORT_VERSION = 2
 TYPED_EXCEL_EXPORT_VERSION = 1
 CAMPAIGN_OUTPUT_FORMAT_VERSION = 2
 CSV_CAMPAIGN_DEFAULT_VERSION = 1
-EXCEL_SAFE_CSV_VERSION = 2
+EXCEL_SAFE_CSV_VERSION = 3
+CSV_PROTECTED_IDENTIFIER_FIELDS = IDENTIFIER_FIELDS - {"indexoneuid"}
 ACTIVITY_CSV_IDENTIFIERS_VERSION = 1
 REQUIRED_CSV_PROTECTION_VERSION = 1
 AGENT_ASSIGNMENT_EXPORT_VERSION = 2
@@ -171,7 +172,7 @@ def build_export_csv(file: ExportFile, *, protect_identifiers: bool = True) -> b
 
     A leading tab survives Excel's CSV save/reopen cycle, unlike a text formula.
     This is part of the CSV field value; plain upload bytes remain available.
-    Only identifiers/phones are prefixed. Other cells retain their CSV values.
+    Account numbers and phones are prefixed. indexoneuid stays unchanged.
     """
     if not protect_identifiers:
         return file.data
@@ -181,9 +182,9 @@ def build_export_csv(file: ExportFile, *, protect_identifiers: bool = True) -> b
     writer = csv.writer(output, lineterminator="\r\n")
     headers = next(rows)
     writer.writerow(headers)
-    fields = {normalize_header(field) for field in IDENTIFIER_FIELDS}
+    fields = {normalize_header(field) for field in CSV_PROTECTED_IDENTIFIER_FIELDS}
     columns = {index for index, header in enumerate(headers) if normalize_header(header) in fields}
-    columns.update(index for target, index in source_column_positions(headers).items() if target in IDENTIFIER_FIELDS)
+    columns.update(index for target, index in source_column_positions(headers).items() if target in CSV_PROTECTED_IDENTIFIER_FIELDS)
     for row in rows:
         for column in columns:
             if row[column] and not row[column].startswith("\t"):

@@ -37,7 +37,8 @@ class ExcelCsvRoundtripTests(unittest.TestCase):
                         email=f"person{index}@example.com", phone="09171234567", OB=1000 - index,
                         product="MC", level=1, ChristmasAmnesty="QUALIFIED", AREA="Mindanao")
                    for index, (key, card, reference) in enumerate(identifiers)]
-        fields = ("primary_key", "cardnumber", "indexoneuid", "phone")
+        # indexoneuid is intentionally plain CSV; Excel may infer its cell type.
+        fields = ("primary_key", "cardnumber", "phone")
         with TemporaryDirectory(prefix="campaign-excel-csv-") as directory:
             folder = Path(directory)
             manifest = []

@@ -71,7 +71,7 @@ class ProtectedCsvTests(unittest.TestCase):
                                 row = next(csv.DictReader(StringIO(protected.decode(encoding))))
                                 key, card, reference = identifiers[index]
                                 for header, expected in (('primary_key', key), ('cardnumber', card), ('indexoneuid', reference)):
-                                    self.assertEqual(row[header], '\t' + expected)
+                                    self.assertEqual(row[header], expected if header == 'indexoneuid' else '\t' + expected)
                                     self.assertEqual(file.preview[0][header], expected)
                                 self.assertEqual(row['phone'], '\t9171234567')
                                 self.assertEqual(row['OB'], '1234.5')
@@ -122,8 +122,9 @@ class ProtectedCsvTests(unittest.TestCase):
                             self.assertEqual(protected.startswith(b'\xef\xbb\xbf'), encoding == 'utf-8-sig')
                             rows = list(csv.DictReader(StringIO(protected.decode(encoding), newline='')))
                             for row, record in zip(rows, file.records, strict=True):
-                                for header in ('primary_key', 'cardnumber', 'indexoneuid'):
+                                for header in ('primary_key', 'cardnumber'):
                                     self.assertEqual(row[header], '\t' + record[header])
+                                self.assertEqual(row['indexoneuid'], record['indexoneuid'])
                                 self.assertEqual(row['phone'], '\t09171234567' if file.channel == 'viber' else '')
                                 self.assertEqual(row['OB'], '1234.5')
                                 self.assertEqual(row['Level'], '1')
@@ -159,7 +160,7 @@ class ProtectedCsvTests(unittest.TestCase):
                         row = list(csv.DictReader(StringIO(data.decode('cp1252'))))[0]
                         self.assertEqual(row['primary_key'], '\t00001234567890123456')
                         self.assertEqual(row['cardnumber'], '\t5156041234567897')
-                        self.assertEqual(row['indexoneuid'], '\t000019')
+                        self.assertEqual(row['indexoneuid'], '000019')
 
     def test_empty_channels_keep_only_the_unmodified_csv_headers(self):
         bundle = build_negative_exports(create_default_csv_template(),
