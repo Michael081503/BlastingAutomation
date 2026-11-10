@@ -174,6 +174,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "B4_MATCHING_VERSION", "build_b4_exports", "B2_B4_AGENTS_VERSION",
             "B2_B4_OB_SORT_VERSION",
             "B2_B4_AVAILABILITY_VERSION",
+            "SPM_ENDORSEMENT_VERSION",
         ), ("autostat", "automation", "export_config")),
         ("b2_page", ("render_b2_page", "BROWSER_DOWNLOADS_ONLY_VERSION", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "B2_B4_CSV_PROTECTION_VERSION", "upload_widget_key", "render_agent_availability"), ("b2_matching", "autostat", "automation", "exports", "folder_output", "export_config", "upload_state", "agent_availability_page")),
         ("b2_autostat", (

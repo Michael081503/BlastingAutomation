@@ -27,6 +27,7 @@ B2_TEMPLATE_VERSION = 3
 B2_CONTACT_PRIORITY_VERSION = 1
 B2_B4_CONTACT_HEADERS_VERSION = 1
 B2_B4_AVAILABILITY_VERSION = 1
+SPM_ENDORSEMENT_VERSION = 1
 # Shared campaign layout, including the renamed Terms, CHCode and Promo headers.
 B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
 CAMPAIGN_RECORD_FIELDS = {"Terms": "cardnumber", "CHCode": "Terms", "Promo": "Product"}
@@ -50,6 +51,7 @@ RAW_DETAILS = {
     "ChristmasAmnesty": ("ChristmasAmnesty",),
     "NewEndo": ("NewEndo",),
 }
+B4_REFERENCE_FIELDS = {"indexoneuid": ("chcode", "indexoneuid", "Old I.C.")}
 GRID_DETAILS = {
     "indexoneuid": ("Old I.C.", "indexoneuid"),
     "FullName": ("Name", "FullName"),
@@ -241,12 +243,15 @@ class B2MatchResult:
 
 
 def build_b2_exports(
-    database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252", bucket: int = 2,
+    database: SourceSelection, datagrid: SourceSelection | None, *, encoding: str = "cp1252", bucket: int = 2,
     agents: tuple[tuple[str, str], ...] | None = None,
 ) -> B2MatchResult:
-    """Fill the 16-column blasting layout once per verified DataGrid account."""
+    """Fill the campaign layout from a database, optionally restricted by an account list."""
     if bucket not in (2, 4):
         raise AutomationError("Choose bucket B2 or B4.")
+    database_only = datagrid is None
+    if database_only and bucket != 4:
+        raise AutomationError("B2 needs both its contact database and account list.")
     if agents is None:
         agents = COLLECTION_AGENTS
     if not agents or any(agent not in COLLECTION_AGENTS for agent in agents):
@@ -261,9 +266,10 @@ def build_b2_exports(
     if len({name.casefold() for name in names.values()}) != 2:
         raise AutomationError(f"The B{bucket} output filenames must be unique. Check export_config.py.")
     raw_columns = _columns(database, database=True)
-    grid_columns = _columns(datagrid, database=False)
-    raw_details = _detail_columns(database, RAW_DETAILS)
-    grid_details = _detail_columns(datagrid, GRID_DETAILS)
+    grid_columns = ({field: raw_columns[field] for field in ("account_key", "contract")} if database_only
+                    else _columns(datagrid, database=False))
+    raw_details = _detail_columns(database, {**RAW_DETAILS, **(B4_REFERENCE_FIELDS if bucket == 4 else {})})
+    grid_details = {} if database_only else _detail_columns(datagrid, GRID_DETAILS)
     if bucket == 4:
         contacts_sheet = _b4_contact_sheet(database.sheet, raw_columns["contract"])
     else:
@@ -274,8 +280,11 @@ def build_b2_exports(
         )
     selected_raw = (set(raw_columns.values()) | set(raw_details.values())
                     | set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns))
+    raw_identifiers = {raw_columns["account_key"], raw_columns["contract"]}
+    if "indexoneuid" in raw_details:
+        raw_identifiers.add(raw_details["indexoneuid"])
     raw_rows = list(_rows(
-        database, selected_raw, {raw_columns["account_key"], raw_columns["contract"]},
+        database, selected_raw, raw_identifiers,
         contact_columns=set(contacts_sheet.email_columns) | set(contacts_sheet.phone_columns),
     ))
     indexes = {field: defaultdict(set) for field in ("account_key", "contract")}
@@ -285,8 +294,9 @@ def build_b2_exports(
             if key:
                 indexes[field][key].add(index)
 
+    checked_rows = "Database accounts checked" if database_only else "DataGrid rows"
     stats = dict.fromkeys((
-        "Database rows", "DataGrid rows", "Matched rows", f"Unique B{bucket} accounts",
+        "Database rows", checked_rows, "Matched rows", f"Unique B{bucket} accounts",
         "Unmatched rows", "Missing account numbers", "Conflicting or ambiguous keys",
         "Other or missing bucket", "Unsupported product", "Duplicate account rows removed",
     ), 0)
@@ -302,12 +312,15 @@ def build_b2_exports(
     grid_identifiers = set(grid_columns.values())
     if "indexoneuid" in grid_details:
         grid_identifiers.add(grid_details["indexoneuid"])
-    for number, row in _rows(datagrid, set(grid_columns.values()) | set(grid_details.values()), grid_identifiers):
-        stats["DataGrid rows"] += 1
+    account_rows = raw_rows if database_only else _rows(
+        datagrid, set(grid_columns.values()) | set(grid_details.values()), grid_identifiers,
+    )
+    for number, row in account_rows:
+        stats[checked_rows] += 1
         keys = {field: _key(row[column]) for field, column in grid_columns.items()}
         keys = {field: value for field, value in keys.items() if value}
         reason = None
-        if not keys:
+        if not keys or (database_only and len(keys) != 2):
             reason = "Missing account numbers"
             candidates = set()
         else:
@@ -340,7 +353,7 @@ def build_b2_exports(
         if reason:
             stats[reason] += 1
             audit.append({
-                "DataGrid row": number,
+                "Database row" if database_only else "DataGrid row": number,
                 "Account No.": row.get(grid_columns.get("account_key"), ""),
                 "Financing/Card No.": row.get(grid_columns.get("contract"), ""),
                 "Reason": reason,
@@ -368,8 +381,8 @@ def build_b2_exports(
 
 
 def build_b4_exports(
-    database: SourceSelection, datagrid: SourceSelection, *, encoding: str = "cp1252",
+    database: SourceSelection, datagrid: SourceSelection | None = None, *, encoding: str = "cp1252",
     agents: tuple[tuple[str, str], ...] | None = None,
 ) -> B2MatchResult:
-    """Match verified B4 accounts using the primary email and Mobile 1 headers."""
+    """Use SPM endorsement as the B4 database, with an optional account-list filter."""
     return build_b2_exports(database, datagrid, encoding=encoding, bucket=4, agents=agents)

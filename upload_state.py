@@ -35,7 +35,7 @@ FILE_STATE_PREFIXES = (
     "b4_sheet_", "b4_header_", "b4_preview_",
     "autostat_b4_preview_", "b4_autostat_preview_",
 )
-SETTINGS_KEYS = {"campaign_output_format", "campaign_csv_protect_ids", "csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder", "b4_csv_type", "b4_output_folder"} | {
+SETTINGS_KEYS = {"campaign_output_format", "campaign_csv_protect_ids", "csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder", "b4_csv_type", "b4_output_folder", "b4_use_database_accounts"} | {
     prefix + suffix
     for prefix in ("autostat_", "autostat_b2_", "autostat_b4_", "b4_autostat_", "geo_b2_autostat_", "geo_autostat_")
     for suffix in ("output_format", "csv_file_type", "remark_by", "collector", "blank_time",

@@ -11,6 +11,19 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_bucket_modules_refresh_for_spm_endorsement_database_support(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import b2_matching, b2_page
+            del b2_matching.SPM_ENDORSEMENT_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'b2_matching', 'b2_page'} <= refreshed
+            assert b2_page.SPM_ENDORSEMENT_VERSION == 1
+            assert b2_page.build_b4_exports is b2_matching.build_b4_exports
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_activity_downloads_refresh_to_protected_bucket_csvs(self):
         self.run_isolated("""
             import app_startup
