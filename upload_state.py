@@ -14,13 +14,14 @@ B4_AUTOSTAT_UPLOADS_VERSION = 1
 CAMPAIGN_FORMAT_SETTINGS_VERSION = 1
 EXCEL_SAFE_CSV_SETTINGS_VERSION = 1
 SBC_INSURANCE_UPLOADS_VERSION = 1
+SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
     "autostat_uploads", "autostat_b2_uploads", "b2_database_upload", "b2_grid_upload",
     "b4_database_upload", "b4_grid_upload",
     "autostat_b4_uploads", "b4_autostat_uploads",
-    "sbc_insurance_upload",
+    "sbc_insurance_upload", "sbc_insurance_masterlist_upload",
 )
 FILE_STATE_KEYS = {
     "result", "source_info", "template_info", "source_previews", "sheet_output_modes",
@@ -38,6 +39,7 @@ FILE_STATE_PREFIXES = (
     "b4_sheet_", "b4_header_", "b4_preview_",
     "autostat_b4_preview_", "b4_autostat_preview_",
     "sbc_insurance_sheet_", "sbc_insurance_header_",
+    "sbc_insurance_master_sheet_", "sbc_insurance_master_header_",
 )
 SETTINGS_KEYS = {"campaign_output_format", "campaign_csv_protect_ids", "csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder", "b4_csv_type", "b4_output_folder", "b4_use_database_accounts",
                  "sbc_insurance_output_format", "sbc_insurance_csv_type", "sbc_insurance_statuses"} | {

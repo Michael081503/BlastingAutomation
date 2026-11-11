@@ -12,12 +12,16 @@ from streamlit.testing.v1 import AppTest
 
 from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS
 from exports import build_export_csv, build_export_excel
-from sbc_insurance import build_filtered_datagrid, prepare_insurance, read_insurance_source
+from sbc_insurance import (
+    build_filtered_datagrid, inspect_insurance_masterlist, prepare_insurance,
+    read_insurance_masterlist, read_insurance_source,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADERS = ["Name", "Old I.C.", "Account No.", "Financing/Card No.", "Amount Referred",
            "Collector", "Status Code", "Last Called No."]
+MASTER_HEADERS = ["PN_Number", "EMAIL", "MOBILE", "ADDRESS1", "ADDRESS2", "ADDRESS3"]
 
 
 def workbook_bytes(rows, headers=HEADERS, *, bad_dimensions=False):
@@ -125,7 +129,151 @@ class Upload(BytesIO):
     name = "insurance.xlsx"
 
 
+class InsuranceMasterlistTests(unittest.TestCase):
+    def test_exact_reference_uses_the_kept_account_contacts_and_preserves_blank_financing(self):
+        master_headers = ["IS Ref No#", *MASTER_HEADERS, "IS Ref No#"]
+        master = read_insurance_masterlist(workbook_bytes([
+            ["REFA", "PN1", "old@example.com", "09171234567", "Old street", None, None, "REFA"],
+            ["REFB", "PN1", "kept@example.com", "09181234567", "Kept street", None, None, "REFB"],
+            ["REFC", "PN2", "blank@example.com", None, "Blank financing street", None, None, "REFC"],
+        ], master_headers), "Insurance", 1)
+        result = prepare_insurance(source([
+            row("REFA", "PN1", "PTP"), row("REFB", "PN1", "RNA"), row("REFC", None, "RNA"),
+        ]), ["RNA"], masterlist=master)
+        self.assertEqual([r["email"] for r in result.file.records], ["kept@example.com", "blank@example.com"])
+        self.assertEqual(result.contacts[0].address[0], "Kept street")
+        self.assertIsNone(result.file.records[1]["cardnumber"])
+        self.assertEqual(result.stats["Accounts matched by IS Ref No#"], 2)
+        self.assertEqual(result.stats["Accounts matched by PN_Number fallback"], 0)
+
+    def test_conflicting_reference_identifiers_block_contacts_without_trying_another_account(self):
+        master = read_insurance_masterlist(workbook_bytes([
+            ["A", "PN2", "wrong@example.com", None, None, None, None],
+            ["B", "PN1", "fallback@example.com", None, None, None, None],
+            ["C", "PN3", "one@example.com", None, None, None, None],
+            ["C", "PN4", "two@example.com", None, None, None, None],
+        ], ["IS Ref No#", *MASTER_HEADERS]), "Insurance", 1)
+        result = prepare_insurance(source([row("A", "PN1", "RNA"), row("C", "PN3", "RNA")]), ["RNA"], masterlist=master)
+        self.assertEqual(result.stats["Accounts with conflicting masterlist identifiers"], 2)
+        self.assertTrue(all(record["email"] is None for record in result.file.records))
+
+    def test_contacts_join_after_filtering_without_adding_or_mutating_source_accounts(self):
+        original = source([
+            row("EXCLUDED", "0001", "PTP"), row("KEPT", "0001", "RNA"), row("DUPLICATE", "0001", "RNA"),
+            row("SECOND", "0002", "RNA"), row("UNMATCHED", "0003", "RNA"), row("BLANK", None, "RNA"),
+        ])
+        master = read_insurance_masterlist(workbook_bytes([
+            ["0001", "bad email", "123", None, None, None],
+            ["0001", "first@example.com", "+639171234567", "Street 1", "City 1", "Region 1"],
+            ["0001", "FIRST@example.com", "09171234567", "Street 1", "City 1", "Region 1"],
+            ["0001", "other@example.com", "09181234567", "Street 2", "City 2", "Region 2"],
+            ["0002", "second@example.com", None, "Second street", None, None],
+            ["UNRELATED", "unrelated@example.com", "09191234567", "Other street", None, None],
+        ], MASTER_HEADERS), "Insurance", 1)
+        result = prepare_insurance(original, ["RNA"], masterlist=master)
+        self.assertEqual([record["primary_key"] for record in result.file.records], ["KEPT", "SECOND", "UNMATCHED", "BLANK"])
+        first = result.file.records[0]
+        self.assertEqual((first["email"], first["phone"]), ("first@example.com", "9171234567"))
+        self.assertEqual(result.contacts[0].address, ("Street 1", "City 1", "Region 1"))
+        self.assertEqual(result.contacts[0].source_rows, 4)
+        self.assertEqual(result.stats["Accounts matched to masterlist"], 2)
+        self.assertEqual(result.stats["Accounts matched by PN_Number fallback"], 2)
+        self.assertEqual(result.stats["Accounts without a masterlist match"], 2)
+        self.assertEqual(result.stats["Matched accounts with alternative valid emails"], 1)
+        self.assertEqual(result.stats["Matched accounts with alternative valid mobiles"], 1)
+        self.assertEqual(result.stats["Matched accounts with alternative postal addresses"], 1)
+        self.assertEqual(result.stats["Invalid masterlist email entries"], 1)
+        self.assertTrue(all(not row.record["email"] and not row.record["phone"] for row in original.rows))
+        self.assertTrue(all(not r["email"] and not r["phone"] for r in prepare_insurance(original, ["RNA"]).file.records))
+
+    def test_addresses_are_available_without_changing_the_campaign_columns(self):
+        financing = "000123456789012345678901"
+        master = read_insurance_masterlist(workbook_bytes([
+            [financing, "person@example.com", "09171234567", "Street", "City", "Province"],
+        ], MASTER_HEADERS, bad_dimensions=True), "Insurance", 1)
+        result = prepare_insurance(source([row("ACCOUNT", financing, "RNA")]), ["RNA"], masterlist=master)
+        records = list(csv.DictReader(StringIO(build_export_csv(result.file).decode("utf-8-sig"))))
+        self.assertEqual(tuple(records[0]), DEFAULT_TEMPLATE_HEADERS)
+        self.assertEqual(records[0]["email"], "person@example.com")
+        self.assertEqual(records[0]["phone"], "\t9171234567")
+        workbook = load_workbook(BytesIO(build_export_excel(result.file)))
+        self.assertEqual(workbook.active["F2"].value, "9171234567")
+        self.assertEqual(workbook.active["F2"].number_format, "@")
+        self.assertEqual(workbook.active.max_column, 16)
+        workbook.close()
+        workbook = load_workbook(BytesIO(build_filtered_datagrid(result)))
+        self.assertEqual([c.value for c in workbook.active[1]], [*HEADERS, "Masterlist EMAIL", "Masterlist MOBILE",
+                                                               "Masterlist ADDRESS1", "Masterlist ADDRESS2", "Masterlist ADDRESS3"])
+        self.assertEqual([c.value for c in workbook.active[2]][-5:], ["person@example.com", "9171234567", "Street", "City", "Province"])
+        self.assertEqual(workbook.active["J2"].number_format, "@")
+        workbook.close()
+
+    def test_invalid_identifiers_and_contact_errors_do_not_create_guessed_matches(self):
+        master = read_insurance_masterlist(workbook_bytes([
+            ["000123", "=1+1", "#VALUE!", None, None, None],
+            ["000123", "valid@example.com", "09171234567", "Street", None, None],
+            ["1.23E+20", "wrong@example.com", None, None, None, None],
+            [1234567890123456, "wrong@example.com", None, None, None, None],
+            ["=1+1", "wrong@example.com", None, None, None, None],
+        ], MASTER_HEADERS), "Insurance", 1)
+        self.assertEqual(set(master.accounts), {"000123"})
+        self.assertEqual(master.accounts["000123"].email, "valid@example.com")
+        self.assertEqual(master.stats["Masterlist rows with unusable PN_Number"], 3)
+        self.assertEqual(master.stats["Masterlist contact cells with Excel errors or uncached formulas"], 2)
+        result = prepare_insurance(source([row("000123", "123", "RNA")]), ["RNA"], masterlist=master)
+        self.assertEqual(result.stats["Accounts matched to masterlist"], 0)
+        self.assertIsNone(result.file.records[0]["email"])
+
+    def test_sheet_detection_ignores_summary_and_duplicate_unused_reference_headers(self):
+        workbook = Workbook()
+        workbook.active.title = "SUMMARY"
+        workbook.active.append(["Summary only"])
+        sheet = workbook.create_sheet("LIST")
+        sheet.append(["Title"])
+        sheet.append(["IS Ref No#", "PN_Number", "EMAIL", "IS Ref No#", "ADDRESS1"])
+        sheet.append([1, "PN001", "one@example.com", 1, "Street"])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        info = inspect_insurance_masterlist(output.getvalue())
+        self.assertEqual([(s.name, s.header_row) for s in info], [("LIST", 2)])
+        master = read_insurance_masterlist(output.getvalue(), "LIST", 2)
+        self.assertEqual(master.accounts["pn001"].email, "one@example.com")
+        with self.assertRaisesRegex(AutomationError, "PN_Number and EMAIL"):
+            inspect_insurance_masterlist(workbook_bytes([row("A", "F", "RNA")]))
+
+
 class InsurancePageTests(unittest.TestCase):
+    def test_masterlist_replacement_removal_and_clear_rebuild_contact_downloads(self):
+        upload = Upload(workbook_bytes([row("A", "0001", "RNA")]))
+        master = Upload(workbook_bytes([["0001", "first@example.com", "09171234567", "Street", None, None]], MASTER_HEADERS))
+        keys = []
+
+        def uploader(label, **kwargs):
+            keys.append(kwargs["key"])
+            return {"sbc_insurance_upload": upload, "sbc_insurance_masterlist_upload": master}.get(kwargs["key"])
+
+        with patch("streamlit.file_uploader", side_effect=uploader):
+            app = AppTest.from_file(str(ROOT / "pages" / "SBC_INSURANCE.py")).run(timeout=20)
+            app.multiselect(key="sbc_insurance_statuses").select("RNA").run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"], "first@example.com")
+            master = Upload(workbook_bytes([["0001", "new@example.com", None, "New street", None, None]], MASTER_HEADERS))
+            app.run(timeout=20)
+            self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"], "new@example.com")
+            master = None
+            app.run(timeout=20)
+            self.assertIsNone(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"])
+            master = Upload(workbook_bytes([["0001", "new@example.com", None, "New street", None, None]], MASTER_HEADERS))
+            app.run(timeout=20)
+            self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"], "new@example.com")
+            app.button(key="clear_all_files").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn("sbc_insurance_result", app.session_state)
+            self.assertNotIn("sbc_insurance_source_info", app.session_state)
+            self.assertIn("sbc_insurance_masterlist_upload_clear_1", keys)
+            self.assertEqual(len(app.get("download_button")), 0)
+
     def test_status_changes_replacement_and_clear_cannot_leave_stale_downloads(self):
         upload = Upload(workbook_bytes([row("A", "0001", "RNA"), row("B", "0001", "BUSY")]))
 
