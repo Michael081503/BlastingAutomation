@@ -1,4 +1,4 @@
-"""Shared Security Bank presentation for the three application pages."""
+"""Shared Security Bank presentation for the application pages."""
 
 from __future__ import annotations
 

@@ -14,15 +14,26 @@ python -m venv .venv
 
 Open **http://localhost:8501**. If the dependencies are already installed, run `python -m streamlit run app.py` directly. Stop the server with **Ctrl+C**.
 
-Use the sidebar to switch between three separate pages:
+Use the sidebar to switch between four separate pages:
 
 - **GEO & RECO**: the original workbook-to-template workflow, with the existing Area, product, level, and Christmas Amnesty grouping and configured filenames.
 - **NEGATIVE B2 & B4**: B2 and B4 account matching and separate CARDS/BEL campaign files for each bucket. Prepare their activity logs on the AUTOSTAT page.
 - **AUTOSTAT**: upload the automation's output files to prepare logs automatically. Standard uses the GEO/RECO Email and Viber layouts; B2 and B4 use their Email, SMS and Viber templates.
+- **SBC INSURANCE**: select Status Code values from an unfiltered DataGrid, then automatically remove duplicate financing/card accounts and download the shared campaign template.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
 Use **Clear all files** with the gold Batman-style icon in the upper-right of the workspace header on any page to empty every upload box at once, including GEO/RECO sources and templates, all AUTOSTAT modes, and the B2/B4 database/account-list uploads. It also clears prepared downloads, previews and source mappings across all pages. Log settings and output preferences are kept. Files already saved to a folder are kept. You can immediately upload a new batch after clearing.
+
+## SBC INSURANCE
+
+Upload the unfiltered insurance DataGrid on **SBC INSURANCE**. Choose the source sheet and the **Status Code values to include**; a status/count table shows the available values. No status is preselected because the supplied example files contain changed statuses and do not establish a fixed exclusion list. Case and incidental whitespace are ignored. Select **(Blank status)** explicitly if those rows should be included.
+
+The automation filters rows by the selected statuses **before** deduplication. It then keeps the first matching source row for each **Financing/Card No.**, even when duplicate rows have different Account No. values. Excluded-status rows do not reserve an account or prevent a later eligible row from being included. As in the supplied output, blank financing/card numbers form one duplicate group and the first matching row is kept. Their source count is shown separately. Blank rows and totals without account identifiers are skipped. The selected worksheet is read completely even when the workbook declares incorrect dimensions.
+
+**SBC INSURANCE.csv** uses the same 16-column campaign template as GEO, RECO, B2 and B4. Account No. maps to primary_key, Financing/Card No. to Terms, Old I.C. to indexoneuid, Name to FullName, Amount Referred to OB, and Collector to CHCode. doclass is SBC INSURANCE. Email and phone remain blank; call-history numbers and remarks are not used as contacts. Other recognized source fields are copied and unavailable fields stay blank. CSV defaults to UTF-8 to preserve names and retains the shared Excel protection for account identifiers. Select **Excel (.xlsx)** for typed Excel output. **Download filtered DataGrid.xlsx** provides the retained source rows and original headers for review.
+
+Changing the upload content, selected sheet, header row, statuses or CSV encoding rebuilds prepared outputs. Status and output preferences survive **Clear all files**; uploads, source caches and prepared results are cleared. Insurance files remain excluded from the standard AUTOSTAT workflow.
 
 ## Selected worksheet protection
 
