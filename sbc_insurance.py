@@ -8,7 +8,7 @@ from datetime import datetime
 from io import BytesIO
 from itertools import chain
 import re
-from typing import Any, Iterable
+from typing import Any
 import warnings
 
 from openpyxl import Workbook
@@ -25,8 +25,22 @@ from autostat import _validated_candidates, validated_phone
 from email_validation import validated_email
 
 
-SBC_INSURANCE_VERSION = 2
+SBC_INSURANCE_VERSION = 3
 SBC_INSURANCE_MASTERLIST_VERSION = 1
+SBC_INSURANCE_AUTOMATIC_STATUS_VERSION = 1
+# Status categories observed in the user's SBC INSURANCE Output.xlsx example.
+# Apply this policy to each new upload, independently of its account numbers.
+SBC_INSURANCE_INCLUDED_STATUSES = frozenset({
+    "", "BULK SMS SENT", "BUSY", "DROPPED", "EMAIL BLAST SENT - WAITING FOR REPLY",
+    "FOLLOW UP CALL - KOR KEEPS ON RINGING", "NEW", "OUTGOING CALL - CBR/OOCA/UNATTENDED",
+    "OUTGOING CALL - INCORRECT", "OUTGOING CALL - KOR KEEPS ON RINGING",
+    "OUTGOING CALL - NIS NOT IN SERVICE", "OUTGOING CALL - NO COMMIT / NO PTP",
+    "OUTGOING CALL - UNDER NEGO", "OUTGOING CALL - WRONG NUMBER",
+    "POSITIVE - SENT EMAIL TEMPLATE", "POSITIVE CONTACT - EMAIL RESPONSIVE",
+    "POSITIVE CONTACT - TFIP", "RNA", "SKIPTRACE - GOT NEW CONTACT #",
+    "SKIPTRACE - NEGATIVE SKIPTRACE", "SMS BLAST SENT - WAITING FOR REPLY",
+    "SMS REPLY", "UNLOCKED",
+})
 INSURANCE_DOCLASS = "SBC INSURANCE"
 
 
@@ -339,17 +353,14 @@ def read_insurance_source(data: bytes, sheet_name: str, header_row: int) -> Insu
 
 
 def prepare_insurance(
-    source: InsuranceSource, included_statuses: Iterable[str], *, encoding: str = "utf-8-sig",
+    source: InsuranceSource, *, encoding: str = "utf-8-sig",
     masterlist: InsuranceMasterlist | None = None,
 ) -> InsuranceResult:
-    """Filter individual rows first; keep the first eligible row per financing number."""
-    included = {status_key(status) for status in included_statuses}
-    if not included:
-        raise AutomationError("Select at least one Status Code value to include.")
+    """Apply the reference status policy, then keep one row per financing number."""
     selected, seen = [], set()
     excluded, missing_financing, duplicates = 0, 0, 0
     for row in source.rows:
-        if row.status not in included:
+        if row.status not in SBC_INSURANCE_INCLUDED_STATUSES:
             excluded += 1
             continue
         if not row.financing:
@@ -407,21 +418,22 @@ def prepare_insurance(
     return InsuranceResult(source, selected, stats, file, contacts)
 
 
-def build_filtered_datagrid(result: InsuranceResult) -> bytes:
-    """Keep selected source rows and append matched contacts and postal addresses."""
+def build_filtered_datagrid(result: InsuranceResult, *, include_masterlist: bool = False) -> bytes:
+    """Match the reference DataGrid layout; optionally append masterlist contacts."""
     workbook = Workbook(write_only=True)
-    sheet = workbook.create_sheet("SBC INSURANCE")
+    sheet = workbook.create_sheet(result.source.sheet_name)
     sheet.freeze_panes = "A2"
     headers = list(result.source.headers)
     identifier_columns = set(result.source.identifier_columns)
-    if result.contacts is not None:
+    append_contacts = include_masterlist and result.contacts is not None
+    if append_contacts:
         identifier_columns.add(len(headers) + 1)  # The appended masterlist MOBILE.
         headers.extend(["Masterlist EMAIL", "Masterlist MOBILE", "Masterlist ADDRESS1", "Masterlist ADDRESS2", "Masterlist ADDRESS3"])
 
     def export_rows():
         for index, row in enumerate(result.rows):
             values = row.values
-            if result.contacts is not None:
+            if append_contacts:
                 contact = result.contacts[index]
                 values = (*values, contact.email if contact else None, contact.phone if contact else None,
                           *(contact.address if contact else (None, None, None)))

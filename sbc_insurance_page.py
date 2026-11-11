@@ -1,4 +1,4 @@
-"""SBC INSURANCE status selection, automatic cleaning and campaign downloads."""
+"""Automatically clean the SBC INSURANCE DataGrid and prepare its downloads."""
 
 from __future__ import annotations
 
@@ -15,19 +15,22 @@ from automation import (
 )
 from exports import EXCEL_SAFE_CSV_VERSION, build_export_csv, build_export_excel
 from sbc_insurance import (
-    SBC_INSURANCE_VERSION, SBC_INSURANCE_MASTERLIST_VERSION, build_filtered_datagrid,
+    SBC_INSURANCE_VERSION, SBC_INSURANCE_MASTERLIST_VERSION, SBC_INSURANCE_AUTOMATIC_STATUS_VERSION,
+    SBC_INSURANCE_INCLUDED_STATUSES, build_filtered_datagrid,
     inspect_insurance_masterlist, prepare_insurance, read_insurance_masterlist,
     read_insurance_source, status_label,
 )
 from upload_state import upload_widget_key
 
 
-SBC_INSURANCE_PAGE_VERSION = 2
+SBC_INSURANCE_PAGE_VERSION = 3
 
 
 def render_sbc_insurance() -> None:
     st.title("SBC INSURANCE")
-    st.caption("Filter Status Code first, then remove duplicate Financing/Card No. values. The first matching row is kept.")
+    st.caption("Upload the DataGrid to automatically filter Status Code and remove duplicate Financing/Card No. values.")
+    st.session_state.pop("sbc_insurance_statuses", None)
+    st.session_state.get("_retained_upload_settings", {}).pop("sbc_insurance_statuses", None)
     with st.sidebar:
         output_format = st.selectbox("Output files", ("CSV (.csv)", "Excel (.xlsx)"), key="sbc_insurance_output_format")
         csv_types = list(CSV_OUTPUT_ENCODINGS)
@@ -90,28 +93,12 @@ def render_sbc_insurance() -> None:
             st.caption(f"Masterlist: {master_name} · {len(masterlist.references):,} account references · {len(masterlist.accounts):,} distinct PN_Number accounts.")
         counts = source.status_counts
         options = sorted(counts, key=lambda value: (bool(value), value))
-        status_widget = "sbc_insurance_statuses"
-        if status_widget in st.session_state:
-            previous = st.session_state[status_widget]
-            valid = [status for status in previous if status in counts]
-            if previous != valid:
-                st.session_state[status_widget] = valid
-        st.subheader("Status filter")
-        included = st.multiselect("Status Code values to include", options, format_func=status_label, key=status_widget,
-                                  help="Only rows with these statuses enter deduplication. Select (Blank status) to include blank statuses.")
-        st.dataframe(pd.DataFrame([
-            {"Status Code": status_label(status), "Source rows": counts[status], "Included": status in included}
-            for status in options
-        ]), hide_index=True, width="stretch", height=280)
-        if not included:
-            st.session_state.pop("sbc_insurance_result", None)
-            st.info("Select the Status Code values to include. Files will be prepared automatically.")
-            return
-        signature = (source_key, tuple(sorted(included)), encoding, EXCEL_SAFE_CSV_VERSION, master_key)
+        signature = (source_key, SBC_INSURANCE_AUTOMATIC_STATUS_VERSION, tuple(sorted(SBC_INSURANCE_INCLUDED_STATUSES)),
+                     encoding, EXCEL_SAFE_CSV_VERSION, master_key)
         prepared = st.session_state.get("sbc_insurance_result")
         if prepared is None or prepared["signature"] != signature:
             st.session_state.pop("sbc_insurance_result", None)
-            prepared = {"signature": signature, "result": prepare_insurance(source, included, encoding=encoding, masterlist=masterlist)}
+            prepared = {"signature": signature, "result": prepare_insurance(source, encoding=encoding, masterlist=masterlist)}
             st.session_state["sbc_insurance_result"] = prepared
         result = prepared["result"]
     except AutomationError as exc:
@@ -123,34 +110,53 @@ def render_sbc_insurance() -> None:
     unique.metric("Unique accounts", f"{len(result.rows):,}")
     duplicates.metric("Duplicates removed", f"{result.stats['Duplicate financing/card accounts removed']:,}")
     removed.metric("Removed by status", f"{result.stats['Removed by status']:,}")
-    st.dataframe(pd.DataFrame(result.stats.items(), columns=["Check", "Count"]), hide_index=True, width="stretch")
     if not result.rows:
-        st.info("No account rows remain for the selected statuses.")
+        st.info("No accounts remain after automatic status filtering. See the status summary below.")
+        with st.expander("Status summary", expanded=True):
+            st.dataframe(pd.DataFrame([
+                {"Status Code": status_label(status), "Source rows": counts[status],
+                 "Included by automatic rule": status in SBC_INSURANCE_INCLUDED_STATUSES}
+                for status in options
+            ]), hide_index=True, width="stretch")
         return
+    st.download_button("Download SBC INSURANCE Output.xlsx", partial(build_filtered_datagrid, result),
+                       "SBC INSURANCE Output.xlsx", mime=XLSX_MIME, type="primary",
+                       on_click="ignore", key="sbc_insurance_filtered_download")
     if result.contacts is None:
         st.caption("Uses the same 16-column campaign template as GEO, RECO, B2 and B4. Upload a masterlist to fill email and phone.")
     else:
-        st.caption("EMAIL fills email and MOBILE fills phone. ADDRESS1–ADDRESS3 are included in the filtered DataGrid download; the campaign keeps its 16 columns.")
+        st.caption("EMAIL fills email and MOBILE fills phone. ADDRESS1–ADDRESS3 are available in the Contacts workbook; the campaign keeps its 16 columns.")
         st.caption("Account No. matches IS Ref No# first, then Financing/Card No. matches PN_Number when no reference is found. Repeated matches use the first valid contacts; differences are counted in Results.")
     if result.stats["Selected rows with blank Financing/Card No."]:
-        st.info("Blank Financing/Card No. values form one duplicate group. The first row matching the selected statuses is kept, as in the sample output.")
+        st.info("Blank Financing/Card No. values form one duplicate group. The first eligible row is kept, as in the sample output.")
     excel = output_format == "Excel (.xlsx)"
     file = result.file
     filename = Path(file.filename).with_suffix(".xlsx").name if excel else file.filename
     st.download_button(f"Download {filename}", partial(build_export_excel if excel else build_export_csv, file),
-                       filename, mime=XLSX_MIME if excel else "text/csv", type="primary",
+                       filename, mime=XLSX_MIME if excel else "text/csv",
                        on_click="ignore", key="sbc_insurance_download")
-    st.download_button("Download filtered DataGrid.xlsx", partial(build_filtered_datagrid, result),
-                       "SBC INSURANCE Filtered DataGrid.xlsx", mime=XLSX_MIME,
-                       on_click="ignore", key="sbc_insurance_filtered_download")
-    st.subheader("Campaign preview")
+    if result.contacts is not None:
+        st.download_button("Download SBC INSURANCE Contacts.xlsx", partial(build_filtered_datagrid, result, include_masterlist=True),
+                           "SBC INSURANCE Contacts.xlsx", mime=XLSX_MIME, on_click="ignore", key="sbc_insurance_contacts_download")
+    with st.expander("Processing details"):
+        st.dataframe(pd.DataFrame(result.stats.items(), columns=["Check", "Count"]), hide_index=True, width="stretch")
+    with st.expander("Automatic status summary"):
+        st.dataframe(pd.DataFrame([
+            {"Status Code": status_label(status), "Source rows": counts[status],
+             "Included by automatic rule": status in SBC_INSURANCE_INCLUDED_STATUSES}
+            for status in options
+        ]), hide_index=True, width="stretch")
+    st.subheader("Output preview")
+    st.dataframe(pd.DataFrame([row.values for row in result.rows[:100]], columns=result.source.headers)
+                 .map(lambda value: "" if value is None else str(value)), hide_index=True, width="stretch")
+    st.caption(f"{min(100, len(result.rows)):,} / {len(result.rows):,} accounts")
     positions = template_column_positions(file.headers)
     targets = {index: target for target, index in positions.items()}
-    st.dataframe(pd.DataFrame([
-        [file.doclass if targets.get(index) == "doclass" else record.get(targets.get(index)) for index in range(len(file.headers))]
-        for record in file.preview
-    ], columns=file.headers).map(lambda value: "" if value is None else str(value)), hide_index=True, width="stretch")
-    st.caption(f"{len(file.preview):,} / {file.count:,} accounts")
+    with st.expander("Campaign template preview"):
+        st.dataframe(pd.DataFrame([
+            [file.doclass if targets.get(index) == "doclass" else record.get(targets.get(index)) for index in range(len(file.headers))]
+            for record in file.preview
+        ], columns=file.headers).map(lambda value: "" if value is None else str(value)), hide_index=True, width="stretch")
     if result.contacts is not None:
         st.subheader("Masterlist contact details")
         st.dataframe(pd.DataFrame([

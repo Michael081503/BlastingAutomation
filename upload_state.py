@@ -15,6 +15,7 @@ CAMPAIGN_FORMAT_SETTINGS_VERSION = 1
 EXCEL_SAFE_CSV_SETTINGS_VERSION = 1
 SBC_INSURANCE_UPLOADS_VERSION = 1
 SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION = 1
+SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
@@ -42,7 +43,7 @@ FILE_STATE_PREFIXES = (
     "sbc_insurance_master_sheet_", "sbc_insurance_master_header_",
 )
 SETTINGS_KEYS = {"campaign_output_format", "campaign_csv_protect_ids", "csv_file_type", "output_folder", "autostat_upload_type", "b2_csv_type", "b2_output_folder", "b4_csv_type", "b4_output_folder", "b4_use_database_accounts",
-                 "sbc_insurance_output_format", "sbc_insurance_csv_type", "sbc_insurance_statuses"} | {
+                 "sbc_insurance_output_format", "sbc_insurance_csv_type"} | {
     prefix + suffix
     for prefix in ("autostat_", "autostat_b2_", "autostat_b4_", "b4_autostat_", "geo_b2_autostat_", "geo_autostat_")
     for suffix in ("output_format", "csv_file_type", "remark_by", "collector", "blank_time",

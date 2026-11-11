@@ -77,7 +77,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
-        ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "SBC_INSURANCE_UPLOADS_VERSION", "SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
+        ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "SBC_INSURANCE_UPLOADS_VERSION", "SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "HALLOWEEN_THEME_VERSION", "HALLOWEEN_GHOST_VERSION", "HALLOWEEN_SPIDER_VERSION",
             "render_clear_all_files",
@@ -184,7 +184,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "B2_B4_REMARK_DATE_VERSION",
             "B4_AUTOSTAT_VERSION", "build_b4_autostat_exports",
         ), ("autostat", "automation")),
-        ("sbc_insurance", ("SBC_INSURANCE_VERSION", "SBC_INSURANCE_MASTERLIST_VERSION", "read_insurance_source", "prepare_insurance", "build_filtered_datagrid", "inspect_insurance_masterlist", "read_insurance_masterlist"), ("automation", "exports", "autostat", "email_validation")),
+        ("sbc_insurance", ("SBC_INSURANCE_VERSION", "SBC_INSURANCE_MASTERLIST_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_VERSION", "SBC_INSURANCE_INCLUDED_STATUSES", "read_insurance_source", "prepare_insurance", "build_filtered_datagrid", "inspect_insurance_masterlist", "read_insurance_masterlist"), ("automation", "exports", "autostat", "email_validation")),
         ("sbc_insurance_page", ("SBC_INSURANCE_PAGE_VERSION", "render_sbc_insurance"), ("sbc_insurance", "automation", "exports", "upload_state")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",

@@ -13,6 +13,7 @@ from streamlit.testing.v1 import AppTest
 from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS
 from exports import build_export_csv, build_export_excel
 from sbc_insurance import (
+    SBC_INSURANCE_INCLUDED_STATUSES,
     build_filtered_datagrid, inspect_insurance_masterlist, prepare_insurance,
     read_insurance_masterlist, read_insurance_source,
 )
@@ -55,7 +56,7 @@ def row(account, financing, status, *, name="Person", amount=123.5):
 
 
 class InsuranceTests(unittest.TestCase):
-    def test_status_filter_runs_before_financing_deduplication(self):
+    def test_automatic_status_filter_runs_before_financing_deduplication(self):
         data = source([
             row("FIRST", "00001", "PTP"),
             row("SECOND", "00001", "  rna  "),
@@ -63,13 +64,18 @@ class InsuranceTests(unittest.TestCase):
             row("FOURTH", "00002", "BUSY"),
             row("FIFTH", "00003", None),
         ])
-        result = prepare_insurance(data, ["RNA", "busy"])
-        self.assertEqual([r.record["primary_key"] for r in result.rows], ["SECOND", "FOURTH"])
-        self.assertEqual(result.stats["Removed by status"], 2)
+        result = prepare_insurance(data)
+        self.assertEqual([r.record["primary_key"] for r in result.rows], ["SECOND", "FOURTH", "FIFTH"])
+        self.assertEqual(result.stats["Removed by status"], 1)
         self.assertEqual(result.stats["Duplicate financing/card accounts removed"], 1)
-        self.assertEqual(prepare_insurance(data, [""]).rows[0].record["primary_key"], "FIFTH")
-        with self.assertRaisesRegex(AutomationError, "Select at least one"):
-            prepare_insurance(data, [])
+
+    def test_ineligible_and_unseen_statuses_do_not_fall_back_to_exporting_everything(self):
+        statuses = ["OUTGOING CALL - PTP PAID", "OUTGOING CALL - PTP FULLYPAID", "BP", "A NEW UNKNOWN STATUS"]
+        result = prepare_insurance(source([row(str(i), f"F{i}", status) for i, status in enumerate(statuses)]))
+        self.assertEqual(result.rows, [])
+        self.assertEqual(result.stats["Removed by status"], len(statuses))
+        self.assertEqual(len(result.file.records), 0)
+        self.assertEqual(len(SBC_INSURANCE_INCLUDED_STATUSES), 23)
 
     def test_bad_dimensions_totals_and_blank_financing_match_the_reference(self):
         data = source([
@@ -79,7 +85,7 @@ class InsuranceTests(unittest.TestCase):
             row("D", None, "RNA"),
             [None, None, None, None, 1000, None, None, None],
         ], bad_dimensions=True)
-        result = prepare_insurance(data, ["RNA"])
+        result = prepare_insurance(data)
         self.assertEqual(len(data.rows), 4)
         self.assertEqual([r.financing for r in result.rows], ["00001", None, "00002"])
         self.assertEqual(result.stats["Selected rows with blank Financing/Card No."], 2)
@@ -89,7 +95,7 @@ class InsuranceTests(unittest.TestCase):
     def test_exports_share_campaign_layout_and_preserve_exact_identifiers(self):
         account = "000123456789012345678901"
         financing = "000999999999999999999999"
-        result = prepare_insurance(source([row(account, financing, "RNA", name="Name \u0145", amount=987.65)]), ["RNA"])
+        result = prepare_insurance(source([row(account, financing, "RNA", name="Name \u0145", amount=987.65)]))
         csv_rows = list(csv.DictReader(StringIO(build_export_csv(result.file).decode("utf-8-sig"))))
         self.assertEqual(tuple(csv_rows[0]), DEFAULT_TEMPLATE_HEADERS)
         record = csv_rows[0]
@@ -139,7 +145,7 @@ class InsuranceMasterlistTests(unittest.TestCase):
         ], master_headers), "Insurance", 1)
         result = prepare_insurance(source([
             row("REFA", "PN1", "PTP"), row("REFB", "PN1", "RNA"), row("REFC", None, "RNA"),
-        ]), ["RNA"], masterlist=master)
+        ]), masterlist=master)
         self.assertEqual([r["email"] for r in result.file.records], ["kept@example.com", "blank@example.com"])
         self.assertEqual(result.contacts[0].address[0], "Kept street")
         self.assertIsNone(result.file.records[1]["cardnumber"])
@@ -153,7 +159,7 @@ class InsuranceMasterlistTests(unittest.TestCase):
             ["C", "PN3", "one@example.com", None, None, None, None],
             ["C", "PN4", "two@example.com", None, None, None, None],
         ], ["IS Ref No#", *MASTER_HEADERS]), "Insurance", 1)
-        result = prepare_insurance(source([row("A", "PN1", "RNA"), row("C", "PN3", "RNA")]), ["RNA"], masterlist=master)
+        result = prepare_insurance(source([row("A", "PN1", "RNA"), row("C", "PN3", "RNA")]), masterlist=master)
         self.assertEqual(result.stats["Accounts with conflicting masterlist identifiers"], 2)
         self.assertTrue(all(record["email"] is None for record in result.file.records))
 
@@ -170,7 +176,7 @@ class InsuranceMasterlistTests(unittest.TestCase):
             ["0002", "second@example.com", None, "Second street", None, None],
             ["UNRELATED", "unrelated@example.com", "09191234567", "Other street", None, None],
         ], MASTER_HEADERS), "Insurance", 1)
-        result = prepare_insurance(original, ["RNA"], masterlist=master)
+        result = prepare_insurance(original, masterlist=master)
         self.assertEqual([record["primary_key"] for record in result.file.records], ["KEPT", "SECOND", "UNMATCHED", "BLANK"])
         first = result.file.records[0]
         self.assertEqual((first["email"], first["phone"]), ("first@example.com", "9171234567"))
@@ -184,14 +190,14 @@ class InsuranceMasterlistTests(unittest.TestCase):
         self.assertEqual(result.stats["Matched accounts with alternative postal addresses"], 1)
         self.assertEqual(result.stats["Invalid masterlist email entries"], 1)
         self.assertTrue(all(not row.record["email"] and not row.record["phone"] for row in original.rows))
-        self.assertTrue(all(not r["email"] and not r["phone"] for r in prepare_insurance(original, ["RNA"]).file.records))
+        self.assertTrue(all(not r["email"] and not r["phone"] for r in prepare_insurance(original).file.records))
 
     def test_addresses_are_available_without_changing_the_campaign_columns(self):
         financing = "000123456789012345678901"
         master = read_insurance_masterlist(workbook_bytes([
             [financing, "person@example.com", "09171234567", "Street", "City", "Province"],
         ], MASTER_HEADERS, bad_dimensions=True), "Insurance", 1)
-        result = prepare_insurance(source([row("ACCOUNT", financing, "RNA")]), ["RNA"], masterlist=master)
+        result = prepare_insurance(source([row("ACCOUNT", financing, "RNA")]), masterlist=master)
         records = list(csv.DictReader(StringIO(build_export_csv(result.file).decode("utf-8-sig"))))
         self.assertEqual(tuple(records[0]), DEFAULT_TEMPLATE_HEADERS)
         self.assertEqual(records[0]["email"], "person@example.com")
@@ -202,6 +208,9 @@ class InsuranceMasterlistTests(unittest.TestCase):
         self.assertEqual(workbook.active.max_column, 16)
         workbook.close()
         workbook = load_workbook(BytesIO(build_filtered_datagrid(result)))
+        self.assertEqual([c.value for c in workbook.active[1]], HEADERS)
+        workbook.close()
+        workbook = load_workbook(BytesIO(build_filtered_datagrid(result, include_masterlist=True)))
         self.assertEqual([c.value for c in workbook.active[1]], [*HEADERS, "Masterlist EMAIL", "Masterlist MOBILE",
                                                                "Masterlist ADDRESS1", "Masterlist ADDRESS2", "Masterlist ADDRESS3"])
         self.assertEqual([c.value for c in workbook.active[2]][-5:], ["person@example.com", "9171234567", "Street", "City", "Province"])
@@ -220,7 +229,7 @@ class InsuranceMasterlistTests(unittest.TestCase):
         self.assertEqual(master.accounts["000123"].email, "valid@example.com")
         self.assertEqual(master.stats["Masterlist rows with unusable PN_Number"], 3)
         self.assertEqual(master.stats["Masterlist contact cells with Excel errors or uncached formulas"], 2)
-        result = prepare_insurance(source([row("000123", "123", "RNA")]), ["RNA"], masterlist=master)
+        result = prepare_insurance(source([row("000123", "123", "RNA")]), masterlist=master)
         self.assertEqual(result.stats["Accounts matched to masterlist"], 0)
         self.assertIsNone(result.file.records[0]["email"])
 
@@ -255,8 +264,8 @@ class InsurancePageTests(unittest.TestCase):
 
         with patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "SBC_INSURANCE.py")).run(timeout=20)
-            app.multiselect(key="sbc_insurance_statuses").select("RNA").run(timeout=20)
             self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.multiselect), 0)
             self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"], "first@example.com")
             master = Upload(workbook_bytes([["0001", "new@example.com", None, "New street", None, None]], MASTER_HEADERS))
             app.run(timeout=20)
@@ -274,22 +283,24 @@ class InsurancePageTests(unittest.TestCase):
             self.assertIn("sbc_insurance_masterlist_upload_clear_1", keys)
             self.assertEqual(len(app.get("download_button")), 0)
 
-    def test_status_changes_replacement_and_clear_cannot_leave_stale_downloads(self):
+    def test_upload_automatically_creates_output_and_ignores_old_status_selections(self):
         upload = Upload(workbook_bytes([row("A", "0001", "RNA"), row("B", "0001", "BUSY")]))
 
         def uploader(label, **kwargs):
             return upload if kwargs["key"] == "sbc_insurance_upload" else None
 
         with patch("streamlit.file_uploader", side_effect=uploader):
-            app = AppTest.from_file(str(ROOT / "pages" / "SBC_INSURANCE.py")).run(timeout=20)
+            app = AppTest.from_file(str(ROOT / "pages" / "SBC_INSURANCE.py"))
+            app.session_state["sbc_insurance_statuses"] = ["BUSY"]
+            app.session_state["_retained_upload_settings"] = {"sbc_insurance_statuses": ["BUSY"]}
+            app.run(timeout=20)
             self.assertEqual(len(app.exception), 0)
-            self.assertNotIn("sbc_insurance_result", app.session_state)
-            app.multiselect(key="sbc_insurance_statuses").select("BUSY").run(timeout=20)
-            self.assertEqual(len(app.exception), 0)
-            self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["primary_key"], "B")
-            app.multiselect(key="sbc_insurance_statuses").set_value(["RNA"]).run(timeout=20)
+            self.assertEqual(len(app.multiselect), 0)
+            self.assertEqual(len(app.get("download_button")), 2)
+            self.assertEqual(app.get("download_button")[0].label, "Download SBC INSURANCE Output.xlsx")
             self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["primary_key"], "A")
-            upload = Upload(workbook_bytes([row("NEW", "0002", "RNA")]))
+            self.assertNotIn("sbc_insurance_statuses", app.session_state)
+            upload = Upload(workbook_bytes([row("PAID", "0001", "OUTGOING CALL - PTP FULLYPAID"), row("NEW", "0002", "RNA")]))
             app.run(timeout=20)
             self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["primary_key"], "NEW")
             app.selectbox(key="sbc_insurance_output_format").select("Excel (.xlsx)").run(timeout=20)
@@ -300,7 +311,7 @@ class InsurancePageTests(unittest.TestCase):
             self.assertNotIn("sbc_insurance_source_info", app.session_state)
             self.assertEqual(len(app.get("download_button")), 0)
             self.assertEqual(app.selectbox(key="sbc_insurance_output_format").value, "Excel (.xlsx)")
-            self.assertEqual(app.session_state["_retained_upload_settings"]["sbc_insurance_statuses"], ["RNA"])
+            self.assertNotIn("sbc_insurance_statuses", app.session_state["_retained_upload_settings"])
 
 
 if __name__ == "__main__":
