@@ -596,7 +596,7 @@ class AutostatTests(unittest.TestCase):
         self.assertEqual(first["EMAIL/ NUMBER"], "Ana.Cruz+tag@example.com")
         self.assertTrue(all(first[header] == "" for header in EMAIL_HEADERS[6:]))
         first_viber = exported_rows(viber)[0]
-        self.assertEqual(first_viber["Status"], "SMS BLAST SENT - WAITING FOR REPLY")
+        self.assertEqual(first_viber["Status"], "VIBER BLAST SENT - WAITING FOR REPLY")
         self.assertEqual(first_viber["Remark"], f"{REMARK_PREFIX} - 9171234567 - VIBER SENT - BLASTING")
         self.assertEqual(exported_rows(viber)[-1]["Account No."], "000123")
         self.assertEqual(exported_rows(viber)[-1]["Remark"], f"{REMARK_PREFIX} - 9201234567 - VIBER SENT - BLASTING")

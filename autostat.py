@@ -26,8 +26,9 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 15
+AUTOSTAT_VERSION = 16
 AUTOSTAT_24_HOUR_TIME_VERSION = 1
+AUTOSTAT_VIBER_STATUS_VERSION = 1
 AUTOSTAT_REMARK_BY = "MBURGOS"
 ACCOUNT_TEXT_EXPORT_VERSION = 2
 ACCOUNT_NUMBER_NORMALIZATION_VERSION = 1
@@ -42,7 +43,7 @@ AUTOSTAT_EXCLUSIONS_VERSION = 1
 CONTACT_VALIDATION_VERSION = 1
 PREFERRED_ACCOUNT_HEADER = "cardnumber"
 REMARK_PREFIX = "SPMA | 08 With SMS / email / DL without response"
-# Column labels, statuses and remark text come from the supplied templates.
+# Column labels and remark text come from the supplied templates.
 # The sample account, email and historical timestamp are deliberately omitted.
 EMAIL_HEADERS = (
     "Time", "Account No.", "Status", "Remark", "Remark By", "EMAIL/ NUMBER",
@@ -498,7 +499,7 @@ def _contact_summary(source: SourceSelection, contacts: ContactRows) -> dict[str
 
 
 def _activity_rows(pairs, *, channel: str, headers: tuple[str, ...], time_text: str, remark_by: str):
-    status = "EMAIL BLAST SENT - WAITING FOR REPLY" if channel == "Email" else "SMS BLAST SENT - WAITING FOR REPLY"
+    status = "EMAIL BLAST SENT - WAITING FOR REPLY" if channel == "Email" else "VIBER BLAST SENT - WAITING FOR REPLY"
     ending = "FOLLOW UP EMAIL SENT" if channel == "Email" else "VIBER SENT - BLASTING"
     for account, contact in pairs:
         row = dict.fromkeys(headers, "")

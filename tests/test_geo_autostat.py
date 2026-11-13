@@ -88,7 +88,7 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
                                      ("Time", "Account No.", "Status", "Remark", "Remark By"))
                     self.assertEqual([cell.value for cell in output["B"][1:]], accounts)
                     self.assertTrue(all(cell.data_type == "s" and cell.number_format == "@" for cell in output["B"][1:]))
-                    self.assertTrue(all(cell.value == "SMS BLAST SENT - WAITING FOR REPLY" for cell in output["C"][1:]))
+                    self.assertTrue(all(cell.value == "VIBER BLAST SENT - WAITING FOR REPLY" for cell in output["C"][1:]))
                     self.assertEqual([cell.value for cell in output["D"][1:]], [
                         f"SPMA | 08 With SMS / email / DL without response - {phone} - VIBER SENT - BLASTING" for phone in phones
                     ])
