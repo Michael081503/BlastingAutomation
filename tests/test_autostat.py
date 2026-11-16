@@ -86,8 +86,9 @@ class AutostatTests(unittest.TestCase):
         source = SourceSelection('contacts.csv', data, inspect_contact_source(data, '.csv')[0])
         for hour in (0, 7, 12, 15):
             timestamp = NOW.replace(hour=hour)
-            expected = f'2026-10-28 {hour:02d}:04:05'
             for builder in (build_autostat_exports, build_bel_exports):
+                date = '2026/10/28' if builder is build_autostat_exports else '2026-10-28'
+                expected = f'{date} {hour:02d}:04:05'
                 with self.subTest(hour=hour, builder=builder.__name__):
                     bundle = builder([source], timestamp=timestamp)
                     with ZipFile(BytesIO(bundle.zip_data)) as archive:
@@ -461,7 +462,7 @@ class AutostatTests(unittest.TestCase):
                 email = '@' in row['EMAIL/ NUMBER']
                 ending = 'FOLLOW UP EMAIL SENT' if email else 'VIBER SENT - BLASTING'
                 self.assertEqual(row['Remark'], f"{REMARK_PREFIX} - {row['EMAIL/ NUMBER']} - {ending}")
-                self.assertEqual(row['Status'], ('EMAIL' if email else 'SMS') + ' BLAST SENT - WAITING FOR REPLY')
+                self.assertEqual(row['Status'], ('EMAIL' if email else 'VIBER') + ' BLAST SENT - WAITING FOR REPLY')
                 self.assertEqual(row['Time'], '2026-10-28 15:04:05')
                 self.assertEqual(row['Remark By'], 'MBURGOS')
                 self.assertTrue(all(row[header] == '' for header in EMAIL_HEADERS[6:]))
@@ -588,7 +589,7 @@ class AutostatTests(unittest.TestCase):
         self.assertEqual(tuple(exported_rows(email)[0]), EMAIL_HEADERS)
         self.assertEqual(tuple(exported_rows(viber)[0]), VIBER_HEADERS)
         first = exported_rows(email)[0]
-        self.assertEqual(first["Time"], "2026-10-28 15:04:05")
+        self.assertEqual(first["Time"], "2026/10/28 15:04:05")
         self.assertEqual(first["Account No."], "00001")
         self.assertEqual(first["Status"], "EMAIL BLAST SENT - WAITING FOR REPLY")
         self.assertEqual(first["Remark By"], "MBURGOS")
@@ -838,7 +839,7 @@ class AutostatAppTests(unittest.TestCase):
             timestamp = app.session_state["autostat_result"]["timestamp"]
             self.assertEqual(timestamp.tzinfo, MANILA_TIMEZONE)
             for file in app.session_state["autostat_result"]["bundle"].files:
-                self.assertEqual(exported_rows(file)[0]["Time"], timestamp.strftime("%Y-%m-%d %H:%M:%S"))
+                self.assertEqual(exported_rows(file)[0]["Time"], timestamp.strftime("%Y/%m/%d %H:%M:%S"))
 
             app.checkbox(key="autostat_blank_time").set_value(True).run(timeout=20)
             self.assertIsNone(app.session_state["autostat_result"]["timestamp"])
@@ -863,7 +864,7 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             for file in app.session_state["autostat_result"]["bundle"].files:
-                self.assertEqual(exported_rows(file)[0]["Time"], manual_timestamp.strftime("%Y-%m-%d %H:%M:%S"))
+                self.assertEqual(exported_rows(file)[0]["Time"], manual_timestamp.strftime("%Y/%m/%d %H:%M:%S"))
 
     def test_bel_cards_and_cardnumber_only_uploads_compile_into_two_channel_downloads(self):
         data = b'primary_key,email,PHONE\n@BEL-1,bel@example.com,09171234567\n00001234,cards@example.com,09181234567\n'
