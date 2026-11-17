@@ -20,11 +20,21 @@ Use the sidebar to switch between five separate pages:
 - **NEGATIVE B2 & B4**: B2 and B4 account matching and separate CARDS/BEL campaign files for each bucket. Prepare their activity logs on the AUTOSTAT page.
 - **AUTOSTAT**: upload the automation's output files to prepare logs automatically. Standard uses the GEO/RECO Email and Viber layouts; B2 and B4 use their Email, SMS and Viber templates.
 - **SBC INSURANCE**: upload an unfiltered DataGrid to automatically filter statuses, remove duplicate financing/card accounts and prepare the cleaned output and shared campaign template.
-- **Inbound reply**: six upload slots (two each for SMS, Email and Viber) and the campaign summary layout with DC Worked, Unique Result, Sent to OPS and Agent Worked sections. Campaign, report date and Sent to OPS are editable. Counts and percentages remain blank until the file contents and calculation rules are specified. Clear all files also empties these six slots while keeping the report settings.
+- **Inbound reply**: six upload slots (two each for SMS, Email and Viber) and the campaign summary layout with DC Worked, Unique Result, Sent to OPS and Agent Worked sections. Viber automatically matches its two files and shows unique people, agent replies and percentages by campaign. Report label, date and Sent to OPS are editable. Clear all files also empties these six slots and their prepared results while keeping the report settings.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
 Use **Clear all files** with the gold Batman-style icon in the upper-right of the workspace header on any page to empty every upload box at once, including GEO/RECO sources and templates, all AUTOSTAT modes, and the B2/B4 database/account-list uploads. It also clears prepared downloads, previews and source mappings across all pages. Log settings and output preferences are kept. Files already saved to a folder are kept. You can immediately upload a new batch after clearing.
+
+## Inbound reply — Viber
+
+Upload **message logs** in the first Viber slot (people **replied to by agents**) and **campaign replies** in the second (people **awaiting an agent reply**). The CSV exports use Client Name or Contact Name, Phone and Bank Campaign. Excel files with one eligible data worksheet are also accepted. Message Type, when supplied, must agree with the upload role: Agent Reply for message logs and Pending Reply for campaign replies. Swapped or mixed exports show an error and do not retain previous report totals.
+
+Matching combines identical full names across accounts and phone numbers, ignoring case, punctuation and extra spaces. It does not use fuzzy name matching. A missing name uses a normalized phone number and only links it to a named person when that phone identifies one name. Rows without either identity are excluded and counted. Source messages are treated as data; their content is not used for matching.
+
+Each Bank Campaign gets a report row. **Viber Reply** is the union of unique people in both files. **Agent Worked — Viber** is the unique people in message logs, and its percentage is Agent Worked divided by Viber Reply. If a person occurs in both files for the same campaign, the agent reply takes priority and the person is not counted as awaiting a reply. People appearing in several campaigns remain in each relevant campaign; overall metrics and the matched-people CSV contain one entry per person across all campaigns, retaining their phones and campaign memberships. People occurring in only one file are retained.
+
+Both Viber files are enough to populate these results; SMS and Email need not be uploaded first. The report includes every uploaded row; Report date labels the report and does not filter messages by timestamp. **Active Ticket, DC Worked, SMS and Email** remain blank until their source data and rules are provided. Replacing either file, even with the same filename, rebuilds the results; removing an upload or using Clear all files removes the previous results. Matching data stays in the current browser session. The matched-people CSV uses UTF-8 and protects phone numbers with a leading tab for Excel.
 
 ## SBC INSURANCE
 
