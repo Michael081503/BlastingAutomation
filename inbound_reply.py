@@ -12,11 +12,12 @@ from pathlib import Path
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 3
+VIBER_REPLY_VERSION = 4
 VIBER_CAMPAIGN_REPLIED_VERSION = 1
 VIBER_AGENT_REPLIED_SOURCE = "campaign_replies"
 VIBER_PHONE_MATCHING_VERSION = 1
 VIBER_MATCH_MODE = "phone"
+VIBER_UNREPLIED_WORKBOOK_VERSION = 1
 SOURCE_NAMES = ("message_logs", "campaign_replies")
 MATCH_MODES = ("name", "phone")
 HEADER_ALIASES = {
@@ -56,6 +57,7 @@ class ReplyRecord:
     phone: str
     campaign: str
     message_type: str = ""
+    source_values: tuple[object, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,7 @@ class ReplySource:
     records: tuple[ReplyRecord, ...]
     excluded_rows: int = 0
     sheet: str = "CSV"
+    headers: tuple[str, ...] = ()
 
     @property
     def message_types(self) -> dict[str, int]:
@@ -136,6 +139,7 @@ def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
         raise InboundReplyError(
             f"{filename}: expected Phone and Bank Campaign headers. Client Name or Contact Name is optional."
         )
+    headers = tuple(str(value) if value is not None else "" for value in row)
     records = []
     excluded = 0
     for row in rows:
@@ -148,9 +152,9 @@ def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
             continue
         records.append(ReplyRecord(
             values.get("name", ""), values["phone"], values["campaign"] or "Unspecified campaign",
-            values.get("message_type", ""),
+            values.get("message_type", ""), tuple(row),
         ))
-    return ReplySource(filename, tuple(records), excluded, sheet)
+    return ReplySource(filename, tuple(records), excluded, sheet, headers)
 
 
 def read_reply_source(filename: str, data: bytes) -> ReplySource:
@@ -280,3 +284,86 @@ def build_people_csv(report: ViberReplyReport) -> bytes:
     writer.writeheader()
     writer.writerows({**row, "Phones": "\t" + row["Phones"] if row["Phones"] else ""} for row in rows)
     return output.getvalue().encode("utf-8-sig")
+
+
+def unreplied_records(report: ViberReplyReport) -> tuple[ReplyRecord, ...]:
+    """Return the first source row per unreplied phone and campaign."""
+    if report.match_mode != "phone":
+        raise InboundReplyError("The unreplied report requires phone-number matching.")
+    pending = {
+        (campaign_key, phone)
+        for person in report.people
+        for campaign_key, group in person.campaigns.items()
+        if not group[report.agent_replied_source]
+        for phone in person.phones
+    }
+    source = report.message_logs if report.agent_replied_source == "campaign_replies" else report.campaign_replies
+    selected = {}
+    for row in source.records:
+        campaign_key = " ".join(unicodedata.normalize("NFKC", row.campaign).casefold().split())
+        key = (campaign_key, normalized_phone(row.phone))
+        if key in pending:
+            selected.setdefault(key, row)
+    return tuple(row for key, row in sorted(selected.items()))
+
+
+def build_unreplied_workbook(report: ViberReplyReport) -> bytes:
+    """Export campaign counts followed by the corresponding source account details."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    details = unreplied_records(report)
+    expected = sum(campaign.awaiting_reply for campaign in report.campaigns)
+    if len(details) != expected:
+        raise InboundReplyError("Unreplied account details do not match the campaign counts. Upload both files again.")
+    source = report.message_logs if report.agent_replied_source == "campaign_replies" else report.campaign_replies
+    workbook = Workbook()
+    summary = workbook.active
+    summary.title = "Summary"
+    summary.append(["Campaign", "Not replied"])
+    for campaign in report.campaigns:
+        summary.append([campaign.campaign, campaign.awaiting_reply])
+    summary.append(["TOTAL", expected])
+    summary.column_dimensions["A"].width = 32
+    summary.column_dimensions["B"].width = 20
+    summary.auto_filter.ref = f"A1:B{len(report.campaigns) + 1}"
+
+    sheet = workbook.create_sheet("Unreplied Details")
+    source_headers = source.headers or ("Name", "Phone", "Bank Campaign", "Message Type")
+    sheet.append([*source_headers, "Matched Phone", "Reply Status"])
+    for record in details:
+        values = record.source_values or (record.name, record.phone, record.campaign, record.message_type)
+        values = tuple(values[:len(source_headers)]) + (None,) * max(0, len(source_headers) - len(values))
+        sheet.append([*values, normalized_phone(record.phone), "Not replied"])
+    sheet.auto_filter.ref = sheet.dimensions
+    for column, header in enumerate([*source_headers, "Matched Phone", "Reply Status"], 1):
+        key = "".join(char for char in header.casefold() if char.isalnum())
+        sheet.column_dimensions[get_column_letter(column)].width = (
+            75 if key in {"messagecontent", "replycontent"} else
+            32 if key in {"clientname", "contactname", "name", "createdby"} else
+            26 if key in {"id", "messageid", "bankcampaign"} else 22
+        )
+        if key in {"phone", "phonenumber", "mobile", "mobilenumber", "matchedphone", "id", "messageid"}:
+            for cells in sheet.iter_rows(min_row=2, min_col=column, max_col=column):
+                cell = cells[0]
+                if cell.value is not None:
+                    cell.value = str(cell.value)
+                cell.number_format = "@"
+    for tab in workbook:
+        tab.freeze_panes = "A2"
+        for row in tab:
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"  # Source messages and names are literal spreadsheet text.
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+        for cell in tab[1]:
+            cell.font = Font(bold=True, color="242831")
+            cell.fill = PatternFill("solid", fgColor="E2EAFB")
+    for cell in summary[summary.max_row]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="E2EAFB")
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()

@@ -5,18 +5,19 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from html import escape
 from hashlib import sha256
+from functools import partial
 
 import streamlit as st
 
 from inbound_reply import (
     VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, InboundReplyError, ViberReplyReport,
-    build_people_csv, match_viber_sources, people_rows, read_reply_source,
+    build_people_csv, build_unreplied_workbook, match_viber_sources, people_rows, read_reply_source,
 )
 from upload_state import upload_widget_key
 
 
-INBOUND_REPLY_PAGE_VERSION = 4
-VIBER_MATCHING_PAGE_VERSION = 3
+INBOUND_REPLY_PAGE_VERSION = 5
+VIBER_MATCHING_PAGE_VERSION = 4
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
@@ -114,7 +115,7 @@ def prepare_viber_report(log_upload, campaign_upload) -> ViberReplyReport | None
     return cached["report"]
 
 
-def render_viber_details(report: ViberReplyReport) -> None:
+def render_viber_details(report: ViberReplyReport, report_date: date | None = None) -> None:
     totals = report.totals
     for column, label, value in zip(st.columns(4),
                                     ("Unique phone numbers", "Replied by agents", "Awaiting agent reply", "Found in both files"),
@@ -124,6 +125,27 @@ def render_viber_details(report: ViberReplyReport) -> None:
         "Viber Reply counts unique phone numbers across both files. Agent Worked counts phone numbers in campaign replies, "
         "divided by Viber Reply for the percentage. Each campaign counts a phone number once; "
         "the totals above count each phone number once across all campaigns."
+    )
+    st.subheader("Unreplied accounts by campaign")
+    summary_rows = "".join(
+        f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
+        for campaign in report.campaigns
+    )
+    st.html(
+        '<div class="inbound-reply-report" style="max-width:640px" role="region" '
+        'aria-label="Unreplied accounts by campaign" tabindex="0">'
+        '<table style="min-width:0"><thead><tr><th scope="col">Campaign</th>'
+        f'<th scope="col">Not replied</th></tr></thead><tbody>{summary_rows}</tbody></table></div>'
+    )
+    st.caption(
+        "The Excel download has a Summary sheet and an Unreplied Details sheet with the original source fields. "
+        "Accounts are counted once per phone number within each campaign."
+    )
+    st.download_button(
+        "Download unreplied report (.xlsx)", data=partial(build_unreplied_workbook, report),
+        file_name=f"VIBER_Unreplied_{report_date.isoformat()}.xlsx" if report_date else "VIBER_Unreplied.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="inbound_reply_viber_unreplied_download", on_click="ignore", type="primary",
     )
     st.download_button(
         "Download matched Viber phone numbers (.csv)", data=build_people_csv(report),
@@ -206,7 +228,7 @@ def render_inbound_reply() -> None:
         report = prepare_viber_report(*viber_uploads)
         st.html(build_report_html(campaign, report_date, sent_to_ops, report))
         if report is not None:
-            render_viber_details(report)
+            render_viber_details(report, report_date)
             st.caption("Active Ticket, DC Worked, SMS and Email totals are pending their source data and rules.")
         else:
             st.caption("Upload both Viber files to show matched, deduplicated reply totals. SMS and Email rules are pending.")

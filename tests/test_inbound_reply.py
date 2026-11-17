@@ -8,7 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from inbound_reply import (
-    VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, InboundReplyError, build_people_csv, match_viber_sources, normalized_phone,
+    VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, InboundReplyError, build_people_csv,
+    build_unreplied_workbook, match_viber_sources, normalized_phone,
     people_rows, read_reply_source,
 )
 
@@ -221,7 +222,112 @@ class ViberFileTests(unittest.TestCase):
         self.assertEqual(source.records[0].phone, "09171234567")
 
 
+class ViberUnrepliedWorkbookTests(unittest.TestCase):
+    def test_campaign_summary_matches_deduplicated_original_account_details(self):
+        from openpyxl import load_workbook
+
+        headers = ["ID", "Timestamp", "Client Name", "Phone", "CH Code", "Bank Campaign",
+                   "Created By", "Message Type", "Message Content", "Status"]
+        output = StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        for row in [
+            ["000001", "18/11/2026, 8:00am", "Ana Cruz", "09171234567", "CH1", "B2", "Agent A", "Agent Reply", "Replied in B2", "Delivered"],
+            ["000002", "18/11/2026, 8:01am", "Ana Cruz", "09171234567", "CH1", "B4", "Agent A", "Agent Reply", "Still pending in B4", "Delivered"],
+            ["00000000000000000003", "18/11/2026, 8:02am", "Ben Santos", "09181234567", "CH2", "B2", "Agent B", "Agent Reply", "=SUM(1,1)\nSource text", "Read"],
+            ["000004", "18/11/2026, 8:03am", "Cara Reyes", "+63 919 123 4567", "CH3", "B2", "Agent C", "Agent Reply", "First source row", "Delivered"],
+            ["000005", "18/11/2026, 8:04am", "Other Name", "09191234567", "CH4", "B2", "Agent D", "Agent Reply", "Duplicate phone", "Delivered"],
+            ["000006", "18/11/2026, 8:05am", "Missing Phone", "", "CH5", "B2", "Agent E", "Agent Reply", "No phone", "Delivered"],
+        ]:
+            writer.writerow(row)
+        logs = read_reply_source("message-logs.csv", output.getvalue().encode("utf-8-sig"))
+        campaign = read_reply_source("campaign-replies.csv", source_csv([
+            ("Ana Cruz", "+63 917 123 4567", "B2"), ("Campaign Only", "09201234567", "B3"),
+        ], pending=True, message_type="Inbound Reply"))
+        report = match_viber_sources(logs, campaign,
+                                     agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode="phone")
+        workbook = load_workbook(BytesIO(build_unreplied_workbook(report)))
+        try:
+            self.assertEqual(workbook.sheetnames, ["Summary", "Unreplied Details"])
+            self.assertEqual(list(workbook["Summary"].values), [
+                ("Campaign", "Not replied"), ("B2", 2), ("B3", 0), ("B4", 1), ("TOTAL", 3),
+            ])
+            details = workbook["Unreplied Details"]
+            self.assertEqual(list(next(details.values)), [*headers, "Matched Phone", "Reply Status"])
+            rows = [dict(zip([*headers, "Matched Phone", "Reply Status"], row)) for row in list(details.values)[1:]]
+            self.assertEqual(len(rows), 3)
+            self.assertEqual({(row["Bank Campaign"], row["Matched Phone"]) for row in rows},
+                             {("B2", "09181234567"), ("B2", "09191234567"), ("B4", "09171234567")})
+            self.assertTrue(all(row["Reply Status"] == "Not replied" for row in rows))
+            self.assertEqual(next(row["ID"] for row in rows if row["Matched Phone"] == "09191234567"), "000004")
+            self.assertEqual(rows[0]["ID"], "00000000000000000003")
+            self.assertEqual(rows[0]["CH Code"], "CH2")
+            self.assertEqual(rows[0]["Timestamp"], "18/11/2026, 8:02am")
+            self.assertEqual(rows[0]["Message Content"], "=SUM(1,1)\nSource text")
+            self.assertEqual(details["I2"].data_type, "s")
+            self.assertEqual(details["D2"].number_format, "@")
+            self.assertEqual(details["K2"].number_format, "@")
+            self.assertEqual(details["A2"].number_format, "@")
+            self.assertEqual(details.freeze_panes, "A2")
+            self.assertEqual(workbook["Summary"]["B5"].value, details.max_row - 1)
+            self.assertEqual(report.totals.awaiting_reply, 2)  # Summary counts campaign entries.
+        finally:
+            workbook.close()
+
+    def test_empty_unreplied_list_keeps_zero_campaign_and_details_headers(self):
+        from openpyxl import load_workbook
+
+        logs = read_reply_source("message-logs.csv", source_csv([("Ana Cruz", "09171234567", "B2")]))
+        campaign = read_reply_source("campaign-replies.csv", source_csv([
+            ("Ana Cruz", "09171234567", "B2"),
+        ], pending=True, message_type="Inbound Reply"))
+        report = match_viber_sources(logs, campaign,
+                                     agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode="phone")
+        workbook = load_workbook(BytesIO(build_unreplied_workbook(report)))
+        try:
+            self.assertEqual(list(workbook["Summary"].values), [("Campaign", "Not replied"), ("B2", 0), ("TOTAL", 0)])
+            self.assertEqual(workbook["Unreplied Details"].max_row, 1)
+            self.assertEqual(workbook["Unreplied Details"].cell(1, 5).value, "Matched Phone")
+        finally:
+            workbook.close()
+
+
 class InboundReplyPageTests(unittest.TestCase):
+    def test_unreplied_excel_download_is_available_on_page_and_removed_on_clear(self):
+        from openpyxl import load_workbook
+        from streamlit.testing.v1 import AppTest
+        from upload_state import render_clear_all_files
+
+        class Upload(BytesIO):
+            def __init__(self, name, data):
+                super().__init__(data)
+                self.name = name
+
+        uploads = {
+            "inbound_reply_viber_1_upload": Upload("message-logs.csv", source_csv([("Ana Cruz", "09171234567", "B2")])),
+            "inbound_reply_viber_2_upload": Upload("campaign-replies.csv", source_csv([], pending=True)),
+        }
+        with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
+                patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            call = next(call for call in downloads.call_args_list
+                        if call.kwargs.get("key") == "inbound_reply_viber_unreplied_download")
+            self.assertTrue(call.kwargs["file_name"].endswith(".xlsx"))
+            workbook = load_workbook(BytesIO(call.kwargs["data"]()))
+            try:
+                self.assertEqual(workbook.sheetnames, ["Summary", "Unreplied Details"])
+                self.assertEqual(workbook["Summary"]["B2"].value, 1)
+                self.assertEqual(workbook["Unreplied Details"].max_row, 2)
+            finally:
+                workbook.close()
+            self.assertTrue(any(heading.value == "Unreplied accounts by campaign" for heading in app.subheader))
+            downloads.reset_mock()
+            app.button(key="clear_all_files").click().run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(downloads.called)
+
     def test_report_populates_only_viber_columns_and_escapes_campaign_names(self):
         from inbound_reply_page import build_report_html
         report = make_report([("Ana Cruz", "09171234567", "<B2 & Cards>")],
