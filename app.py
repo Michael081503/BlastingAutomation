@@ -500,6 +500,7 @@ def main() -> None:
         st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2 & B4", icon=":material/compare_arrows:", url_path="NEGATIVE_B2"),
         st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", icon=":material/mark_email_read:", url_path="AUTOSTAT"),
         st.Page("pages/SBC_INSURANCE.py", title="SBC INSURANCE", icon=":material/health_and_safety:", url_path="SBC_INSURANCE"),
+        st.Page("pages/INBOUND_REPLY.py", title="Inbound reply", icon=":material/inbox:", url_path="INBOUND_REPLY"),
     ])
     page.run()
 

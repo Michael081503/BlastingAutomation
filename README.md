@@ -14,12 +14,13 @@ python -m venv .venv
 
 Open **http://localhost:8501**. If the dependencies are already installed, run `python -m streamlit run app.py` directly. Stop the server with **Ctrl+C**.
 
-Use the sidebar to switch between four separate pages:
+Use the sidebar to switch between five separate pages:
 
 - **GEO & RECO**: the original workbook-to-template workflow, with the existing Area, product, level, and Christmas Amnesty grouping and configured filenames.
 - **NEGATIVE B2 & B4**: B2 and B4 account matching and separate CARDS/BEL campaign files for each bucket. Prepare their activity logs on the AUTOSTAT page.
 - **AUTOSTAT**: upload the automation's output files to prepare logs automatically. Standard uses the GEO/RECO Email and Viber layouts; B2 and B4 use their Email, SMS and Viber templates.
 - **SBC INSURANCE**: upload an unfiltered DataGrid to automatically filter statuses, remove duplicate financing/card accounts and prepare the cleaned output and shared campaign template.
+- **Inbound reply**: six upload slots (two each for SMS, Email and Viber) and the campaign summary layout with DC Worked, Unique Result, Sent to OPS and Agent Worked sections. Campaign, report date and Sent to OPS are editable. Counts and percentages remain blank until the file contents and calculation rules are specified. Clear all files also empties these six slots while keeping the report settings.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
