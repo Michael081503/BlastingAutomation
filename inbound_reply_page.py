@@ -9,14 +9,14 @@ from hashlib import sha256
 import streamlit as st
 
 from inbound_reply import (
-    VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, InboundReplyError, ViberReplyReport,
+    VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, InboundReplyError, ViberReplyReport,
     build_people_csv, match_viber_sources, people_rows, read_reply_source,
 )
 from upload_state import upload_widget_key
 
 
-INBOUND_REPLY_PAGE_VERSION = 3
-VIBER_MATCHING_PAGE_VERSION = 2
+INBOUND_REPLY_PAGE_VERSION = 4
+VIBER_MATCHING_PAGE_VERSION = 3
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
@@ -90,7 +90,7 @@ def prepare_viber_report(log_upload, campaign_upload) -> ViberReplyReport | None
         st.session_state.pop("inbound_reply_viber_result", None)
         return None
     log_bytes, campaign_bytes = log_upload.getvalue(), campaign_upload.getvalue()
-    signature = (VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE,
+    signature = (VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE,
                  sha256(log_bytes).hexdigest(), sha256(campaign_bytes).hexdigest(),
                  log_upload.name, campaign_upload.name)
     cached = st.session_state.get("inbound_reply_viber_result")
@@ -103,7 +103,7 @@ def prepare_viber_report(log_upload, campaign_upload) -> ViberReplyReport | None
             campaign_replies = read_reply_source(campaign_upload.name, campaign_bytes)
             # The user's corrected file roles determine status; Message Type is source data.
             report = match_viber_sources(logs, campaign_replies,
-                                         agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode="name")
+                                         agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode=VIBER_MATCH_MODE)
             cached = {"signature": signature, "report": report}
         except InboundReplyError as error:
             cached = {"signature": signature, "error": str(error)}
@@ -117,35 +117,35 @@ def prepare_viber_report(log_upload, campaign_upload) -> ViberReplyReport | None
 def render_viber_details(report: ViberReplyReport) -> None:
     totals = report.totals
     for column, label, value in zip(st.columns(4),
-                                    ("Unique people", "Replied by agents", "Awaiting agent reply", "Found in both files"),
+                                    ("Unique phone numbers", "Replied by agents", "Awaiting agent reply", "Found in both files"),
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply, totals.matched_both_files)):
         column.metric(label, f"{value:,}")
     st.caption(
-        "Viber Reply counts unique people across both files. Agent Worked counts people in campaign replies, "
-        "divided by Viber Reply for the percentage. Each campaign counts a person once; "
-        "the totals above count each person once across all campaigns."
+        "Viber Reply counts unique phone numbers across both files. Agent Worked counts phone numbers in campaign replies, "
+        "divided by Viber Reply for the percentage. Each campaign counts a phone number once; "
+        "the totals above count each phone number once across all campaigns."
     )
     st.download_button(
-        "Download matched Viber people (.csv)", data=build_people_csv(report),
-        file_name="VIBER_Inbound_reply_people.csv", mime="text/csv",
+        "Download matched Viber phone numbers (.csv)", data=build_people_csv(report),
+        file_name="VIBER_Inbound_reply_phones.csv", mime="text/csv",
         key="inbound_reply_viber_download", on_click="ignore",
     )
     with st.expander("Viber matching details"):
         st.write(
             f"Message logs: {len(report.message_logs.records):,} rows. "
             f"Campaign replies: {len(report.campaign_replies.records):,} rows. "
-            f"Combined into {totals.unique_people:,} unique people."
+            f"Combined into {totals.unique_people:,} unique phone numbers."
         )
         st.caption(
-            "Matching combines identical full names, ignoring case, punctuation and extra spaces, "
-            "even when phone numbers differ. A missing name uses the phone number when available. "
-            "An agent reply takes priority over pending entries for the same person and campaign. "
-            "Campaign replies identify people replied to by agents; people found only in message logs await a reply. "
+            "Matching uses phone numbers, normalizing spaces, punctuation and Philippine +63/0 formats. "
+            "Names are shown for reference. Rows without a usable phone number are excluded and counted. "
+            "An agent reply takes priority over pending entries for the same phone number and campaign. "
+            "Campaign replies identify phone numbers replied to by agents; numbers found only in message logs await a reply. "
             "All uploaded rows are included; Report date labels the report."
         )
-        excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows
+        excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows + report.excluded_phone_rows
         if excluded:
-            st.warning(f"Skipped {excluded:,} rows without a usable name or phone number.")
+            st.warning(f"Skipped {excluded:,} rows without a usable phone number.")
         rows = people_rows(report)
         headers = list(rows[0]) if rows else []
         header = "".join(f"<th scope='col'>{escape(key)}</th>" for key in headers)
@@ -153,10 +153,10 @@ def render_viber_details(report: ViberReplyReport) -> None:
                        for row in rows[:100])
         if rows:
             st.html(
-                '<div class="inbound-reply-report" role="region" aria-label="Matched Viber people" tabindex="0">'
+                '<div class="inbound-reply-report" role="region" aria-label="Matched Viber phone numbers" tabindex="0">'
                 f'<table><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table></div>'
             )
-            st.caption(f"Showing {min(len(rows), 100):,} of {len(rows):,} people. Download the CSV for all people.")
+            st.caption(f"Showing {min(len(rows), 100):,} of {len(rows):,} phone numbers. Download the CSV for all numbers.")
 
 
 def render_inbound_reply() -> None:

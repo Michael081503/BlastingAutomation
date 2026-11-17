@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from inbound_reply import (
-    VIBER_AGENT_REPLIED_SOURCE, InboundReplyError, build_people_csv, match_viber_sources, normalized_phone,
+    VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, InboundReplyError, build_people_csv, match_viber_sources, normalized_phone,
     people_rows, read_reply_source,
 )
 
@@ -34,6 +34,54 @@ def make_report(logs, pending):
 
 
 class ViberMatchingTests(unittest.TestCase):
+    def test_phone_matching_keeps_identical_names_with_different_numbers_separate(self):
+        logs = read_reply_source("message-logs.csv", source_csv([
+            ("Ana Cruz", "09171234567", "B2"), ("Ana Cruz", "09181234567", "B2"),
+        ]))
+        campaign = read_reply_source("campaign-replies.csv", source_csv([
+            ("Ana Cruz", "+63 917 123 4567", "B2"),
+        ], pending=True, message_type="Inbound Reply"))
+        report = match_viber_sources(logs, campaign,
+                                     agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode=VIBER_MATCH_MODE)
+        self.assertEqual(report.match_mode, "phone")
+        self.assertEqual(report.totals.unique_people, 2)
+        self.assertEqual(report.totals.agent_replied, 1)
+        self.assertEqual(report.totals.awaiting_reply, 1)
+        self.assertEqual(report.totals.matched_both_files, 1)
+        rows = list(csv.DictReader(StringIO(build_people_csv(report).decode("utf-8-sig"))))
+        self.assertEqual({row["Phones"].strip() for row in rows}, {"09171234567", "09181234567"})
+
+    def test_phone_matching_merges_different_names_and_number_formats_across_campaigns(self):
+        logs = read_reply_source("message-logs.csv", source_csv([
+            ("Ana Cruz", "09171234567", "B2"), ("Another Name", "9171234567", "B4"),
+        ]))
+        campaign = read_reply_source("campaign-replies.csv", source_csv([
+            ("Different Name", "+63 (917) 123-4567", "B2"),
+        ], pending=True, message_type="Inbound Reply"))
+        report = match_viber_sources(logs, campaign,
+                                     agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode="phone")
+        self.assertEqual(report.totals.unique_people, 1)
+        self.assertEqual(report.totals.agent_replied, 1)
+        self.assertEqual(sum(row.unique_people for row in report.campaigns), 2)
+        self.assertEqual(len(people_rows(report)), 1)
+        self.assertEqual(people_rows(report)[0]["Awaiting reply campaigns"], "B4")
+
+    def test_phone_matching_excludes_missing_or_invalid_numbers_without_name_fallback(self):
+        logs = read_reply_source("message-logs.csv", source_csv([
+            ("Ana Cruz", "09171234567", "B2"), ("Ana Cruz", "", "B2"),
+            ("Ana Cruz", "not-a-phone", "B2"), ("", "", "B2"),
+        ]))
+        campaign = read_reply_source("campaign-replies.csv", source_csv([
+            ("Ana Cruz", "", "B2"),
+        ], pending=True, message_type="Inbound Reply"))
+        report = match_viber_sources(logs, campaign,
+                                     agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode="phone")
+        self.assertEqual(report.totals.unique_people, 1)
+        self.assertEqual(report.totals.agent_replied, 0)
+        self.assertEqual(report.totals.awaiting_reply, 1)
+        self.assertEqual(report.excluded_phone_rows, 3)
+        self.assertEqual(report.message_logs.excluded_rows, 1)
+
     def test_corrected_campaign_file_controls_status_despite_message_type_labels(self):
         logs = read_reply_source("message-logs.csv", source_csv([
             ("Ana Cruz", "09171234567", "B2"), ("Ben Santos", "09181234567", "B2"),
@@ -122,6 +170,12 @@ class ViberMatchingTests(unittest.TestCase):
 
 
 class ViberFileTests(unittest.TestCase):
+    def test_phone_and_campaign_headers_work_without_name_column(self):
+        source = read_reply_source("phones.csv", b"Phone,Bank Campaign\n09171234567,B2\n")
+        self.assertEqual(len(source.records), 1)
+        self.assertEqual(source.records[0].name, "")
+        self.assertEqual(source.records[0].phone, "09171234567")
+
     def test_csv_handles_bom_semicolons_multiline_cells_and_message_text_as_data(self):
         output = StringIO(newline="")
         writer = csv.writer(output, delimiter=";")
@@ -208,14 +262,21 @@ class InboundReplyPageTests(unittest.TestCase):
             self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].totals.unique_people, 2)
             self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1", "0"])
             self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].agent_replied_source, "campaign_replies")
-            # An old cached report with the reversed policy must rebuild for identical uploads.
+            self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].match_mode, "phone")
+            # Cached name matching must rebuild for identical uploads under the phone policy.
             cached = app.session_state["inbound_reply_viber_result"]
-            cached["signature"] = (1, "old reversed file roles")
+            cached["signature"] = (2, "campaign_replies", "name")
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertNotEqual(app.session_state["inbound_reply_viber_result"]["signature"], cached["signature"])
             uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([
                 ("ANA CRUZ", "09191234567", "B2"),
+            ], pending=True, message_type="Inbound Reply"))
+            app.run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1", "0"])
+            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([
+                ("Different Name", "+63 917 123 4567", "B2"),
             ], pending=True, message_type="Inbound Reply"))
             app.run(timeout=20)
             self.assertFalse(app.exception)

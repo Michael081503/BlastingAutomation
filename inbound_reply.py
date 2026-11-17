@@ -12,9 +12,11 @@ from pathlib import Path
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 2
+VIBER_REPLY_VERSION = 3
 VIBER_CAMPAIGN_REPLIED_VERSION = 1
 VIBER_AGENT_REPLIED_SOURCE = "campaign_replies"
+VIBER_PHONE_MATCHING_VERSION = 1
+VIBER_MATCH_MODE = "phone"
 SOURCE_NAMES = ("message_logs", "campaign_replies")
 MATCH_MODES = ("name", "phone")
 HEADER_ALIASES = {
@@ -101,6 +103,7 @@ class ViberReplyReport:
     match_mode: str
     message_logs: ReplySource
     campaign_replies: ReplySource
+    excluded_phone_rows: int = 0
 
     @property
     def totals(self) -> CampaignReplyCounts:
@@ -116,7 +119,7 @@ def _header_positions(row: Iterable) -> dict[str, int] | None:
             return None
         if matches:
             positions[field_name] = matches[0]
-    return positions if {"name", "phone", "campaign"} <= positions.keys() else None
+    return positions if {"phone", "campaign"} <= positions.keys() else None
 
 
 def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
@@ -131,7 +134,7 @@ def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
             break
     if positions is None:
         raise InboundReplyError(
-            f"{filename}: expected Client Name or Contact Name, Phone, and Bank Campaign headers."
+            f"{filename}: expected Phone and Bank Campaign headers. Client Name or Contact Name is optional."
         )
     records = []
     excluded = 0
@@ -140,11 +143,11 @@ def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
             continue
         values = {name: str(row[index]).strip() if index < len(row) and row[index] is not None else ""
                   for name, index in positions.items()}
-        if not normalized_name(values["name"]) and not normalized_phone(values["phone"]):
+        if not normalized_name(values.get("name", "")) and not normalized_phone(values["phone"]):
             excluded += 1
             continue
         records.append(ReplyRecord(
-            values["name"], values["phone"], values["campaign"] or "Unspecified campaign",
+            values.get("name", ""), values["phone"], values["campaign"] or "Unspecified campaign",
             values.get("message_type", ""),
         ))
     return ReplySource(filename, tuple(records), excluded, sheet)
@@ -187,7 +190,7 @@ def read_reply_source(filename: str, data: bytes) -> ReplySource:
                         break
             if len(candidates) != 1:
                 raise InboundReplyError(
-                    f"{filename}: expected one sheet with Name, Phone and Bank Campaign columns. "
+                    f"{filename}: expected one sheet with Phone and Bank Campaign columns. "
                     "Save the required worksheet as CSV and upload that file."
                 )
             sheet = candidates[0]
@@ -207,23 +210,27 @@ def _counts(label: str, people: Iterable[MatchedPerson], replied_source: str,
 
 def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource, *,
                         agent_replied_source: str, match_mode: str) -> ViberReplyReport:
-    """Count one person once; an agent reply takes priority over a pending row."""
+    """Deduplicate by the selected identity; phone mode never falls back to names."""
     if agent_replied_source not in SOURCE_NAMES or match_mode not in MATCH_MODES:
         raise InboundReplyError("Choose the agent-replied file and a person matching rule.")
     sources = dict(zip(SOURCE_NAMES, (message_logs, campaign_replies)))
-    # Only use the alternate field for a missing identity when it is unambiguous.
+    # Retain the legacy name matcher; phone matching requires an actual number.
     alternate_ids = defaultdict(set)
-    for source in sources.values():
-        for row in source.records:
-            name, phone = normalized_name(row.name), normalized_phone(row.phone)
-            primary, alternate = (name, phone) if match_mode == "name" else (phone, name)
-            if primary and alternate:
-                alternate_ids[alternate].add(primary)
+    if match_mode == "name":
+        for source in sources.values():
+            for row in source.records:
+                name, phone = normalized_name(row.name), normalized_phone(row.phone)
+                if name and phone:
+                    alternate_ids[phone].add(name)
     people = {}
     campaign_labels = {}
+    excluded_phone_rows = 0
     for source_name, source in sources.items():
         for row in source.records:
             name, phone = normalized_name(row.name), normalized_phone(row.phone)
+            if match_mode == "phone" and not phone:
+                excluded_phone_rows += 1
+                continue
             primary, alternate = (name, phone) if match_mode == "name" else (phone, name)
             if not primary and len(alternate_ids.get(alternate, ())) == 1:
                 primary = next(iter(alternate_ids[alternate]))
@@ -242,11 +249,11 @@ def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource
         for key, label in sorted(campaign_labels.items(), key=lambda item: item[1].casefold())
     )
     return ViberReplyReport(tuple(people.values()), campaigns, agent_replied_source, match_mode,
-                            message_logs, campaign_replies)
+                            message_logs, campaign_replies, excluded_phone_rows)
 
 
 def people_rows(report: ViberReplyReport) -> list[dict]:
-    """A person appears once globally, retaining every campaign and phone number."""
+    """Export one row per matched identity, retaining its name and campaigns."""
     rows = []
     for person in report.people:
         replied = [group["label"] for group in person.campaigns.values() if group[report.agent_replied_source]]
