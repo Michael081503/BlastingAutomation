@@ -9,14 +9,14 @@ from hashlib import sha256
 import streamlit as st
 
 from inbound_reply import (
-    VIBER_REPLY_VERSION, InboundReplyError, ViberReplyReport,
+    VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, InboundReplyError, ViberReplyReport,
     build_people_csv, match_viber_sources, people_rows, read_reply_source,
 )
 from upload_state import upload_widget_key
 
 
-INBOUND_REPLY_PAGE_VERSION = 2
-VIBER_MATCHING_PAGE_VERSION = 1
+INBOUND_REPLY_PAGE_VERSION = 3
+VIBER_MATCHING_PAGE_VERSION = 2
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
@@ -84,32 +84,26 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
     """
 
 
-def prepare_viber_report(log_upload, pending_upload) -> ViberReplyReport | None:
+def prepare_viber_report(log_upload, campaign_upload) -> ViberReplyReport | None:
     """Keep prepared files session-local and invalidate on upload content changes."""
-    if log_upload is None or pending_upload is None:
+    if log_upload is None or campaign_upload is None:
         st.session_state.pop("inbound_reply_viber_result", None)
         return None
-    log_bytes, pending_bytes = log_upload.getvalue(), pending_upload.getvalue()
-    signature = (VIBER_REPLY_VERSION, sha256(log_bytes).hexdigest(), sha256(pending_bytes).hexdigest(),
-                 log_upload.name, pending_upload.name)
+    log_bytes, campaign_bytes = log_upload.getvalue(), campaign_upload.getvalue()
+    signature = (VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE,
+                 sha256(log_bytes).hexdigest(), sha256(campaign_bytes).hexdigest(),
+                 log_upload.name, campaign_upload.name)
     cached = st.session_state.get("inbound_reply_viber_result")
     if cached is None or cached["signature"] != signature:
         st.session_state.pop("inbound_reply_viber_result", None)
         try:
-            if log_bytes == pending_bytes:
+            if log_bytes == campaign_bytes:
                 raise InboundReplyError("The two Viber uploads are identical. Upload message logs and campaign replies separately.")
             logs = read_reply_source(log_upload.name, log_bytes)
-            pending = read_reply_source(pending_upload.name, pending_bytes)
-            # Confirmed by the user: message logs are agent replies, not pending replies.
-            for source, expected in ((logs, "agentreply"), (pending, "pendingreply")):
-                unexpected = [kind for kind in source.message_types
-                              if kind != "Not specified" and "".join(c for c in kind.casefold() if c.isalnum()) != expected]
-                if unexpected:
-                    raise InboundReplyError(
-                        f"{source.filename}: unexpected Message Type: {', '.join(unexpected)}. "
-                        "Use Agent Reply rows for message logs and Pending Reply rows for campaign replies."
-                    )
-            report = match_viber_sources(logs, pending, agent_replied_source="message_logs", match_mode="name")
+            campaign_replies = read_reply_source(campaign_upload.name, campaign_bytes)
+            # The user's corrected file roles determine status; Message Type is source data.
+            report = match_viber_sources(logs, campaign_replies,
+                                         agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode="name")
             cached = {"signature": signature, "report": report}
         except InboundReplyError as error:
             cached = {"signature": signature, "error": str(error)}
@@ -127,7 +121,7 @@ def render_viber_details(report: ViberReplyReport) -> None:
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply, totals.matched_both_files)):
         column.metric(label, f"{value:,}")
     st.caption(
-        "Viber Reply counts unique people across both files. Agent Worked counts people in message logs, "
+        "Viber Reply counts unique people across both files. Agent Worked counts people in campaign replies, "
         "divided by Viber Reply for the percentage. Each campaign counts a person once; "
         "the totals above count each person once across all campaigns."
     )
@@ -146,6 +140,7 @@ def render_viber_details(report: ViberReplyReport) -> None:
             "Matching combines identical full names, ignoring case, punctuation and extra spaces, "
             "even when phone numbers differ. A missing name uses the phone number when available. "
             "An agent reply takes priority over pending entries for the same person and campaign. "
+            "Campaign replies identify people replied to by agents; people found only in message logs await a reply. "
             "All uploaded rows are included; Report date labels the report."
         )
         excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows
@@ -193,7 +188,7 @@ def render_inbound_reply() -> None:
             for number in (1, 2):
                 label = f"{channel} file {number}"
                 if channel == "VIBER":
-                    label = "Viber message logs — replied by agents" if number == 1 else "Viber campaign replies — awaiting agent reply"
+                    label = "Viber message logs — comparison list" if number == 1 else "Viber campaign replies — replied by agents"
                 upload = st.file_uploader(
                     label, type=["xlsx", "csv"],
                     key=upload_widget_key(f"inbound_reply_{channel.lower()}_{number}_upload"),

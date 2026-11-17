@@ -186,7 +186,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ), ("autostat", "automation")),
         ("sbc_insurance", ("SBC_INSURANCE_VERSION", "SBC_INSURANCE_MASTERLIST_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_VERSION", "SBC_INSURANCE_INCLUDED_STATUSES", "read_insurance_source", "prepare_insurance", "build_filtered_datagrid", "inspect_insurance_masterlist", "read_insurance_masterlist"), ("automation", "exports", "autostat", "email_validation")),
         ("sbc_insurance_page", ("SBC_INSURANCE_PAGE_VERSION", "render_sbc_insurance"), ("sbc_insurance", "automation", "exports", "upload_state")),
-        ("inbound_reply", ("VIBER_REPLY_VERSION", "match_viber_sources", "read_reply_source"), ()),
+        ("inbound_reply", ("VIBER_REPLY_VERSION", "VIBER_CAMPAIGN_REPLIED_VERSION", "VIBER_AGENT_REPLIED_SOURCE", "match_viber_sources", "read_reply_source"), ()),
         ("inbound_reply_page", ("INBOUND_REPLY_PAGE_VERSION", "VIBER_MATCHING_PAGE_VERSION", "render_inbound_reply"), ("upload_state", "inbound_reply")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",

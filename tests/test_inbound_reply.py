@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from inbound_reply import (
-    InboundReplyError, build_people_csv, match_viber_sources, normalized_phone,
+    VIBER_AGENT_REPLIED_SOURCE, InboundReplyError, build_people_csv, match_viber_sources, normalized_phone,
     people_rows, read_reply_source,
 )
 
@@ -16,12 +16,12 @@ from inbound_reply import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def source_csv(rows, *, pending=False, delimiter=","):
+def source_csv(rows, *, pending=False, message_type=None, delimiter=","):
     output = StringIO(newline="")
     writer = csv.writer(output, delimiter=delimiter)
     writer.writerow(["Contact Name" if pending else "Client Name", "Phone", "Bank Campaign", "Message Type"])
     for row in rows:
-        writer.writerow([*row, "Pending Reply" if pending else "Agent Reply"])
+        writer.writerow([*row, message_type or ("Pending Reply" if pending else "Agent Reply")])
     return output.getvalue().encode("utf-8-sig")
 
 
@@ -34,6 +34,24 @@ def make_report(logs, pending):
 
 
 class ViberMatchingTests(unittest.TestCase):
+    def test_corrected_campaign_file_controls_status_despite_message_type_labels(self):
+        logs = read_reply_source("message-logs.csv", source_csv([
+            ("Ana Cruz", "09171234567", "B2"), ("Ben Santos", "09181234567", "B2"),
+        ], message_type="Agent Reply"))
+        campaign = read_reply_source("campaign-replies.csv", source_csv([
+            ("ANA CRUZ", "09191234567", "B2"), ("Ana Cruz", "09171234567", "B2"),
+            ("Cara Reyes", "09201234567", "B2"),
+        ], pending=True, message_type="Inbound Reply"))
+        report = match_viber_sources(logs, campaign,
+                                     agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode="name")
+        self.assertEqual(report.agent_replied_source, "campaign_replies")
+        self.assertEqual(report.totals.unique_people, 3)
+        self.assertEqual(report.totals.agent_replied, 2)
+        self.assertEqual(report.totals.awaiting_reply, 1)
+        rows = {row["Person"].casefold(): row for row in people_rows(report)}
+        self.assertEqual(rows["ben santos"]["Agent replied"], "NO")
+        self.assertEqual(rows["cara reyes"]["Agent replied"], "YES")
+
     def test_multiple_accounts_phones_and_duplicate_messages_count_one_person(self):
         report = make_report([
             ("  Ana   Cruz ", "09171234567", "B2"),
@@ -176,7 +194,7 @@ class InboundReplyPageTests(unittest.TestCase):
 
         uploads = {
             "inbound_reply_viber_1_upload": Upload("message-logs.csv", source_csv([("Ana Cruz", "09171234567", "B2")])),
-            "inbound_reply_viber_2_upload": Upload("campaign-replies.csv", source_csv([("Ben Santos", "09181234567", "B2")], pending=True)),
+            "inbound_reply_viber_2_upload": Upload("campaign-replies.csv", source_csv([("Ben Santos", "09181234567", "B2")], pending=True, message_type="Inbound Reply")),
         }
         seen = []
         def uploader(label, **kwargs):
@@ -189,15 +207,20 @@ class InboundReplyPageTests(unittest.TestCase):
             self.assertEqual(len(set(seen)), 6)
             self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].totals.unique_people, 2)
             self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1", "0"])
+            self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].agent_replied_source, "campaign_replies")
+            # An old cached report with the reversed policy must rebuild for identical uploads.
+            cached = app.session_state["inbound_reply_viber_result"]
+            cached["signature"] = (1, "old reversed file roles")
+            app.run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertNotEqual(app.session_state["inbound_reply_viber_result"]["signature"], cached["signature"])
             uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([
                 ("ANA CRUZ", "09191234567", "B2"),
-            ], pending=True))
+            ], pending=True, message_type="Inbound Reply"))
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertEqual([metric.value for metric in app.metric], ["1", "1", "0", "1"])
-            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([
-                ("Ben Santos", "09181234567", "B2"),
-            ]))  # Wrong Message Type must block previous counts.
+            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", b"Wrong,Headers\n1,2\n")
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertTrue(app.error)
@@ -206,7 +229,7 @@ class InboundReplyPageTests(unittest.TestCase):
             del uploads["inbound_reply_viber_2_upload"]
             app.run(timeout=20)
             self.assertNotIn("inbound_reply_viber_result", app.session_state)
-            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([], pending=True))
+            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([], pending=True, message_type="Inbound Reply"))
             app.text_input(key="inbound_reply_campaign").set_value("Daily report").run(timeout=20)
             self.assertIn("report", app.session_state["inbound_reply_viber_result"])
             app.button(key="clear_all_files").click().run(timeout=20)
