@@ -29,7 +29,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 20
+INBOUND_REPLY_PAGE_VERSION = 21
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -341,7 +341,7 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
         "AGENT WORKED — EMAIL counts those customers with a matching Email History row containing a nonblank sent value."
     )
     if report.dc.unmatched_addresses:
-        st.warning(f"{report.dc.unmatched_addresses:,} email addresses were not found with a usable placement or area "
+        st.warning(f"{report.dc.unmatched_addresses:,} email addresses were not found with a usable campaign match "
                    "in the lookup files. They appear under Unmatched campaign. Upload the remaining lookup files to resolve them.")
     st.subheader("Email unreplied accounts by campaign")
     rows = "".join(f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
@@ -500,20 +500,22 @@ def render_inbound_reply() -> None:
         lookup_uploads = st.file_uploader(
             "Campaign lookup files", type=["xlsx", "csv"], accept_multiple_files=True,
             key=upload_widget_key("inbound_reply_email_lookup_uploads"),
-            help="Upload active-account files together in any order. Regular uses LEVEL or placement; GEO uses Area. "
+            help="Upload Regular, GEO, B2 and B4 lookup files together in any order. Keep B2 or B4 in those filenames. "
+                 "Regular uses LEVEL or placement; GEO uses Area. "
                  "Email uses email addresses; SMS and Viber use phone numbers. The OVERALL worksheet is used when available.",
         )
         st.caption("Regular: Level 1 → SBC Level 1, Level 2 → SBC Level 2, and so on. "
-                   "GEO: Region 3 → SBC Region 3; Mindanao → SBC Mindanao.")
+                   "GEO: Region 3 → SBC Region 3; Mindanao → SBC Mindanao. "
+                   "B2 → SBC B2; B4 → SBC B4. B2 takes priority for contacts in both bucket files.")
         email_lookup = prepare_email_lookup(lookup_uploads)
         if email_lookup is not None:
             for source in email_lookup.sources:
-                st.caption(f"{source.filename}: {len(source.campaigns_by_email):,} email addresses and "
+                label = f" ({source.campaign_label})" if source.campaign_label else ""
+                st.caption(f"{source.filename}{label}: {len(source.campaigns_by_email):,} email addresses and "
                            f"{len(source.campaigns_by_phone):,} phone numbers with campaigns "
                            f"from {', '.join(source.sheets)}.")
                 if source.missing_campaign_rows:
-                    st.warning(f"{source.filename}: {source.missing_campaign_rows:,} rows have contact details but no usable "
-                               "placement or area.")
+                    st.warning(f"{source.filename}: {source.missing_campaign_rows:,} rows have contact details but no usable campaign.")
 
     lookup_failed = bool(lookup_uploads) and email_lookup is None
     viber_report = prepare_viber_report(*viber_uploads, email_lookup, lookup_failed=lookup_failed)
