@@ -6,12 +6,10 @@ The Security Bank wordmark and icon are copied from the bank's official support 
 
 Assets were retrieved on October 29, 2026. The logo and bank name belong to Security Bank Corporation. They are bundled locally so the application does not depend on third-party image requests while running.
 
-The current seasonal presentation uses a dark purple background and orange Halloween accents. `halloween-sidebar.svg` is an original decorative illustration; it does not alter the bank's logo.
+The current seasonal presentation uses a deep evergreen background, cranberry red buttons, warm gold accents and falling snow. Streamlit's native theme in `.streamlit/config.toml` uses the same palette as `security-bank.css`.
 
-The ghost gently sways, floats and blinks using SVG/CSS animations. Its shadow follows the motion. All three animations stop when the browser requests reduced motion. No JavaScript, remote animation service or extra dependency is needed.
+`christmas-tree.svg` decorates the shared header with a Christmas tree, ornaments and presents. `christmas-garland.svg` adds evergreen garlands and red/gold baubles across the header. `christmas-winter.svg` places a snowy forest and snowman in the main page's free left margin on wide screens. The scene shrinks with the available margin and disappears on narrow screens. These are original local vector illustrations.
 
-The pumpkin and ghost scene sits near the bottom of the main page's empty left margin, using the existing `halloween-sidebar.svg` artwork. Its size follows the free space outside the centered 1280-pixel content container, up to 420 pixels wide. On narrow screens, the decorative scene disappears rather than overlapping forms or sidebar instructions. It stays visible in the main background when the sidebar is collapsed.
+Two repeating CSS snow layers move at different speeds behind the workspace. Snow uses no JavaScript, remote requests or extra dependencies, and its layers cannot capture clicks or file drops. When the browser requests reduced motion, the snow becomes a static background.
 
-`halloween-webs.svg` adds soft corner cobwebs and little silk highlights to the page background. `halloween-spiderman.svg` is a locally drawn, transparent vector decoration featuring a cute upside-down Spider-Man in the shared header. CSS gently sways him from the web thread and disables that animation when reduced motion is requested. Both decorations are bundled with the app, need no external requests, and cannot intercept clicks. The header rearranges for narrow screens so the artwork, bank logo and workspace name remain readable.
-
-`batman-icon.svg` is a locally drawn Batman-style bat silhouette used as a decorative CSS mask on the shared header's **Clear all files** button. The button keeps its text label and native keyboard behavior. Its gold accent matches the seasonal theme, and it wraps beneath the logo on small screens.
+`christmas-snowflake.svg` supplies the gold snowflake icon on **Clear all files**. The header rearranges on small screens to keep the logo, seasonal badge and controls readable. Earlier Halloween illustrations remain in the repository as unused assets.

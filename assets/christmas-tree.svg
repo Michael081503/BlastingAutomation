@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 210" fill="none">
+  <defs>
+    <linearGradient id="pine" x1="46" y1="40" x2="132" y2="170" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#65BA89"/><stop offset="1" stop-color="#176048"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="70" y1="8" x2="104" y2="42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF2BD"/><stop offset="1" stop-color="#DCA94F"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="91" cy="194" rx="72" ry="11" fill="#B9DAD4" opacity=".14"/>
+  <path d="M81 157h18v31H81z" fill="#9B6B47"/>
+  <path d="M90 35 55 85h16l-28 40h16l-35 47h132l-35-47h16L109 85h16L90 35Z" fill="url(#pine)"/>
+  <path d="m90 35-35 50h16l-8 12c23-1 39-8 46-12h16L90 35Z" fill="#86D0A3" opacity=".28"/>
+  <path d="M55 85c20 6 46 5 70 0M43 125c29 7 62 7 94 0M25 172c42 9 90 9 131 0" stroke="#D7EEE0" stroke-width="4" stroke-linecap="round"/>
+  <path d="M69 76c13 13 32 18 50 19M55 111c18 17 43 23 70 24M44 147c25 16 53 22 90 20" stroke="#EBCD83" stroke-width="3" stroke-linecap="round"/>
+  <path d="m90 12 5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1 5-11Z" fill="url(#gold)"/>
+  <circle cx="81" cy="78" r="6" fill="#D84E59"/><circle cx="105" cy="114" r="7" fill="#D84E59"/>
+  <circle cx="63" cy="142" r="7" fill="#C83C4D"/><circle cx="111" cy="156" r="6" fill="#E8C778"/>
+  <circle cx="74" cy="110" r="4" fill="#FFF0BC"/><circle cx="119" cy="141" r="4" fill="#FFF0BC"/>
+  <circle cx="84" cy="155" r="3" fill="#F8FAED"/><circle cx="100" cy="68" r="3" fill="#F8FAED"/>
+  <rect x="28" y="173" width="34" height="25" rx="3" fill="#BB3949"/>
+  <path d="M44 173v25m-16-15h34" stroke="#EBCD83" stroke-width="4"/>
+  <path d="M44 174c-14-1-13-14-6-10 4 2 6 10 6 10Zm0 0c14-1 13-14 6-10-4 2-6 10-6 10Z" stroke="#EBCD83" stroke-width="2"/>
+  <rect x="119" y="179" width="29" height="20" rx="3" fill="#D7E9DC"/>
+  <path d="M133 179v20m-14-12h29" stroke="#C74754" stroke-width="4"/>
+  <path d="M133 180c-11-1-11-12-5-9 3 2 5 9 5 9Zm0 0c11-1 11-12 5-9-3 2-5 9-5 9Z" stroke="#C74754" stroke-width="2"/>
+  <path d="M27 57v10m-5-5h10m116 24v10m-5-5h10m-4-62v8m-4-4h8" stroke="#EACD89" stroke-width="2" stroke-linecap="round" opacity=".75"/>
+</svg>

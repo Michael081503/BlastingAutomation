@@ -1,35 +1,80 @@
 :root {
     color-scheme: dark;
-    --sbc-orange: #f6923f;
-    --sbc-gold: #ffd091;
-    --sbc-purple: #b7a0e6;
-    --sbc-text: #f6f1fc;
-    --sbc-muted: #b8afc6;
-    --sbc-border: #373043;
-    --sbc-surface: #191420;
-    --sbc-halloween-scene: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR__");
-    --sbc-web-art: url("data:image/svg+xml;base64,__HALLOWEEN_WEBS__");
-    --sbc-bat-icon: url("data:image/svg+xml;base64,__BATMAN_ICON__");
+    --sbc-red: #c84350;
+    --sbc-gold: #edcc85;
+    --sbc-pine: #88cfaa;
+    --sbc-text: #f4f8f5;
+    --sbc-muted: #b5c9c0;
+    --sbc-border: #31534a;
+    --sbc-surface: #112d2b;
+    --sbc-winter-scene: url("data:image/svg+xml;base64,__WINTER_SCENE__");
+    --sbc-garland-art: url("data:image/svg+xml;base64,__CHRISTMAS_GARLAND__");
+    --sbc-snowflake-icon: url("data:image/svg+xml;base64,__SNOWFLAKE_ICON__");
 }
 
 [data-testid="stAppViewContainer"] {
+    position: relative;
+    isolation: isolate;
     background:
-        var(--sbc-web-art) right top / cover no-repeat,
-        radial-gradient(ellipse at 95% 0%, rgb(97 54 131 / 24%), transparent 46%),
-        radial-gradient(ellipse at 0% 85%, rgb(172 72 32 / 10%), transparent 46%),
-        #0f0c16;
+        radial-gradient(ellipse at 80% 0%, rgb(76 133 102 / 22%), transparent 55%),
+        radial-gradient(ellipse at 0% 90%, rgb(131 53 62 / 12%), transparent 50%),
+        #071d20;
     color: var(--sbc-text);
 }
 
+/* Tiled snow moves behind the workspace and never captures pointer input. */
+[data-testid="stAppViewContainer"]::before,
+[data-testid="stAppViewContainer"]::after {
+    content: "";
+    position: fixed;
+    inset: -320px 0;
+    z-index: -1;
+    pointer-events: none;
+    user-select: none;
+    background-repeat: repeat;
+    animation: sbc-snowfall 32s linear infinite;
+    animation-delay: -14s;
+    will-change: transform;
+}
+
+[data-testid="stAppViewContainer"]::before {
+    background-image:
+        radial-gradient(circle at 18px 38px, #edf6f4 1px, transparent 1.6px),
+        radial-gradient(circle at 92px 156px, #edf6f4 1px, transparent 1.6px),
+        radial-gradient(circle at 184px 82px, #edf6f4 1.3px, transparent 1.9px),
+        radial-gradient(circle at 242px 244px, #edf6f4 1px, transparent 1.6px),
+        radial-gradient(circle at 306px 294px, #edf6f4 1px, transparent 1.6px);
+    background-size: 340px 320px;
+    opacity: 0.42;
+}
+
+[data-testid="stAppViewContainer"]::after {
+    background-image:
+        radial-gradient(circle at 42px 84px, #fff 2px, transparent 2.8px),
+        radial-gradient(circle at 192px 224px, #fff 2.4px, transparent 3.2px),
+        radial-gradient(circle at 350px 146px, #fff 1.7px, transparent 2.5px),
+        radial-gradient(circle at 456px 298px, #fff 2px, transparent 2.8px);
+    background-size: 490px 320px;
+    opacity: 0.35;
+    animation-duration: 17s;
+    animation-delay: -6s;
+}
+
+@keyframes sbc-snowfall {
+    from { transform: translate3d(0, -320px, 0); }
+    to { transform: translate3d(0, 0, 0); }
+}
+
 [data-testid="stHeader"] {
-    background: #0f0c16;
-    border-bottom: 1px solid rgb(183 160 230 / 7%);
+    background: #071d20;
+    border-bottom: 1px solid rgb(237 204 133 / 12%);
 }
 
 [data-testid="stMain"] {
     min-height: 0;
     overflow-y: auto;
-    background: var(--sbc-halloween-scene) left 16px bottom 24px / clamp(0px, calc((100% - 1280px) / 2 - 32px), 420px) auto no-repeat;
+    background: var(--sbc-winter-scene) left 12px bottom 18px /
+        clamp(0px, calc((100% - 1280px) / 2 - 28px), 420px) auto no-repeat;
 }
 
 [data-testid="stMainBlockContainer"] {
@@ -48,12 +93,22 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 1.5rem;
-    padding: 0.7rem 1.6rem;
+    padding: 1rem 1.6rem 0.7rem;
     margin-bottom: 0.75rem;
-    background: linear-gradient(115deg, #201827, #18131f 65%, #2c1c2a);
-    border: 1px solid #493047;
+    background: linear-gradient(115deg, #163b31, #102b29 65%, #37272a);
+    border: 1px solid #59704e;
     border-radius: 18px;
     box-shadow: 0 10px 35px rgb(0 0 0 / 20%);
+}
+
+.st-key-sbc_workspace_header::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 48px;
+    background: var(--sbc-garland-art) center top / 400px auto repeat-x;
+    opacity: 0.9;
+    pointer-events: none;
 }
 
 .st-key-sbc_workspace_header::after {
@@ -61,7 +116,7 @@
     position: absolute;
     inset: auto 0 0;
     height: 3px;
-    background: linear-gradient(90deg, var(--sbc-orange), #a575cf 65%, #493047);
+    background: linear-gradient(90deg, var(--sbc-red), var(--sbc-gold), #69b38b);
     pointer-events: none;
 }
 
@@ -75,6 +130,7 @@
 }
 
 .st-key-sbc_workspace_actions {
+    position: relative;
     align-items: flex-end;
 }
 
@@ -84,9 +140,9 @@
     gap: 0.6rem;
     min-height: 44px;
     padding: 0.55rem 0.85rem;
-    color: #f6d58a;
-    background: #2b2530;
-    border: 1px solid #71603e;
+    color: #f4deab;
+    background: #24392e;
+    border: 1px solid #897447;
     border-radius: 10px;
     white-space: nowrap;
     transition: background 150ms ease, border-color 150ms ease;
@@ -94,18 +150,18 @@
 
 .st-key-clear_all_files [data-testid="stBaseButton-secondary"]::before {
     content: "";
-    flex: 0 0 1.7rem;
-    width: 1.7rem;
-    height: 1.1rem;
+    flex: 0 0 1.35rem;
+    width: 1.35rem;
+    height: 1.35rem;
     background: currentColor;
-    -webkit-mask: var(--sbc-bat-icon) center / contain no-repeat;
-    mask: var(--sbc-bat-icon) center / contain no-repeat;
+    -webkit-mask: var(--sbc-snowflake-icon) center / contain no-repeat;
+    mask: var(--sbc-snowflake-icon) center / contain no-repeat;
 }
 
 .st-key-clear_all_files [data-testid="stBaseButton-secondary"]:hover {
-    color: #ffe3a3;
-    background: #3a2f34;
-    border-color: #d6a754;
+    color: #fff1c8;
+    background: #324b3b;
+    border-color: var(--sbc-gold);
 }
 
 .st-key-clear_all_files [data-testid="stBaseButton-secondary"]:focus-visible {
@@ -117,10 +173,10 @@
     position: relative;
     flex: 0 1 280px;
     min-width: 0;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    border-radius: 0;
+    padding: 0.7rem 1rem;
+    background: #f4f8f1;
+    border: 1px solid rgb(237 204 133 / 35%);
+    border-radius: 12px;
 }
 
 .sbc-brand-logo {
@@ -132,25 +188,18 @@
 
 .sbc-header-mascot {
     position: relative;
-    flex: 0 0 116px;
-    height: 164px;
-    margin: -0.7rem 0;
+    flex: 0 0 118px;
+    height: 146px;
+    margin: -0.15rem 0;
     pointer-events: none;
     user-select: none;
 }
 
-.sbc-spiderman {
+.sbc-christmas-tree {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    transform-origin: 50% 0;
-    animation: sbc-spider-sway 5.5s ease-in-out infinite;
-}
-
-@keyframes sbc-spider-sway {
-    0%, 100% { transform: rotate(-4deg); }
-    50% { transform: rotate(4deg); }
 }
 
 .sbc-workspace-meta {
@@ -158,7 +207,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 0.6rem;
+    gap: 0.5rem;
 }
 
 .sbc-workspace-name {
@@ -175,23 +224,12 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.3rem 0.65rem;
-    color: #ffc48a;
-    background: #35232a;
-    border: 1px solid #64402e;
+    color: #f2dda9;
+    background: #2b3b2b;
+    border: 1px solid #6b7044;
     border-radius: 30px;
     font-size: 0.7rem;
     white-space: nowrap;
-}
-
-.sbc-cobweb {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 150px;
-    height: 140px;
-    color: #bda7cd;
-    opacity: 0.15;
-    pointer-events: none;
 }
 
 h1, h2, h3 {
@@ -204,10 +242,8 @@ h1 {
 }
 
 [data-testid="stSidebar"] {
-    background:
-        radial-gradient(ellipse at 0% 0%, #292034, transparent 60%),
-        #120e1a;
-    border-right: 1px solid #3a2b43;
+    background: radial-gradient(ellipse at 0% 0%, #1e4032, transparent 65%), #0c2523;
+    border-right: 1px solid #36554a;
 }
 
 [data-testid="stSidebarContent"] {
@@ -224,10 +260,9 @@ h1 {
     width: 238px;
     max-width: 100%;
     height: auto;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    border-radius: 0;
+    padding: 0.45rem 0.6rem;
+    background: #f4f8f1;
+    border-radius: 10px;
 }
 
 [data-testid="stSidebarNav"] {
@@ -238,47 +273,48 @@ h1 {
     min-height: 44px;
     margin: 0.2rem 0;
     padding: 0.65rem 0.8rem;
-    color: #c8bdd6;
+    color: #c4d7ce;
     border: 1px solid transparent;
     border-radius: 11px;
     transition: background 150ms ease, border-color 150ms ease;
 }
 
 [data-testid="stSidebarNav"] a:hover {
-    background: #251c31;
-    border-color: #473251;
+    background: #1c4034;
+    border-color: #456d58;
 }
 
 [data-testid="stSidebarNav"] a[aria-current="page"] {
-    color: #ffcc9c;
-    background: linear-gradient(100deg, #392522, #29202f);
-    border: 1px solid #70412c;
-    border-left: 3px solid var(--sbc-orange);
-    box-shadow: 0 3px 18px rgb(246 146 63 / 7%);
+    color: #f3dfb0;
+    background: linear-gradient(100deg, #284834, #193930);
+    border: 1px solid #6e774c;
+    border-left: 3px solid var(--sbc-gold);
+    box-shadow: 0 3px 18px rgb(237 204 133 / 7%);
 }
 
 [data-testid="stSidebarNav"] a[aria-current="page"] span {
-    color: #ffcc9c;
+    color: #f3dfb0;
 }
 
 [data-testid="stSidebarNavSeparator"] {
-    border-color: #3a2b43;
+    border-color: #36554a;
 }
 
 [data-testid="stFileUploaderDropzone"] {
-    background: linear-gradient(120deg, #1c1624, #211925);
-    border: 1.5px dashed #6e4c44;
+    background: linear-gradient(120deg, #122f2c, #19372f);
+    border: 1.5px dashed #68764e;
     border-radius: 14px;
     padding: 1.5rem;
 }
 
 [data-testid="stFileUploaderDropzone"]:hover {
-    border-color: var(--sbc-orange);
+    border-color: var(--sbc-gold);
 }
 
-[data-testid="stExpander"] {
-    background: var(--sbc-surface);
-    border: 1px solid var(--sbc-border);
+[data-testid="stExpander"],
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: rgb(17 45 43 / 96%);
+    border-color: var(--sbc-border);
     border-radius: 12px;
 }
 
@@ -287,70 +323,73 @@ h1 {
 }
 
 [data-testid="stMetric"] {
-    background: linear-gradient(125deg, #241c2e, #191420);
-    border: 1px solid #46334f;
-    border-top: 3px solid #b7a0e6;
+    background: linear-gradient(125deg, #1b3c32, #112d2b);
+    border: 1px solid #3d6551;
+    border-top: 3px solid var(--sbc-pine);
     border-radius: 16px;
     padding: 1.3rem 1.5rem;
     box-shadow: 0 6px 24px rgb(0 0 0 / 15%);
 }
 
 [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] {
-    background: linear-gradient(125deg, #2c201f, #191420);
-    border-color: #594034;
-    border-top-color: var(--sbc-orange);
+    background: linear-gradient(125deg, #3a282b, #112d2b);
+    border-color: #725047;
+    border-top-color: var(--sbc-red);
 }
 
 [data-testid="stMetricValue"] {
-    color: #e3d4ff;
+    color: #d4f0de;
     font-weight: 700;
     letter-spacing: -0.035em;
 }
 
 [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] [data-testid="stMetricValue"] {
-    color: #ffc892;
+    color: #f2cfad;
 }
 
-[data-testid="stMetricLabel"], [data-testid="stCaptionContainer"] {
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] p,
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {
     color: var(--sbc-muted);
 }
 
 [data-testid="stBaseButton-primary"] {
     min-height: 2.8rem;
-    color: #21130c;
-    background: var(--sbc-orange);
-    border-color: var(--sbc-orange);
+    color: #fff;
+    background: #b73543;
+    border-color: #cb5c65;
     border-radius: 10px;
     font-weight: 650;
-    box-shadow: 0 4px 18px rgb(246 146 63 / 14%);
+    box-shadow: 0 4px 18px rgb(200 67 80 / 14%);
 }
 
 [data-testid="stBaseButton-primary"]:hover {
-    color: #21130c;
-    background: #ffae67;
-    border-color: #ffae67;
+    color: #fff;
+    background: #c43d4b;
+    border-color: #e27b83;
 }
 
 [data-testid="stBaseButton-primary"]:disabled {
-    color: #aa9db3;
-    background: #3c2d3e;
-    border-color: #4a374c;
+    color: #a5bbb1;
+    background: #334840;
+    border-color: #496056;
     box-shadow: none;
 }
 
 [data-testid="stDownloadButton"] button,
 [data-testid="stFileUploaderDropzone"] button {
-    color: #f1dfcf;
-    background: #28202f;
-    border-color: #5a4148;
+    color: #ecf3e9;
+    background: #223d32;
+    border-color: #577459;
     border-radius: 10px;
 }
 
 [data-testid="stDownloadButton"] button:hover,
 [data-testid="stFileUploaderDropzone"] button:hover {
     color: var(--sbc-gold);
-    border-color: #cb8150;
-    background: #34242e;
+    border-color: #c1a76b;
+    background: #304a38;
 }
 
 @media (max-width: 1024px) {
@@ -375,10 +414,9 @@ h1 {
     .sbc-header-mascot {
         grid-column: 2;
         grid-row: 1;
-        height: 138px;
-        margin: -1rem 0;
+        height: 125px;
+        margin: -0.5rem 0;
     }
-
 }
 
 @media (max-width: 640px) {
@@ -419,17 +457,16 @@ h1 {
     }
 
     .sbc-bank-mark {
-        max-width: 190px;
+        max-width: 200px;
     }
 
     .sbc-header-mascot {
-        height: 126px;
+        height: 115px;
     }
 
     .sbc-workspace-meta {
-        max-width: none;
-        gap: 0.4rem;
         align-items: flex-start;
+        gap: 0.4rem;
     }
 
     .sbc-workspace-name {
@@ -438,29 +475,21 @@ h1 {
         text-align: left;
     }
 
-    .sbc-season-tag {
-        padding: 0.25rem 0.4rem;
-        font-size: 0.6rem;
-        white-space: normal;
-    }
-
     [data-testid="stMetric"] {
         padding: 1rem;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    :root {
-        --sbc-halloween-scene: url("data:image/svg+xml;base64,__HALLOWEEN_SIDEBAR_STILL__");
+    [data-testid="stAppViewContainer"]::before,
+    [data-testid="stAppViewContainer"]::after {
+        animation: none;
+        will-change: auto;
+        opacity: 0.2;
     }
 
     [data-testid="stSidebarNav"] a,
     .st-key-clear_all_files [data-testid="stBaseButton-secondary"] {
         transition: none;
-    }
-
-    .sbc-spiderman {
-        animation: none;
-        transform: none;
     }
 }
