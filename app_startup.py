@@ -145,6 +145,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ("autostat", (
             "AUTOSTAT_VERSION", "AUTOSTAT_REMARK_BY", "PREFERRED_ACCOUNT_HEADER", "EMAIL_HEADERS", "VIBER_HEADERS", "build_autostat_exports",
             "AUTOSTAT_24_HOUR_TIME_VERSION", "AUTOSTAT_SLASH_DATE_VERSION", "AUTOSTAT_VIBER_STATUS_VERSION",
+            "AUTOSTAT_MONTH_FIRST_AM_PM_VERSION",
             "build_bel_exports", "has_bel_primary_keys",
             "ACCOUNT_DEDUP_VERSION", "ACCOUNT_IDENTITY_VERSION", "unique_account_contacts",
             "COMPILED_OUTPUT_VERSION", "BLANK_TIMESTAMP_VERSION",

@@ -26,9 +26,11 @@ from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
 
-AUTOSTAT_VERSION = 17
+AUTOSTAT_VERSION = 18
+# Retain legacy markers so already-loaded startup helpers remain compatible.
 AUTOSTAT_24_HOUR_TIME_VERSION = 1
 AUTOSTAT_SLASH_DATE_VERSION = 1
+AUTOSTAT_MONTH_FIRST_AM_PM_VERSION = 1
 AUTOSTAT_VIBER_STATUS_VERSION = 1
 AUTOSTAT_REMARK_BY = "MBURGOS"
 ACCOUNT_TEXT_EXPORT_VERSION = 2
@@ -608,7 +610,9 @@ def build_autostat_exports(
     sources = [source for source in sources if not autostat_source_excluded(source.name)]
     if not sources:
         raise AutomationError("All selected files are excluded from AUTOSTAT: SBC INSURANCE, B2 and B4.")
-    time_text = "" if timestamp is None else timestamp.strftime("%Y/%m/%d %H:%M:%S")
+    time_text = "" if timestamp is None else (
+        timestamp.strftime("%m/%d/%Y %I:%M:%S") + (" AM" if timestamp.hour < 12 else " PM")
+    )
     summaries = []
     channels = {"Email": [], "Viber": []}
     seen = {"email": set(), "viber": set()}

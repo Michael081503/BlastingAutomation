@@ -15,7 +15,8 @@ from streamlit.testing.v1 import AppTest
 from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, create_default_csv_template
 from autostat import (
     EMAIL_HEADERS, REMARK_PREFIX, VIBER_HEADERS, SourceSelection,
-    autostat_source_excluded, build_autostat_excel, build_autostat_exports, build_bel_exports, extract_contacts, has_bel_primary_keys,
+    autostat_source_excluded, build_autostat_channel_excel, build_autostat_excel, build_autostat_excel_zip,
+    build_autostat_exports, build_bel_exports, extract_contacts, has_bel_primary_keys,
     inspect_contact_source, split_bel_contacts, unique_account_contacts, validated_phone,
 )
 from export_config import AUTOSTAT_BEL_FILENAMES
@@ -81,14 +82,14 @@ class PhoneTests(unittest.TestCase):
 
 
 class AutostatTests(unittest.TestCase):
-    def test_timestamps_use_24_hour_time_in_csv_previews_zip_and_excel(self):
+    def test_geo_reco_timestamps_use_month_first_dates_and_twelve_hour_time_in_all_outputs(self):
         data = b'primary_key,cardnumber,email,phone\nBEL-1,0001,one@example.com,09171234567\n'
         source = SourceSelection('contacts.csv', data, inspect_contact_source(data, '.csv')[0])
-        for hour in (0, 7, 12, 15):
+        for hour, clock in ((0, "12:04:05 AM"), (7, "07:04:05 AM"), (12, "12:04:05 PM"),
+                            (15, "03:04:05 PM"), (23, "11:04:05 PM")):
             timestamp = NOW.replace(hour=hour)
             for builder in (build_autostat_exports, build_bel_exports):
-                date = '2026/10/28' if builder is build_autostat_exports else '2026-10-28'
-                expected = f'{date} {hour:02d}:04:05'
+                expected = f'10/28/2026 {clock}' if builder is build_autostat_exports else f'2026-10-28 {hour:02d}:04:05'
                 with self.subTest(hour=hour, builder=builder.__name__):
                     bundle = builder([source], timestamp=timestamp)
                     with ZipFile(BytesIO(bundle.zip_data)) as archive:
@@ -107,6 +108,19 @@ class AutostatTests(unittest.TestCase):
                             ))
                     finally:
                         workbook.close()
+                    for file in bundle.files:
+                        workbook = load_workbook(BytesIO(build_autostat_channel_excel(file)))
+                        try:
+                            self.assertTrue(all(row[0].value == expected for row in workbook.active.iter_rows(min_row=2)))
+                        finally:
+                            workbook.close()
+                    with ZipFile(BytesIO(build_autostat_excel_zip(bundle))) as archive:
+                        for name in archive.namelist():
+                            workbook = load_workbook(BytesIO(archive.read(name)))
+                            try:
+                                self.assertTrue(all(row[0].value == expected for row in workbook.active.iter_rows(min_row=2)))
+                            finally:
+                                workbook.close()
 
     def test_whole_number_accounts_lose_only_zero_decimals_and_remain_exact_text_in_all_outputs(self):
         cases = [
@@ -589,7 +603,7 @@ class AutostatTests(unittest.TestCase):
         self.assertEqual(tuple(exported_rows(email)[0]), EMAIL_HEADERS)
         self.assertEqual(tuple(exported_rows(viber)[0]), VIBER_HEADERS)
         first = exported_rows(email)[0]
-        self.assertEqual(first["Time"], "2026/10/28 15:04:05")
+        self.assertEqual(first["Time"], "10/28/2026 03:04:05 PM")
         self.assertEqual(first["Account No."], "00001")
         self.assertEqual(first["Status"], "EMAIL BLAST SENT - WAITING FOR REPLY")
         self.assertEqual(first["Remark By"], "MBURGOS")
@@ -839,7 +853,7 @@ class AutostatAppTests(unittest.TestCase):
             timestamp = app.session_state["autostat_result"]["timestamp"]
             self.assertEqual(timestamp.tzinfo, MANILA_TIMEZONE)
             for file in app.session_state["autostat_result"]["bundle"].files:
-                self.assertEqual(exported_rows(file)[0]["Time"], timestamp.strftime("%Y/%m/%d %H:%M:%S"))
+                self.assertEqual(exported_rows(file)[0]["Time"], timestamp.strftime("%m/%d/%Y %I:%M:%S %p"))
 
             app.checkbox(key="autostat_blank_time").set_value(True).run(timeout=20)
             self.assertIsNone(app.session_state["autostat_result"]["timestamp"])
@@ -864,7 +878,7 @@ class AutostatAppTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.error), 0)
             for file in app.session_state["autostat_result"]["bundle"].files:
-                self.assertEqual(exported_rows(file)[0]["Time"], manual_timestamp.strftime("%Y/%m/%d %H:%M:%S"))
+                self.assertEqual(exported_rows(file)[0]["Time"], manual_timestamp.strftime("%m/%d/%Y %I:%M:%S %p"))
 
     def test_bel_cards_and_cardnumber_only_uploads_compile_into_two_channel_downloads(self):
         data = b'primary_key,email,PHONE\n@BEL-1,bel@example.com,09171234567\n00001234,cards@example.com,09181234567\n'

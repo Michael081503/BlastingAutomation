@@ -67,6 +67,7 @@ def render_geo_autostat(
         st.text_input("Remark By", key="geo_autostat_remark_by", disabled=True)
         remark_by = AUTOSTAT_REMARK_BY
         blank_time = st.checkbox("Leave date and time blank", key="geo_autostat_blank_time")
+        st.caption("Date: MM/dd/yyyy; Time: hh:mm:ss AM/PM.")
     signature = (
         GEO_AUTOSTAT_VERSION, AUTOSTAT_VERSION, EMAIL_VALIDATION_VERSION, OB_SORT_VERSION,
         name, hashlib.sha256(data).hexdigest(), sheet_name, header_row,

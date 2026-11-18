@@ -203,18 +203,18 @@ class StartupTests(unittest.TestCase):
             assert refresh_application_modules() == set()
         """)
 
-    def test_cached_autostat_refreshes_to_slash_dates_and_24_hour_timestamps(self):
+    def test_cached_autostat_refreshes_to_month_first_dates_and_am_pm_timestamps(self):
         self.run_isolated("""
             from datetime import datetime
             import autostat, autostat_page, geo_autostat
-            del autostat.AUTOSTAT_SLASH_DATE_VERSION
+            del autostat.AUTOSTAT_MONTH_FIRST_AM_PM_VERSION
             from app_startup import refresh_application_modules
             refreshed = refresh_application_modules()
             assert {'autostat', 'autostat_page', 'geo_autostat'} <= refreshed
             data = b'cardnumber,email\\n0001,one@example.com\\n'
             source = autostat.SourceSelection('contacts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
             bundle = autostat_page.build_autostat_exports([source], timestamp=datetime(2026, 11, 4, 16, 30))
-            assert bundle.files[0].preview[0]['Time'] == '2026/11/04 16:30:00'
+            assert bundle.files[0].preview[0]['Time'] == '11/04/2026 04:30:00 PM'
             assert refresh_application_modules() == set()
         """)
 
@@ -412,7 +412,7 @@ class StartupTests(unittest.TestCase):
             source = autostat.SourceSelection('accounts.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
             bundle = autostat_page.build_autostat_exports([source], timestamp=None)
             assert [row['Account No.'] for row in bundle.files[0].preview] == ['5156041234567897', '000123']
-            assert autostat_page.AUTOSTAT_VERSION == 17
+            assert autostat_page.AUTOSTAT_VERSION == 18
             assert refresh_application_modules() == set()
         """)
 
@@ -435,7 +435,7 @@ class StartupTests(unittest.TestCase):
             bundle = b2_autostat.build_b2_autostat_exports([b2_autostat.B2ActivitySource(source)], timestamp=None)
             assert [row['Account No.'] for row in bundle.files[0].preview] == ['0001', '0003']
             assert bundle.summary[0]['Source error rows skipped'] == 1
-            assert autostat.AUTOSTAT_VERSION == 17
+            assert autostat.AUTOSTAT_VERSION == 18
             assert autostat_page.build_autostat_exports is autostat.build_autostat_exports
             assert refresh_application_modules() == set()
         """)
@@ -525,7 +525,7 @@ class StartupTests(unittest.TestCase):
             assert [file.filename for file in bundle.files] == ['AUTOSTAT_Email.csv', 'AUTOSTAT_Viber.csv']
             assert [file.count for file in bundle.files] == [2, 2]
             assert len(bundle.summary) == 2
-            assert autostat.AUTOSTAT_VERSION == 17
+            assert autostat.AUTOSTAT_VERSION == 18
             assert autostat_page.AUTOSTAT_PAGE_VERSION == 13
             assert refresh_application_modules() == set()
         """)

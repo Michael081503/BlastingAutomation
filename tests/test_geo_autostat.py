@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import unittest
+from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from streamlit.testing.v1 import AppTest
 
 from autostat import build_autostat_channel_excel, build_autostat_excel, build_autostat_excel_zip, build_autostat_exports
 from geo_autostat import mapped_contact_source
+from folder_output import MANILA_TIMEZONE
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +55,42 @@ def log_rows(file):
 
 
 class AutomaticGeoAutostatTests(unittest.TestCase):
+    def test_geo_and_reco_use_requested_date_time_format_and_replace_cached_policy(self):
+        expected = "09/03/2020 06:30:30 PM"
+        stamp = datetime(2020, 9, 3, 18, 30, 30, tzinfo=MANILA_TIMEZONE)
+        for geo in (False, True):
+            with self.subTest(workflow="GEO" if geo else "RECO"), \
+                    patch("geo_autostat.datetime") as clock, patch("streamlit.download_button") as downloads:
+                clock.now.return_value = stamp
+                app = AppTest.from_file(str(ROOT / "tests" / "fixtures" / "geo_autostat_app.py"))
+                app.session_state["source_name"] = "GEO.xlsx" if geo else "RECO.xlsx"
+                app.session_state["source_data"] = workbook_data(geo_negative=geo)
+                app.session_state["header_count"] = 10 if geo else 9
+                app.run(timeout=20)
+                self.assertFalse(app.exception)
+                result = app.session_state["geo_autostat_result"]
+                for file in result["bundle"].files:
+                    self.assertTrue(all(row["Time"] == expected for row in log_rows(file)))
+                for key in ("geo_autostat_email_excel", "geo_autostat_viber_excel"):
+                    call = next(call for call in downloads.call_args_list if call.kwargs.get("key") == key)
+                    workbook = load_workbook(BytesIO(call.args[1]()))
+                    try:
+                        self.assertTrue(all(row[0].value == expected for row in workbook.active.iter_rows(min_row=2)))
+                    finally:
+                        workbook.close()
+                app.run(timeout=20)
+                self.assertEqual(clock.now.call_count, 1)
+                signature = result["signature"]
+                app.session_state["geo_autostat_result"] = {**result, "signature": (signature[0], 17, *signature[2:])}
+                app.run(timeout=20)
+                self.assertFalse(app.exception)
+                self.assertEqual(clock.now.call_count, 2)
+                app.checkbox(key="geo_autostat_blank_time").set_value(True).run(timeout=20)
+                self.assertFalse(app.exception)
+                self.assertIsNone(app.session_state["geo_autostat_result"]["timestamp"])
+                for file in app.session_state["geo_autostat_result"]["bundle"].files:
+                    self.assertTrue(all(row["Time"] == "" for row in log_rows(file)))
+
     def test_separate_email_viber_and_zip_downloads_follow_template_on_geo_and_reco(self):
         upload = Upload(workbook_data())
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: upload if kw.get("key") == "source_upload" else None), \

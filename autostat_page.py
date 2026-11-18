@@ -76,13 +76,18 @@ def _render_autostat_uploads(
                 "Default collector (when missing in the source)", key=f"{state_prefix}collector",
             )
         blank_timestamp = st.checkbox("Leave date and time blank", key=f"{state_prefix}blank_time")
+        if not b2:
+            st.caption("Date: MM/dd/yyyy; Time: hh:mm:ss AM/PM.")
         current_time = st.checkbox(
             "Use current Manila date and time", value=True, key=f"{state_prefix}current_time", disabled=blank_timestamp,
         )
         if not blank_timestamp and not current_time:
             default = st.session_state.setdefault(f"{state_prefix}default_time", datetime.now(MANILA_TIMEZONE))
             left, right = st.columns(2)
-            log_date = left.date_input("Log date (Asia/Manila)", default.date(), key=f"{state_prefix}date")
+            log_date = left.date_input(
+                "Log date (Asia/Manila)", default.date(), key=f"{state_prefix}date",
+                format="YYYY/MM/DD" if b2 else "MM/DD/YYYY",
+            )
             log_time = right.time_input("Log time (Asia/Manila)", default.time().replace(microsecond=0), key=f"{state_prefix}time")
             fixed_timestamp = datetime.combine(log_date, log_time, tzinfo=MANILA_TIMEZONE)
     if not uploads:
