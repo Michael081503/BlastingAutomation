@@ -39,8 +39,8 @@ class SmsOutputTests(unittest.TestCase):
                 self.name = name
 
         data = csv_bytes(PHONE_HEADERS, [("0001", "One", "09171234567", "A", "Message")])
-        uploads = {"inbound_reply_sms_1_upload": Upload("accounts.csv", data),
-                   "inbound_reply_sms_2_upload": Upload("replied.csv", data)}
+        uploads = {"inbound_reply_sms_1_upload": Upload("replied.csv", data),
+                   "inbound_reply_sms_2_upload": Upload("accounts.csv", data)}
         with patch("branding.render_bank_branding"), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
                 patch("streamlit.download_button") as downloads:
@@ -119,7 +119,7 @@ class SmsOutputTests(unittest.TestCase):
 
         accounts, replies = sms_files()
         uploads = {
-            "inbound_reply_sms_1_upload": Upload("accounts.csv", accounts),
+            "inbound_reply_sms_2_upload": Upload("accounts.csv", accounts),
             "inbound_reply_email_1_upload": Upload("history.csv", csv_bytes(HISTORY_HEADERS, [])),
             "inbound_reply_email_2_upload": Upload("DC.csv", csv_bytes(DC_HEADERS, [
                 ("E1", "base@example.com", "Respond Now", "Email Base", None, None),
@@ -140,14 +140,15 @@ class SmsOutputTests(unittest.TestCase):
             self.assertIn("Incomplete", book["SMS Unreplied"]["B1"].value)
             self.assertIsNone(book["SMS Unreplied"]["B2"].value)
             book.close()
-            uploads["inbound_reply_sms_2_upload"] = Upload("replied.csv", replies)
+            uploads["inbound_reply_sms_1_upload"] = Upload("replied.csv", replies)
             app.run(timeout=20)
             book = output_book()
             self.assertEqual(book["SMS Unreplied"]["B2"].value, 2)
             self.assertEqual(len(detail_rows(book["SMS Unreplied"])), 2)
+            self.assertEqual({row["Source: ID"] for row in detail_rows(book["SMS Unreplied"])}, {"000008", "000010"})
             book.close()
             self.assertIn("report", app.session_state["inbound_reply_sms_result"])
-            uploads["inbound_reply_sms_2_upload"] = Upload("replied.csv", b"Wrong,Headers\n1,2\n")
+            uploads["inbound_reply_sms_1_upload"] = Upload("replied.csv", b"Wrong,Headers\n1,2\n")
             app.run(timeout=20)
             self.assertTrue(app.error)
             book = output_book()
@@ -157,7 +158,7 @@ class SmsOutputTests(unittest.TestCase):
             self.assertEqual(book["Email Unreplied"]["B2"].value, 1)
             book.close()
             self.assertNotIn("report", app.session_state["inbound_reply_sms_result"])
-            del uploads["inbound_reply_sms_1_upload"]
+            del uploads["inbound_reply_sms_2_upload"]
             app.run(timeout=20)
             self.assertNotIn("inbound_reply_sms_result", app.session_state)
             downloads.reset_mock()

@@ -24,7 +24,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 12
+INBOUND_REPLY_PAGE_VERSION = 13
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -32,6 +32,7 @@ MANUAL_CAMPAIGN_TOTALS_VERSION = 1
 GROUPED_SUMMARY_OUTPUT_VERSION = 1
 VISIBLE_WORKSPACE_SECTIONS_VERSION = 1
 SMS_MATCHING_PAGE_VERSION = 1
+AGENT_FIRST_UPLOADS_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
@@ -131,25 +132,25 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
     """
 
 
-def prepare_viber_report(log_upload, campaign_upload) -> ViberReplyReport | None:
+def prepare_viber_report(agent_upload, customer_upload) -> ViberReplyReport | None:
     """Keep prepared files session-local and invalidate on upload content changes."""
-    if log_upload is None or campaign_upload is None:
+    if agent_upload is None or customer_upload is None:
         st.session_state.pop("inbound_reply_viber_result", None)
         return None
-    log_bytes, campaign_bytes = log_upload.getvalue(), campaign_upload.getvalue()
-    signature = (VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE,
-                 sha256(log_bytes).hexdigest(), sha256(campaign_bytes).hexdigest(),
-                 log_upload.name, campaign_upload.name)
+    agent_bytes, customer_bytes = agent_upload.getvalue(), customer_upload.getvalue()
+    signature = (AGENT_FIRST_UPLOADS_VERSION, VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE,
+                 sha256(agent_bytes).hexdigest(), sha256(customer_bytes).hexdigest(),
+                 agent_upload.name, customer_upload.name)
     cached = st.session_state.get("inbound_reply_viber_result")
     if cached is None or cached["signature"] != signature:
         st.session_state.pop("inbound_reply_viber_result", None)
         try:
-            if log_bytes == campaign_bytes:
-                raise InboundReplyError("The two Viber uploads are identical. Upload message logs and campaign replies separately.")
-            logs = read_reply_source(log_upload.name, log_bytes)
-            campaign_replies = read_reply_source(campaign_upload.name, campaign_bytes)
+            if agent_bytes == customer_bytes:
+                raise InboundReplyError("The two Viber uploads are identical. Upload agent replies and customer replies separately.")
+            customers = read_reply_source(customer_upload.name, customer_bytes)
+            agents = read_reply_source(agent_upload.name, agent_bytes)
             # The user's corrected file roles determine status; Message Type is source data.
-            report = match_viber_sources(logs, campaign_replies,
+            report = match_viber_sources(customers, agents,
                                          agent_replied_source=VIBER_AGENT_REPLIED_SOURCE, match_mode=VIBER_MATCH_MODE)
             cached = {"signature": signature, "report": report}
         except InboundReplyError as error:
@@ -186,13 +187,13 @@ def prepare_email_report(history_upload, dc_upload) -> EmailReplyReport | None:
     return cached["report"]
 
 
-def prepare_sms_report(account_upload, replied_upload) -> ViberReplyReport | None:
+def prepare_sms_report(replied_upload, account_upload) -> ViberReplyReport | None:
     """SMS follows the phone/campaign matching policy used by Viber."""
     if account_upload is None or replied_upload is None:
         st.session_state.pop("inbound_reply_sms_result", None)
         return None
     account_bytes, replied_bytes = account_upload.getvalue(), replied_upload.getvalue()
-    signature = (SMS_MATCHING_PAGE_VERSION, VIBER_REPLY_VERSION,
+    signature = (AGENT_FIRST_UPLOADS_VERSION, SMS_MATCHING_PAGE_VERSION, VIBER_REPLY_VERSION,
                  sha256(account_bytes).hexdigest(), sha256(replied_bytes).hexdigest(),
                  account_upload.name, replied_upload.name)
     cached = st.session_state.get("inbound_reply_sms_result")
@@ -231,8 +232,8 @@ def render_sms_details(report: ViberReplyReport) -> None:
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply)):
         column.metric(label, f"{value:,}")
     st.caption(
-        "SMS matches normalized phone numbers within each campaign. Upload the account/message list first "
-        "and the agent-replied list second. Each file needs Phone and Campaign or Bank Campaign columns. "
+        "SMS matches normalized phone numbers within each campaign. Upload agent replies first "
+        "and customer replies second. Each file needs Phone and Campaign or Bank Campaign columns. "
         "SMS Unreplied in the main output workbook contains the full account details."
     )
     excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows + report.excluded_phone_rows
@@ -291,7 +292,7 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply, totals.matched_both_files)):
         column.metric(label, f"{value:,}")
     st.caption(
-        "Viber Reply counts unique phone numbers across both files. Agent Worked counts phone numbers in campaign replies, "
+        "Viber Reply counts unique phone numbers across both files. Agent Worked counts phone numbers in the agent-replies file, "
         "divided by Viber Reply for the percentage. Each campaign counts a phone number once; "
         "the totals above count each phone number once across all campaigns."
     )
@@ -324,15 +325,15 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
     with st.container():
         st.markdown("**Viber matching details**")
         st.write(
-            f"Message logs: {len(report.message_logs.records):,} rows. "
-            f"Campaign replies: {len(report.campaign_replies.records):,} rows. "
+            f"Agent replies: {len(report.campaign_replies.records):,} rows. "
+            f"Customer replies: {len(report.message_logs.records):,} rows. "
             f"Combined into {totals.unique_people:,} unique phone numbers."
         )
         st.caption(
             "Matching uses phone numbers, normalizing spaces, punctuation and Philippine +63/0 formats. "
             "Names are shown for reference. Rows without a usable phone number are excluded and counted. "
             "An agent reply takes priority over pending entries for the same phone number and campaign. "
-            "Campaign replies identify phone numbers replied to by agents; numbers found only in message logs await a reply. "
+            "Numbers found only in the customer-replies file await an agent reply. "
             "All uploaded rows are included; Report date labels the report."
         )
         excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows + report.excluded_phone_rows
@@ -375,22 +376,22 @@ def render_inbound_reply() -> None:
     sms_uploads = []
     with st.container(border=True, key="inbound_upload_files"):
         st.subheader("Upload files")
-        st.caption("Upload two files for each channel you want to process.")
+        st.caption("Upload two files for each channel you want to process: file 1 is agent replies; file 2 is customer replies.")
         uploaded_count = 0
         for column, channel in zip(st.columns(3), CHANNELS):
             with column:
                 st.markdown(f"**{channel}**")
                 channel_count = 0
                 for number in (1, 2):
-                    label = f"{channel} file {number}"
-                    if channel == "VIBER":
-                        label = "Viber message logs — comparison list" if number == 1 else "Viber campaign replies — replied by agents"
-                    elif channel == "EMAIL":
-                        label = "Email History — sent agent replies" if number == 1 else "Email DC Checking — account list"
-                    elif channel == "SMS":
-                        label = "SMS account/message list — comparison list" if number == 1 else "SMS agent replies — replied accounts"
+                    role = "Agent replies" if number == 1 else "Customer replies"
+                    label = f"{channel} file {number} — {role}"
+                    help_text = None
+                    if channel == "EMAIL":
+                        help_text = "Email History with sent agent replies." if number == 1 else "DC Checking customer account list."
+                    elif channel == "VIBER":
+                        help_text = "Campaign replies export containing agent-replied accounts." if number == 1 else "Message logs containing customer replies to compare."
                     upload = st.file_uploader(
-                        label, type=["xlsx", "csv"],
+                        label, type=["xlsx", "csv"], help=help_text,
                         key=upload_widget_key(f"inbound_reply_{channel.lower()}_{number}_upload"),
                     )
                     channel_count += upload is not None

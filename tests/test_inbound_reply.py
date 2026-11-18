@@ -304,8 +304,8 @@ class InboundReplyPageTests(unittest.TestCase):
                 self.name = name
 
         uploads = {
-            "inbound_reply_viber_1_upload": Upload("message-logs.csv", source_csv([("Ana Cruz", "09171234567", "B2")])),
-            "inbound_reply_viber_2_upload": Upload("campaign-replies.csv", source_csv([], pending=True)),
+            "inbound_reply_viber_1_upload": Upload("campaign-replies.csv", source_csv([], pending=True)),
+            "inbound_reply_viber_2_upload": Upload("message-logs.csv", source_csv([("Ana Cruz", "09171234567", "B2")])),
         }
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
@@ -353,18 +353,24 @@ class InboundReplyPageTests(unittest.TestCase):
                 self.name = name
 
         uploads = {
-            "inbound_reply_viber_1_upload": Upload("message-logs.csv", source_csv([("Ana Cruz", "09171234567", "B2")])),
-            "inbound_reply_viber_2_upload": Upload("campaign-replies.csv", source_csv([("Ben Santos", "09181234567", "B2")], pending=True, message_type="Inbound Reply")),
+            "inbound_reply_viber_1_upload": Upload("campaign-replies.csv", source_csv([("Ben Santos", "09181234567", "B2")], pending=True, message_type="Inbound Reply")),
+            "inbound_reply_viber_2_upload": Upload("message-logs.csv", source_csv([("Ana Cruz", "09171234567", "B2")])),
         }
         seen = []
+        seen_labels = {}
         def uploader(label, **kwargs):
             seen.append(kwargs["key"])
+            seen_labels[kwargs["key"]] = label
             return uploads.get(kwargs["key"])
 
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
             self.assertEqual(len(set(seen)), 6)
+            for channel in ("SMS", "EMAIL", "VIBER"):
+                for number, role in ((1, "Agent replies"), (2, "Customer replies")):
+                    self.assertEqual(seen_labels[f"inbound_reply_{channel.lower()}_{number}_upload"],
+                                     f"{channel} file {number} — {role}")
             self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].totals.unique_people, 2)
             self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1", "0"])
             self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].agent_replied_source, "campaign_replies")
@@ -375,28 +381,28 @@ class InboundReplyPageTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertNotEqual(app.session_state["inbound_reply_viber_result"]["signature"], cached["signature"])
-            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([
+            uploads["inbound_reply_viber_1_upload"] = Upload("campaign-replies.csv", source_csv([
                 ("ANA CRUZ", "09191234567", "B2"),
             ], pending=True, message_type="Inbound Reply"))
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1", "0"])
-            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([
+            uploads["inbound_reply_viber_1_upload"] = Upload("campaign-replies.csv", source_csv([
                 ("Different Name", "+63 917 123 4567", "B2"),
             ], pending=True, message_type="Inbound Reply"))
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertEqual([metric.value for metric in app.metric], ["1", "1", "0", "1"])
-            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", b"Wrong,Headers\n1,2\n")
+            uploads["inbound_reply_viber_1_upload"] = Upload("campaign-replies.csv", b"Wrong,Headers\n1,2\n")
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertTrue(app.error)
             self.assertEqual(len(app.metric), 0)
             self.assertNotIn("report", app.session_state["inbound_reply_viber_result"])
-            del uploads["inbound_reply_viber_2_upload"]
+            del uploads["inbound_reply_viber_1_upload"]
             app.run(timeout=20)
             self.assertNotIn("inbound_reply_viber_result", app.session_state)
-            uploads["inbound_reply_viber_2_upload"] = Upload("campaign-replies.csv", source_csv([], pending=True, message_type="Inbound Reply"))
+            uploads["inbound_reply_viber_1_upload"] = Upload("campaign-replies.csv", source_csv([], pending=True, message_type="Inbound Reply"))
             app.text_input(key="inbound_reply_campaign").set_value("Daily report").run(timeout=20)
             self.assertIn("report", app.session_state["inbound_reply_viber_result"])
             app.button(key="clear_all_files").click().run(timeout=20)
