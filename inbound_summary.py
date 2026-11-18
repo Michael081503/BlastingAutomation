@@ -8,7 +8,8 @@ from io import BytesIO
 from inbound_reply import InboundReplyError, normalized_campaign, normalized_phone, unreplied_records
 
 
-INBOUND_SUMMARY_VERSION = 1
+INBOUND_SUMMARY_VERSION = 2
+CHANNEL_UNREPLIED_SHEETS_VERSION = 1
 PERCENT_COLUMNS = frozenset({3, 5, 7, 13, 15, 17})
 
 
@@ -63,27 +64,27 @@ def display_cell(value, column: int) -> str:
     return f"{value:,}" if isinstance(value, int) else str(value)
 
 
-def _combined_details(viber_report=None, email_report=None):
-    """Keep every original source field under a clearly identified source header."""
+def _channel_details(channel: str, report):
+    """Keep a channel's original account fields and validate its unreplied total."""
     fields = []
     records = []
-    if email_report is not None:
-        for record in email_report.accounts:
-            if record.email not in email_report.replied_emails:
+    source_headers = ()
+    if report is not None and channel == "EMAIL":
+        source_headers = report.dc.headers
+        for record in report.accounts:
+            if record.email not in report.replied_emails:
                 records.append(("EMAIL", record.campaign, "", "", record.email,
-                                email_report.dc.headers, record.source_values))
-    if viber_report is not None:
-        source = (viber_report.message_logs if viber_report.agent_replied_source == "campaign_replies"
-                  else viber_report.campaign_replies)
-        for record in unreplied_records(viber_report):
-            records.append(("VIBER", record.campaign, record.name, normalized_phone(record.phone), "",
+                                source_headers, record.source_values))
+    elif report is not None:
+        source = (report.message_logs if report.agent_replied_source == "campaign_replies"
+                  else report.campaign_replies)
+        source_headers = source.headers
+        for record in unreplied_records(report):
+            records.append((channel, record.campaign, record.name, normalized_phone(record.phone), "",
                             source.headers, record.source_values))
-    for _, _, _, _, _, headers, _ in records:
-        for index, header in enumerate(headers):
-            # Column position distinguishes repeated headers in an original workbook.
-            field = (header or f"Column {index + 1}", sum(item == header for item in headers[:index]))
-            if field not in fields:
-                fields.append(field)
+    for index, header in enumerate(source_headers):
+        # Column position distinguishes repeated headers in an original workbook.
+        fields.append((header or f"Column {index + 1}", sum(item == header for item in source_headers[:index])))
     rows = []
     for channel, campaign, name, phone, email, headers, values in sorted(
             records, key=lambda row: (normalized_campaign(row[1]), row[0], row[3] or row[4])):
@@ -93,8 +94,7 @@ def _combined_details(viber_report=None, email_report=None):
             source_values[field] = values[index] if index < len(values) else None
         rows.append([channel, campaign, name, phone, email, "Not replied",
                      *(source_values.get(field) for field in fields)])
-    expected = sum(campaign.awaiting_reply for report in (viber_report, email_report)
-                   if report is not None for campaign in report.campaigns)
+    expected = sum(campaign.awaiting_reply for campaign in report.campaigns) if report is not None else 0
     if len(rows) != expected:
         raise InboundReplyError("Unreplied account details do not match the campaign counts. Upload the source files again.")
     headers = ["Channel", "Campaign", "Name", "Phone", "Email", "Reply Status",
@@ -103,7 +103,8 @@ def _combined_details(viber_report=None, email_report=None):
 
 
 def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
-                           viber_report=None, email_report=None, campaign_totals: dict | None = None) -> bytes:
+                           viber_report=None, email_report=None, campaign_totals: dict | None = None,
+                           sms_report=None, channel_statuses: dict | None = None) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -123,7 +124,7 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     }
     for address, value in labels.items():
         sheet[address] = value
-    for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals):
+    for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report):
         sheet.append(row)
     edge = Side(style="thin", color="303744")
     for row in sheet:
@@ -149,24 +150,31 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     sheet.print_title_rows = "1:3"
     sheet.print_area = f"A1:R{sheet.max_row}"
 
-    details = workbook.create_sheet("Unreplied Details")
-    headers, rows = _combined_details(viber_report, email_report)
-    details.append(headers)
-    for row in rows:
-        details.append(row)
-    for row in details:
-        for cell in row:
-            if isinstance(cell.value, str):
-                cell.data_type = "s"
-                cell.number_format = "@"
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-            if cell.row == 1:
-                cell.font = Font(bold=True)
-                cell.fill = PatternFill("solid", fgColor="E2EAFB")
-    for index, header in enumerate(headers, 1):
-        details.column_dimensions[get_column_letter(index)].width = 60 if "body" in header.casefold() or "content" in header.casefold() else 26
-    details.freeze_panes = "A2"
-    details.auto_filter.ref = details.dimensions
+    for channel, title, report in (("SMS", "SMS Unreplied", sms_report),
+                                    ("VIBER", "Viber Unreplied", viber_report),
+                                    ("EMAIL", "Email Unreplied", email_report)):
+        details = workbook.create_sheet(title)
+        headers, rows = _channel_details(channel, report)
+        status = "Processed" if report is not None else (channel_statuses or {}).get(channel, "Not uploaded")
+        details.append(["Source status", status])
+        details.append(["Unreplied accounts", len(rows) if report is not None else None])
+        details.append(headers)
+        for row in rows:
+            details.append(row)
+        for row in details:
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
+                    cell.number_format = "@"
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                if cell.row == 3:
+                    cell.font = Font(bold=True)
+                    cell.fill = PatternFill("solid", fgColor="E2EAFB")
+        details["A1"].font = details["A2"].font = Font(bold=True)
+        for index, header in enumerate(headers, 1):
+            details.column_dimensions[get_column_letter(index)].width = 60 if "body" in header.casefold() or "content" in header.casefold() else 26
+        details.freeze_panes = "A4"
+        details.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{details.max_row}"
     output = BytesIO()
     workbook.save(output)
     workbook.close()

@@ -14,6 +14,12 @@ from test_inbound_email import DC_HEADERS, HISTORY_HEADERS, csv_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_SHEETS = ["Summary", "SMS Unreplied", "Viber Unreplied", "Email Unreplied"]
+
+
+def detail_rows(sheet):
+    values = list(sheet.iter_rows(min_row=3, values_only=True))
+    return [dict(zip(values[0], row)) for row in values[1:]]
 
 
 def reports():
@@ -56,7 +62,7 @@ class GroupedSummaryTests(unittest.TestCase):
         html = build_report_html(label, report_date, "YES", viber, email, totals, sms_report=sms)
         self.assertEqual(table_cells(html), [expected])
 
-    def test_excel_summary_has_reference_merges_and_second_sheet_has_all_unreplied_details(self):
+    def test_excel_summary_has_reference_merges_and_separate_channel_details(self):
         from openpyxl import load_workbook
 
         viber, email = reports()
@@ -66,7 +72,7 @@ class GroupedSummaryTests(unittest.TestCase):
         }}
         book = load_workbook(BytesIO(build_summary_workbook("", report_date, "YES", viber, email, totals)))
         try:
-            self.assertEqual(book.sheetnames, ["Summary", "Unreplied Details"])
+            self.assertEqual(book.sheetnames, OUTPUT_SHEETS)
             sheet = book["Summary"]
             self.assertEqual({str(area) for area in sheet.merged_cells.ranges},
                              {"A1:K1", "L1:L3", "M1:R2", "A2:A3", "B2:B3", "C2:H2", "I2:K2"})
@@ -85,9 +91,7 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertIsNone(sheet["J4"].value)
             self.assertIsNone(sheet["O4"].value)
             self.assertEqual(sheet.freeze_panes, "C4")
-            details = book["Unreplied Details"]
-            values = list(details.values)
-            rows = [dict(zip(values[0], row)) for row in values[1:]]
+            rows = detail_rows(book["Email Unreplied"]) + detail_rows(book["Viber Unreplied"])
             self.assertEqual(len(rows), 2)
             self.assertEqual({(row["Channel"], row["Campaign"]) for row in rows}, {("EMAIL", "A"), ("VIBER", "B")})
             email_row = next(row for row in rows if row["Channel"] == "EMAIL")
@@ -99,8 +103,12 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(viber_row["Source: ID"], "000004")
             self.assertEqual(viber_row["Source: Message Content"], "Keep original text")
             self.assertTrue(all(row["Reply Status"] == "Not replied" for row in rows))
-            formula_column = list(values[0]).index("Source: AI Suggestion") + 1
-            self.assertEqual(details.cell(2, formula_column).data_type, "s")
+            details = book["Email Unreplied"]
+            formula_column = [cell.value for cell in details[3]].index("Source: AI Suggestion") + 1
+            self.assertEqual(details.cell(4, formula_column).data_type, "s")
+            self.assertEqual(book["SMS Unreplied"]["B1"].value, "Not uploaded")
+            self.assertIsNone(book["SMS Unreplied"]["B2"].value)
+            self.assertEqual(detail_rows(book["SMS Unreplied"]), [])
         finally:
             book.close()
 
@@ -115,7 +123,10 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(book["Summary"]["C4"].value, 10)
             self.assertIsNone(book["Summary"]["D4"].value)
             self.assertIsNone(book["Summary"]["I4"].value)
-            self.assertEqual(book["Unreplied Details"].max_row, 1)
+            for name in OUTPUT_SHEETS[1:]:
+                self.assertEqual(book[name].max_row, 3)
+                self.assertEqual(book[name]["B1"].value, "Not uploaded")
+                self.assertIsNone(book[name]["B2"].value)
         finally:
             book.close()
 
@@ -136,7 +147,7 @@ class GroupedSummaryTests(unittest.TestCase):
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
                 self.assertEqual(book["Summary"].max_column, 18)
-                self.assertEqual(book.sheetnames, ["Summary", "Unreplied Details"])
+                self.assertEqual(book.sheetnames, OUTPUT_SHEETS)
             finally:
                 book.close()
             headings = {heading.value for heading in app.subheader}

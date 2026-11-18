@@ -24,21 +24,22 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 11
+INBOUND_REPLY_PAGE_VERSION = 12
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
 MANUAL_CAMPAIGN_TOTALS_VERSION = 1
 GROUPED_SUMMARY_OUTPUT_VERSION = 1
 VISIBLE_WORKSPACE_SECTIONS_VERSION = 1
+SMS_MATCHING_PAGE_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
 def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
-                           email_report=None, *, include_worked: bool = False) -> dict:
+                           email_report=None, *, include_worked: bool = False, sms_report=None) -> dict:
     """Keep manual totals with their campaign/date when uploads or visible rows change."""
     saved = {key: dict(value) for key, value in st.session_state.get("inbound_reply_campaign_totals", {}).items()}
-    groups = campaign_groups(viber_report, email_report) or [{"label": campaign.strip() or "—"}]
+    groups = campaign_groups(viber_report, email_report, sms_report) or [{"label": campaign.strip() or "—"}]
     with st.container(border=True, key="inbound_campaign_totals"):
         st.subheader("Edit campaign totals")
         st.caption(
@@ -185,6 +186,60 @@ def prepare_email_report(history_upload, dc_upload) -> EmailReplyReport | None:
     return cached["report"]
 
 
+def prepare_sms_report(account_upload, replied_upload) -> ViberReplyReport | None:
+    """SMS follows the phone/campaign matching policy used by Viber."""
+    if account_upload is None or replied_upload is None:
+        st.session_state.pop("inbound_reply_sms_result", None)
+        return None
+    account_bytes, replied_bytes = account_upload.getvalue(), replied_upload.getvalue()
+    signature = (SMS_MATCHING_PAGE_VERSION, VIBER_REPLY_VERSION,
+                 sha256(account_bytes).hexdigest(), sha256(replied_bytes).hexdigest(),
+                 account_upload.name, replied_upload.name)
+    cached = st.session_state.get("inbound_reply_sms_result")
+    if cached is None or cached["signature"] != signature:
+        st.session_state.pop("inbound_reply_sms_result", None)
+        try:
+            accounts = read_reply_source(account_upload.name, account_bytes)
+            replied = read_reply_source(replied_upload.name, replied_bytes)
+            cached = {"signature": signature, "report": match_viber_sources(
+                accounts, replied, agent_replied_source="campaign_replies", match_mode="phone",
+            )}
+        except InboundReplyError as error:
+            cached = {"signature": signature, "error": str(error)}
+        st.session_state["inbound_reply_sms_result"] = cached
+    if "error" in cached:
+        st.error(cached["error"])
+        return None
+    return cached["report"]
+
+
+def channel_source_status(uploads, report) -> str:
+    if report is not None:
+        return "Processed"
+    count = sum(upload is not None for upload in uploads)
+    if count == 0:
+        return "Not uploaded"
+    if count == 1:
+        return "Incomplete: upload both source files"
+    return "Could not process: check the upload errors on the page"
+
+
+def render_sms_details(report: ViberReplyReport) -> None:
+    totals = report.totals
+    for column, label, value in zip(st.columns(3),
+                                    ("SMS unique phone numbers", "SMS replied by agents", "SMS awaiting agent reply"),
+                                    (totals.unique_people, totals.agent_replied, totals.awaiting_reply)):
+        column.metric(label, f"{value:,}")
+    st.caption(
+        "SMS matches normalized phone numbers within each campaign. Upload the account/message list first "
+        "and the agent-replied list second. Each file needs Phone and Campaign or Bank Campaign columns. "
+        "SMS Unreplied in the main output workbook contains the full account details."
+    )
+    excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows + report.excluded_phone_rows
+    if excluded:
+        st.warning(f"Skipped {excluded:,} SMS rows without a usable phone number.")
+
+
 def render_email_details(report: EmailReplyReport, report_date: date) -> None:
     totals = report.totals
     for column, label, value in zip(st.columns(3),
@@ -317,6 +372,7 @@ def render_inbound_reply() -> None:
 
     viber_uploads = []
     email_uploads = []
+    sms_uploads = []
     with st.container(border=True, key="inbound_upload_files"):
         st.subheader("Upload files")
         st.caption("Upload two files for each channel you want to process.")
@@ -331,6 +387,8 @@ def render_inbound_reply() -> None:
                         label = "Viber message logs — comparison list" if number == 1 else "Viber campaign replies — replied by agents"
                     elif channel == "EMAIL":
                         label = "Email History — sent agent replies" if number == 1 else "Email DC Checking — account list"
+                    elif channel == "SMS":
+                        label = "SMS account/message list — comparison list" if number == 1 else "SMS agent replies — replied accounts"
                     upload = st.file_uploader(
                         label, type=["xlsx", "csv"],
                         key=upload_widget_key(f"inbound_reply_{channel.lower()}_{number}_upload"),
@@ -340,26 +398,39 @@ def render_inbound_reply() -> None:
                         viber_uploads.append(upload)
                     elif channel == "EMAIL":
                         email_uploads.append(upload)
+                    elif channel == "SMS":
+                        sms_uploads.append(upload)
                 uploaded_count += channel_count
                 st.caption(f"{channel_count} of 2 files uploaded")
         st.caption(f"{uploaded_count} of 6 files uploaded")
 
     viber_report = prepare_viber_report(*viber_uploads)
     email_report = prepare_email_report(*email_uploads)
-    manual_totals = render_campaign_totals(report_date, campaign, viber_report, email_report, include_worked=True)
+    sms_report = prepare_sms_report(*sms_uploads)
+    manual_totals = render_campaign_totals(report_date, campaign, viber_report, email_report,
+                                           include_worked=True, sms_report=sms_report)
+    statuses = {channel: channel_source_status(uploads, report) for channel, uploads, report in (
+        ("SMS", sms_uploads, sms_report), ("VIBER", viber_uploads, viber_report), ("EMAIL", email_uploads, email_report),
+    )}
     with output_area:
-        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals))
+        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report))
         has_manual_counts = any(value is not None for row in summary_rows(
-            campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals)
+            campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report)
             for value in row[1:11])
-        if viber_report is not None or email_report is not None or has_manual_counts:
+        if viber_report is not None or email_report is not None or sms_report is not None or has_manual_counts:
             st.download_button(
                 "Download report (.xlsx)",
-                data=partial(build_summary_workbook, campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals),
+                data=partial(build_summary_workbook, campaign, report_date, sent_to_ops, viber_report, email_report,
+                             manual_totals, sms_report=sms_report, channel_statuses=statuses),
                 file_name=f"INBOUND_REPLY_{report_date.isoformat()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="inbound_reply_summary_download", on_click="ignore", type="primary",
             )
+            st.caption("Includes Summary, SMS Unreplied, Viber Unreplied and Email Unreplied worksheets.")
+    if sms_report is not None:
+        with st.container(border=True, key="inbound_sms_details"):
+            st.subheader("SMS account details")
+            render_sms_details(sms_report)
     if email_report is not None:
         with st.container(border=True, key="inbound_email_details"):
             st.subheader("Email account details")
