@@ -31,6 +31,7 @@ AUTOSTAT_VERSION = 18
 AUTOSTAT_24_HOUR_TIME_VERSION = 1
 AUTOSTAT_SLASH_DATE_VERSION = 1
 AUTOSTAT_MONTH_FIRST_AM_PM_VERSION = 1
+AUTOSTAT_TIME_TEXT_VERSION = 1
 AUTOSTAT_VIBER_STATUS_VERSION = 1
 AUTOSTAT_REMARK_BY = "MBURGOS"
 ACCOUNT_TEXT_EXPORT_VERSION = 2
@@ -537,14 +538,14 @@ def _bundle(files: list[AutostatFile], summaries: list[dict[str, Any]]) -> Autos
 
 
 def build_autostat_excel(bundle: AutostatBundle) -> bytes:
-    """Create copyable activity sheets whose identifiers are actual text cells.
+    """Create activity sheets with Text timestamps and literal account identifiers.
 
     CSV cannot specify a text column type. Do not use formulas or apostrophes
     to force Excel to treat its contents as text: those change the CSV values.
     """
     workbook = Workbook(write_only=True)
     for file in bundle.files:
-        write_text_csv_sheet(workbook, file.data, Path(file.filename).stem.removeprefix("AUTOSTAT_"))
+        write_text_csv_sheet(workbook, file.data, Path(file.filename).stem.removeprefix("AUTOSTAT_"), text_headers=("Time",))
     output = BytesIO()
     workbook.save(output)
     workbook.close()
@@ -552,9 +553,9 @@ def build_autostat_excel(bundle: AutostatBundle) -> bytes:
 
 
 def build_autostat_channel_excel(file: AutostatFile) -> bytes:
-    """Create one complete channel workbook with literal text account cells."""
+    """Create one channel workbook with Text timestamps and account cells."""
     workbook = Workbook(write_only=True)
-    write_text_csv_sheet(workbook, file.data, Path(file.filename).stem.removeprefix("AUTOSTAT_"))
+    write_text_csv_sheet(workbook, file.data, Path(file.filename).stem.removeprefix("AUTOSTAT_"), text_headers=("Time",))
     output = BytesIO()
     workbook.save(output)
     workbook.close()

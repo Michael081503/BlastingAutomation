@@ -104,21 +104,25 @@ class AutostatTests(unittest.TestCase):
                             headers = [cell.value for cell in sheet[1]]
                             time_column = headers.index('Time')
                             self.assertTrue(all(
-                                row[time_column].value == expected for row in sheet.iter_rows(min_row=2)
+                                (row[time_column].value, row[time_column].data_type, row[time_column].number_format) == (expected, "s", "@")
+                                for row in sheet.iter_rows(min_row=2)
                             ))
                     finally:
                         workbook.close()
                     for file in bundle.files:
                         workbook = load_workbook(BytesIO(build_autostat_channel_excel(file)))
                         try:
-                            self.assertTrue(all(row[0].value == expected for row in workbook.active.iter_rows(min_row=2)))
+                            self.assertTrue(all((row[0].value, row[0].data_type, row[0].number_format) == (expected, "s", "@")
+                                                for row in workbook.active.iter_rows(min_row=2)))
+                            self.assertEqual(workbook.active.column_dimensions["A"].number_format, "@")
                         finally:
                             workbook.close()
                     with ZipFile(BytesIO(build_autostat_excel_zip(bundle))) as archive:
                         for name in archive.namelist():
                             workbook = load_workbook(BytesIO(archive.read(name)))
                             try:
-                                self.assertTrue(all(row[0].value == expected for row in workbook.active.iter_rows(min_row=2)))
+                                self.assertTrue(all((row[0].value, row[0].data_type, row[0].number_format) == (expected, "s", "@")
+                                                    for row in workbook.active.iter_rows(min_row=2)))
                             finally:
                                 workbook.close()
 
@@ -201,8 +205,8 @@ class AutostatTests(unittest.TestCase):
                     self.assertEqual(result.sheetnames, ["Email", "Viber"])
                     for sheet, file in zip(result, bundle.files):
                         self.assertEqual([cell.value for cell in sheet[1]], list(file.headers))
-                        self.assertTrue(all(cell.number_format == "General" for cell in sheet[1]))
-                        text_columns = {cell.column for cell in sheet[1] if cell.value in {"Account No.", "Dialed Number"}}
+                        self.assertTrue(all(cell.number_format == ("@" if cell.value == "Time" else "General") for cell in sheet[1]))
+                        text_columns = {cell.column for cell in sheet[1] if cell.value in {"Time", "Account No.", "Dialed Number"}}
                         self.assertEqual([cell.value for cell in sheet["B"][1:]], accounts)
                         self.assertEqual(sheet.max_row, len(accounts) + 1)
                         for row in sheet.iter_rows(min_row=2):

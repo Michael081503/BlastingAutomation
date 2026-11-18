@@ -75,7 +75,8 @@ class AutomaticGeoAutostatTests(unittest.TestCase):
                     call = next(call for call in downloads.call_args_list if call.kwargs.get("key") == key)
                     workbook = load_workbook(BytesIO(call.args[1]()))
                     try:
-                        self.assertTrue(all(row[0].value == expected for row in workbook.active.iter_rows(min_row=2)))
+                        self.assertTrue(all((row[0].value, row[0].data_type, row[0].number_format) == (expected, "s", "@")
+                                            for row in workbook.active.iter_rows(min_row=2)))
                     finally:
                         workbook.close()
                 app.run(timeout=20)

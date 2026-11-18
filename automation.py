@@ -55,6 +55,7 @@ SOURCE_SHEET_SELECTION_VERSION = 1
 OB_SORT_VERSION = 1
 RECO_DOCLASS_WRITER_VERSION = 1
 AUTOSTAT_COLUMN_FORMAT_VERSION = 1
+ACTIVITY_TEXT_COLUMNS_VERSION = 1
 TARGET_HEADERS = tuple(FIELD_MAPPING.values())
 DERIVED_TEMPLATE_HEADERS = ("doclass",)
 ASSIGNMENT_TEMPLATE_HEADERS = ("Monthly", "Terms")
@@ -580,27 +581,34 @@ def _encode_csv(text: str, encoding: str) -> bytes:
         ) from exc
 
 
-def write_text_csv_sheet(workbook: Workbook, data: bytes, title: str):
-    """Keep CSV values literal and apply Text format only to identifiers and phones."""
+def write_text_csv_sheet(workbook: Workbook, data: bytes, title: str, *, text_headers: tuple[str, ...] = ()):
+    """Keep CSV values literal, with Text identifiers, phones and requested columns."""
     sheet = workbook.create_sheet(title)
     sheet.freeze_panes = "A2"
     encoding = "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "cp1252"
     identifier_headers = {alias for source, target in FIELD_MAPPING.items() if target in IDENTIFIER_FIELDS
                           for alias in _source_aliases(source)}
     identifier_headers.add(normalize_header("Dialed Number"))
+    requested_text_headers = {normalize_header(header) for header in text_headers}
+    requested_text_columns = set()
     text_columns = set()
     for row_index, row in enumerate(csv.reader(StringIO(data.decode(encoding), newline=""))):
         if row_index == 0:
+            requested_text_columns = {column for column, header in enumerate(row, 1)
+                                      if normalize_header(header) in requested_text_headers}
             text_columns = {column for column, header in enumerate(row, 1) if normalize_header(header) in identifier_headers}
+            text_columns.update(requested_text_columns)
             text_columns.update(index + 1 for target, index in source_column_positions(row).items()
                                 if target in IDENTIFIER_FIELDS)
         cells = []
         for column, value in enumerate(row, 1):
             if row_index == 0:
                 sheet.column_dimensions[get_column_letter(column)].width = 24
+                if column in requested_text_columns:
+                    sheet.column_dimensions[get_column_letter(column)].number_format = "@"
             cell = WriteOnlyCell(sheet, value=value)
             cell.data_type = "s"
-            if row_index > 0 and column in text_columns:
+            if column in requested_text_columns or (row_index > 0 and column in text_columns):
                 cell.number_format = "@"
             cells.append(cell)
         sheet.append(cells)
