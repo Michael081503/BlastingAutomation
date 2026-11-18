@@ -24,12 +24,13 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 10
+INBOUND_REPLY_PAGE_VERSION = 11
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
 MANUAL_CAMPAIGN_TOTALS_VERSION = 1
 GROUPED_SUMMARY_OUTPUT_VERSION = 1
+VISIBLE_WORKSPACE_SECTIONS_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
@@ -38,7 +39,8 @@ def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
     """Keep manual totals with their campaign/date when uploads or visible rows change."""
     saved = {key: dict(value) for key, value in st.session_state.get("inbound_reply_campaign_totals", {}).items()}
     groups = campaign_groups(viber_report, email_report) or [{"label": campaign.strip() or "—"}]
-    with st.expander("Edit campaign totals", expanded=False):
+    with st.container(border=True, key="inbound_campaign_totals"):
+        st.subheader("Edit campaign totals")
         st.caption(
             "Enter ACTIVE TICKET and the Email, SMS and Viber DC WORKED counts. "
             "DC WORKED percentages are calculated automatically from ACTIVE TICKET. "
@@ -298,7 +300,8 @@ def render_inbound_reply() -> None:
     st.title("INBOUND REPLY")
     output_area = st.container(key="inbound_summary_output")
 
-    with st.expander("Report settings", expanded=False):
+    with st.container(border=True, key="inbound_report_settings"):
+        st.subheader("Report settings")
         campaign_column, date_column, ops_column = st.columns([2, 1, 1])
         with campaign_column:
             campaign = st.text_input("Report label (optional)", placeholder="Report name", key="inbound_reply_campaign")
@@ -314,7 +317,8 @@ def render_inbound_reply() -> None:
 
     viber_uploads = []
     email_uploads = []
-    with st.expander("Upload files", expanded=False):
+    with st.container(border=True, key="inbound_upload_files"):
+        st.subheader("Upload files")
         st.caption("Upload two files for each channel you want to process.")
         uploaded_count = 0
         for column, channel in zip(st.columns(3), CHANNELS):
@@ -357,8 +361,10 @@ def render_inbound_reply() -> None:
                 key="inbound_reply_summary_download", on_click="ignore", type="primary",
             )
     if email_report is not None:
-        with st.expander("Email account details", expanded=False):
+        with st.container(border=True, key="inbound_email_details"):
+            st.subheader("Email account details")
             render_email_details(email_report, report_date)
     if viber_report is not None:
-        with st.expander("Viber account details", expanded=False):
+        with st.container(border=True, key="inbound_viber_details"):
+            st.subheader("Viber account details")
             render_viber_details(viber_report, report_date)

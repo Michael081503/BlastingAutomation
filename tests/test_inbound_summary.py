@@ -119,7 +119,7 @@ class GroupedSummaryTests(unittest.TestCase):
         finally:
             book.close()
 
-    def test_main_download_uses_grouped_summary_and_controls_are_collapsed(self):
+    def test_main_download_uses_grouped_summary_and_controls_are_visible(self):
         from openpyxl import load_workbook
         from streamlit.testing.v1 import AppTest
         from upload_state import render_clear_all_files
@@ -139,9 +139,10 @@ class GroupedSummaryTests(unittest.TestCase):
                 self.assertEqual(book.sheetnames, ["Summary", "Unreplied Details"])
             finally:
                 book.close()
+            headings = {heading.value for heading in app.subheader}
             for label in ("Report settings", "Upload files", "Edit campaign totals", "Email account details", "Viber account details"):
-                panel = next(panel for panel in app.expander if panel.label == label)
-                self.assertFalse(panel.proto.expanded)
+                self.assertIn(label, headings)
+            self.assertEqual(len(app.expander), 0)
 
 
 if __name__ == "__main__":
