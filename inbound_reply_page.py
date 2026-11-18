@@ -24,7 +24,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 14
+INBOUND_REPLY_PAGE_VERSION = 15
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -33,6 +33,7 @@ GROUPED_SUMMARY_OUTPUT_VERSION = 1
 VISIBLE_WORKSPACE_SECTIONS_VERSION = 1
 SMS_MATCHING_PAGE_VERSION = 1
 AGENT_FIRST_UPLOADS_VERSION = 1
+READABLE_SUMMARY_HEADERS_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
@@ -100,8 +101,10 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
       .inbound-reply-report th {{ background: #e2eafb; font-weight: 700; }}
       .inbound-reply-report td {{ background: #fff; font-variant-numeric: tabular-nums; }}
       .inbound-reply-report td:first-child {{ min-width: 155px; white-space: normal; overflow-wrap: anywhere; }}
-      .inbound-campaign-report table {{ min-width: 1120px; table-layout: fixed; font-size: clamp(8px, 0.6vw, 10px); }}
-      .inbound-campaign-report th, .inbound-campaign-report td {{ padding: 4px; line-height: 1.25; }}
+      .inbound-campaign-report {{ max-width: 100%; box-sizing: border-box; }}
+      .inbound-campaign-report table {{ min-width: 1080px; table-layout: auto; font-size: 11px; }}
+      .inbound-campaign-report th, .inbound-campaign-report td {{ padding: 6px 4px; line-height: 1.35; }}
+      .inbound-campaign-report th {{ white-space: normal; overflow-wrap: normal; word-break: normal; }}
     </style>
     <div class="inbound-reply-report inbound-campaign-report" role="region" aria-label="Inbound reply summary" tabindex="0">
       <table aria-label="Inbound reply campaign report">
