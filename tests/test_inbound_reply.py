@@ -403,13 +403,13 @@ class InboundReplyPageTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertNotIn("inbound_reply_viber_result", app.session_state)
             uploads["inbound_reply_viber_1_upload"] = Upload("campaign-replies.csv", source_csv([], pending=True, message_type="Inbound Reply"))
-            app.text_input(key="inbound_reply_campaign").set_value("Daily report").run(timeout=20)
+            app.run(timeout=20)
             self.assertIn("report", app.session_state["inbound_reply_viber_result"])
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertFalse(app.exception)
             self.assertNotIn("inbound_reply_viber_result", app.session_state)
             self.assertEqual(len(app.metric), 0)
-            self.assertEqual(app.text_input(key="inbound_reply_campaign").value, "Daily report")
+            self.assertEqual(len(app.text_input), 0)
             self.assertTrue(any(key.endswith("_clear_1") for key in seen))
 
 

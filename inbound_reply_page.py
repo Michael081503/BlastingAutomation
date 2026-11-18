@@ -24,7 +24,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 15
+INBOUND_REPLY_PAGE_VERSION = 16
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -34,6 +34,7 @@ VISIBLE_WORKSPACE_SECTIONS_VERSION = 1
 SMS_MATCHING_PAGE_VERSION = 1
 AGENT_FIRST_UPLOADS_VERSION = 1
 READABLE_SUMMARY_HEADERS_VERSION = 1
+REPORT_SETTINGS_REMOVED_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
@@ -311,8 +312,8 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
         st.caption(
             "Addresses are matched without case or surrounding whitespace. Received-only messages, agent names, "
             "assignment fields, AI suggestions and DC workflow labels do not mark an account as replied. "
-            "History has no campaign column, so a sent reply matches every DC campaign containing that address. "
-            "All uploaded dates are included; Report date labels the report."
+            "Sent replies match the included DC campaigns containing that address. "
+            "All uploaded dates are included."
         )
         excluded = report.dc.excluded_rows + report.history.excluded_rows
         if excluded:
@@ -368,7 +369,7 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
             "Names are shown for reference. Rows without a usable phone number are excluded and counted. "
             "An agent reply takes priority over pending entries for the same phone number and campaign. "
             "Numbers found only in the customer-replies file await an agent reply. "
-            "All uploaded rows are included; Report date labels the report."
+            "All uploaded rows from the included campaigns are processed."
         )
         excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows + report.excluded_phone_rows
         if excluded:
@@ -386,25 +387,17 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
             st.caption(f"Showing {min(len(rows), 100):,} of {len(rows):,} phone numbers. Download the CSV for all numbers.")
 
 
+def inbound_report_date() -> date:
+    return datetime.now(timezone(timedelta(hours=8))).date()
+
+
 def render_inbound_reply() -> None:
     st.title("INBOUND REPLY")
     output_area = st.container(key="inbound_summary_output")
 
-    with st.container(border=True, key="inbound_report_settings"):
-        st.subheader("Report settings")
-        campaign_column, date_column, ops_column = st.columns([2, 1, 1])
-        with campaign_column:
-            campaign = st.text_input("Report label (optional)", placeholder="Report name", key="inbound_reply_campaign",
-                                     help="Campaign names are read automatically from the uploaded Campaign, Campaigns or Bank Campaign column.")
-        with date_column:
-            report_date = st.date_input(
-                "Report date", value=datetime.now(timezone(timedelta(hours=8))).date(),
-                key="inbound_reply_date",
-            )
-        with ops_column:
-            sent_to_ops = st.selectbox(
-                "Sent to OPS", ("—", "YES", "NO"), key="inbound_reply_sent_to_ops",
-            )
+    campaign = ""
+    report_date = inbound_report_date()
+    sent_to_ops = "—"
 
     viber_uploads = []
     email_uploads = []
@@ -451,7 +444,6 @@ def render_inbound_reply() -> None:
     with output_area:
         st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
                                   source_campaigns=source_campaigns))
-        st.caption("CAMPAIGN is filled automatically from the uploaded campaign column, with one row per campaign.")
         has_manual_counts = any(value is not None for row in summary_rows(
             campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
             source_campaigns=source_campaigns)

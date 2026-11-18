@@ -151,8 +151,13 @@ class GroupedSummaryTests(unittest.TestCase):
             finally:
                 book.close()
             headings = {heading.value for heading in app.subheader}
-            for label in ("Report settings", "Upload files", "Edit campaign totals", "Email account details", "Viber account details"):
+            for label in ("Upload files", "Edit campaign totals", "Email account details", "Viber account details"):
                 self.assertIn(label, headings)
+            self.assertNotIn("Report settings", headings)
+            self.assertEqual(len(app.text_input), 0)
+            self.assertEqual(len(app.date_input), 0)
+            self.assertEqual(len(app.selectbox), 0)
+            self.assertFalse(any("CAMPAIGN is filled automatically" in item.value for item in app.caption))
             self.assertEqual(len(app.expander), 0)
 
 

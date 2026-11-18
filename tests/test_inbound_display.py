@@ -64,7 +64,7 @@ class ManualCampaignTotalsTests(unittest.TestCase):
 
 
 class ManualTotalsPageTests(unittest.TestCase):
-    def test_manual_entries_update_report_and_survive_clear_and_date_changes(self):
+    def test_manual_entries_survive_clear_and_follow_automatic_date_and_source_campaigns(self):
         from streamlit.testing.v1 import AppTest
         from upload_state import render_clear_all_files
 
@@ -77,29 +77,36 @@ class ManualTotalsPageTests(unittest.TestCase):
             return table_cells(call.args[0])[0]
 
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
-                patch("streamlit.file_uploader", return_value=None), patch("streamlit.html") as html:
+                patch("streamlit.file_uploader", return_value=None), patch("streamlit.html") as html, \
+                patch("inbound_reply_page.inbound_report_date", return_value=date(2026, 11, 18)) as report_date, \
+                patch("inbound_reply_page.prepare_campaign_labels", return_value=("Sample Campaign",)) as labels:
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
-            app.text_input(key="inbound_reply_campaign").set_value("Sample Campaign").run(timeout=20)
             self.assertFalse(app.exception)
+            self.assertEqual(len(app.text_input), 0)
+            self.assertEqual(len(app.date_input), 0)
             for label, value in (("ACTIVE TICKET", 58431), ("DC WORKED — EMAIL", 46104),
                                   ("DC WORKED — SMS", 58412), ("DC WORKED — VIBER", 1000)):
                 number(app, label).set_value(value).run(timeout=20)
                 self.assertFalse(app.exception)
             self.assertEqual(current_cells(html)[1:8], ["58,431", "46,104", "78.90%", "58,412", "99.97%", "1,000", "1.71%"])
-            original_date = app.date_input(key="inbound_reply_date").value
-            app.date_input(key="inbound_reply_date").set_value(original_date + timedelta(days=1)).run(timeout=20)
+            original_date = report_date.return_value
+            report_date.return_value = original_date + timedelta(days=1)
+            app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertIsNone(number(app, "ACTIVE TICKET").value)
             self.assertEqual(current_cells(html)[1], "—")
-            app.date_input(key="inbound_reply_date").set_value(original_date).run(timeout=20)
+            report_date.return_value = original_date
+            app.run(timeout=20)
             self.assertEqual(number(app, "ACTIVE TICKET").value, 58431)
             app.button(key="clear_all_files").click().run(timeout=20)
             self.assertFalse(app.exception)
             self.assertEqual(number(app, "ACTIVE TICKET").value, 58431)
             self.assertEqual(current_cells(html)[3], "78.90%")
-            app.text_input(key="inbound_reply_campaign").set_value("Other campaign").run(timeout=20)
+            labels.return_value = ("Other campaign",)
+            app.run(timeout=20)
             self.assertIsNone(number(app, "ACTIVE TICKET").value)
-            app.text_input(key="inbound_reply_campaign").set_value("Sample Campaign").run(timeout=20)
+            labels.return_value = ("Sample Campaign",)
+            app.run(timeout=20)
             self.assertEqual(number(app, "ACTIVE TICKET").value, 58431)
 
 

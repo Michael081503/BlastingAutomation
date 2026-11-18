@@ -7,9 +7,9 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from inbound_email import read_email_source
-from inbound_reply import read_reply_source
-from inbound_summary import campaign_totals_key, summary_rows
+from inbound_email import build_email_unreplied_workbook, match_email_sources, read_email_source
+from inbound_reply import build_people_csv, build_unreplied_workbook, match_viber_sources, read_reply_source
+from inbound_summary import build_summary_workbook, campaign_totals_key, summary_rows
 from test_inbound_display import table_cells
 from test_inbound_email import csv_bytes
 from test_inbound_summary import reports
@@ -19,6 +19,81 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CampaignColumnTests(unittest.TestCase):
+    def test_sbf_rows_are_excluded_before_matching_and_from_every_channel_export(self):
+        from openpyxl import Workbook, load_workbook
+
+        for extension in ("csv", "xlsx"):
+            with self.subTest(extension=extension):
+                def data(headers, rows):
+                    if extension == "csv":
+                        return csv_bytes(headers, rows)
+                    book = Workbook()
+                    book.active.append(headers)
+                    for row in rows:
+                        book.active.append(row)
+                    output = BytesIO()
+                    book.save(output)
+                    book.close()
+                    return output.getvalue()
+
+                phone_headers = ("ID", "Client Name", "Phone", "Campaign")
+                customers = read_reply_source(f"customers.{extension}", data(phone_headers, [
+                    ("01", "Pending", "09171234567", "MC4 SBF PL EMAIL INBOUND"),
+                    ("02", "Pending", "09171234567", "SBC Cards B2"),
+                    ("03", "Replied", "09181234567", "SBC Cards B2"),
+                    ("04", "SBF only", "09191234567", "mc4_sbf_pl"),
+                ]))
+                agents = read_reply_source(f"agents.{extension}", data(phone_headers, [
+                    ("05", "Pending", "09171234567", "MC4-sbf-PL"),
+                    ("06", "Replied", "09181234567", "SBC Cards B2"),
+                ]))
+                phones = match_viber_sources(customers, agents, agent_replied_source="campaign_replies", match_mode="phone")
+                dc = read_email_source(f"dc.{extension}", data(("ID", "sender", "Campaign"), [
+                    ("01", "pending@example.com", "MC4 SBF PL EMAIL INBOUND"),
+                    ("02", "pending@example.com", "SBC Cards B2"),
+                    ("03", "replied@example.com", "SBC Cards B2"),
+                    ("04", "sbf@example.com", "mc4_sbf_pl"),
+                ]), kind="dc")
+                history = read_email_source(f"history.{extension}", data(("email", "sent", "Campaign"), [
+                    ("pending@example.com", "Agent reply for excluded campaign", "MC4-sbf-PL"),
+                    ("replied@example.com", "Agent reply", "SBC Cards B2"),
+                ]), kind="history")
+                email = match_email_sources(dc, history)
+                for report in (phones, email):
+                    self.assertEqual([(row.campaign, row.unique_people, row.agent_replied, row.awaiting_reply)
+                                      for row in report.campaigns], [("SBC Cards B2", 2, 1, 1)])
+                self.assertEqual(customers.excluded_rows, 0)
+                self.assertEqual(dc.excluded_rows, 0)
+                self.assertNotIn("SBF", build_people_csv(phones).decode("utf-8-sig").upper())
+                output = build_summary_workbook("", date(2026, 11, 18), "—", phones, email, sms_report=phones)
+                book = load_workbook(BytesIO(output))
+                try:
+                    self.assertEqual(book["Summary"].max_row, 4)
+                    self.assertEqual(book["Summary"]["A4"].value, "SBC Cards B2")
+                    for name in ("SMS Unreplied", "Viber Unreplied", "Email Unreplied"):
+                        self.assertEqual(book[name]["B2"].value, 1)
+                        self.assertEqual(book[name]["B4"].value, "SBC Cards B2")
+                finally:
+                    book.close()
+                for output in (build_unreplied_workbook(phones), build_email_unreplied_workbook(email)):
+                    book = load_workbook(BytesIO(output))
+                    try:
+                        self.assertEqual(book["Summary"]["A2"].value, "SBC Cards B2")
+                        self.assertEqual(book["Summary"]["B2"].value, 1)
+                        self.assertEqual(book["Unreplied Details"].max_row, 2)
+                    finally:
+                        book.close()
+
+    def test_sbf_only_upload_has_no_campaign_names_or_accounts(self):
+        customers = read_reply_source("customers.csv", csv_bytes(("Phone", "Campaign"), [
+            ("09171234567", "MC4 SBF PL"),
+        ]))
+        agents = read_reply_source("agents.csv", csv_bytes(("Phone", "Campaign"), []))
+        report = match_viber_sources(customers, agents, agent_replied_source="campaign_replies", match_mode="phone")
+        self.assertEqual(customers.records, ())
+        self.assertEqual(report.campaigns, ())
+        self.assertEqual(report.totals.unique_people, 0)
+
     def test_campaign_header_variants_work_in_excel_phone_and_email_files(self):
         from openpyxl import Workbook
 
@@ -66,6 +141,7 @@ class CampaignColumnTests(unittest.TestCase):
             ])),
         }
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
+                patch("inbound_reply_page.inbound_report_date", return_value=date(2026, 11, 18)), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
                 patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
@@ -79,7 +155,7 @@ class CampaignColumnTests(unittest.TestCase):
             rows = displayed_rows()
             self.assertEqual([row[0] for row in rows], ["Email Campaign", "SMS Campaign", "Viber Campaign"])
             self.assertTrue(all(row[8:11] == ["—", "—", "—"] for row in rows))
-            identity = campaign_totals_key(app.date_input(key="inbound_reply_date").value, "SMS Campaign")
+            identity = campaign_totals_key(date(2026, 11, 18), "SMS Campaign")
             active_key = "inbound_reply_total_" + sha256(identity.encode("utf-8")).hexdigest()[:16] + "_active_ticket"
             app.number_input(key=active_key).set_value(100).run(timeout=20)
             call = next(call for call in reversed(downloads.call_args_list)

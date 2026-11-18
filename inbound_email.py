@@ -8,10 +8,13 @@ from io import BytesIO, StringIO
 from pathlib import Path
 
 from email_validation import validated_email
-from inbound_reply import CAMPAIGN_HEADER_ALIASES, CampaignReplyCounts, InboundReplyError, build_reply_workbook, normalized_campaign
+from inbound_reply import (
+    CAMPAIGN_HEADER_ALIASES, CampaignReplyCounts, InboundReplyError, build_reply_workbook,
+    excluded_inbound_campaign, normalized_campaign,
+)
 
 
-EMAIL_REPLY_VERSION = 2
+EMAIL_REPLY_VERSION = 3
 
 
 def normalized_email(value: object) -> str:
@@ -72,7 +75,7 @@ def _positions(row, kind: str) -> dict[str, int] | None:
         if len(matches) != 1:
             return None
         result[field] = matches[0]
-    for field, names in {"agent": {"person", "agentlark"}}.items():
+    for field, names in {"agent": {"person", "agentlark"}, "campaign": CAMPAIGN_HEADER_ALIASES}.items():
         matches = [index for index, key in enumerate(keys) if key in names]
         if len(matches) == 1:
             result[field] = matches[0]
@@ -99,12 +102,15 @@ def _read_rows(rows, filename: str, kind: str, sheet: str) -> EmailSource:
         if not any(value is not None and str(value).strip() for value in row):
             continue
         values = {field: row[index] if index < len(row) else None for field, index in positions.items()}
+        campaign = str(values.get("campaign") or "").strip() or "Unspecified campaign"
+        if excluded_inbound_campaign(campaign):
+            continue
         email = normalized_email(values["email"])
         if not email:
             excluded += 1
             continue
         records.append(EmailRecord(
-            email, str(values.get("campaign") or "").strip() or "Unspecified campaign",
+            email, campaign,
             bool(str(values.get("sent") or "").strip()), str(values.get("agent") or "").strip(), tuple(row),
         ))
     return EmailSource(filename, headers, tuple(records), excluded, sheet)

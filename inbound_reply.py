@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 5
+VIBER_REPLY_VERSION = 6
+SBF_CAMPAIGN_EXCLUSION_VERSION = 1
 CAMPAIGN_COLUMN_ALIASES_VERSION = 1
 CAMPAIGN_HEADER_ALIASES = {"campaign", "campaigns", "bankcampaign", "bankcampaigns", "campaignname"}
 VIBER_CAMPAIGN_REPLIED_VERSION = 1
@@ -41,6 +42,11 @@ def normalized_name(value: str) -> str:
 
 def normalized_campaign(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def excluded_inbound_campaign(value: str) -> bool:
+    """Ignore SBF campaign rows, including names separated by underscores or hyphens."""
+    return re.search(r"(?<![a-z0-9])sbf(?![a-z0-9])", normalized_campaign(value)) is not None
 
 
 def normalized_phone(value: str) -> str:
@@ -153,11 +159,14 @@ def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
             continue
         values = {name: str(row[index]).strip() if index < len(row) and row[index] is not None else ""
                   for name, index in positions.items()}
+        campaign = values["campaign"] or "Unspecified campaign"
+        if excluded_inbound_campaign(campaign):
+            continue
         if not normalized_name(values.get("name", "")) and not normalized_phone(values["phone"]):
             excluded += 1
             continue
         records.append(ReplyRecord(
-            values.get("name", ""), values["phone"], values["campaign"] or "Unspecified campaign",
+            values.get("name", ""), values["phone"], campaign,
             values.get("message_type", ""), tuple(row),
         ))
     return ReplySource(filename, tuple(records), excluded, sheet, headers)
