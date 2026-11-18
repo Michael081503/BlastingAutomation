@@ -11,6 +11,24 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_modules_refresh_for_email_campaign_lookup_uploads(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import inbound_email, inbound_campaign_lookup, inbound_reply_page, inbound_summary, upload_state
+            del inbound_email.EMAIL_CAMPAIGN_LOOKUP_VERSION
+            del upload_state.EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION
+            del inbound_summary.BLAST_PERCENTAGE_FORMULAS_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'inbound_email', 'inbound_campaign_lookup', 'inbound_summary', 'inbound_reply_page', 'upload_state'} <= refreshed
+            assert inbound_campaign_lookup.EmailSource is inbound_email.EmailSource
+            assert inbound_reply_page.apply_email_campaign_lookup is inbound_campaign_lookup.apply_email_campaign_lookup
+            assert inbound_reply_page.BLAST_PERCENTAGE_FORMULAS_VERSION == 1
+            assert 'inbound_reply_email_lookup_uploads' in upload_state.UPLOAD_KEYS
+            assert 'inbound_reply_email_lookup' in upload_state.FILE_STATE_KEYS
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_bucket_modules_refresh_for_spm_endorsement_database_support(self):
         self.run_isolated("""
             import app_startup

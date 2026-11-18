@@ -8,7 +8,9 @@ from io import BytesIO
 from inbound_reply import InboundReplyError, normalized_campaign, normalized_phone, unreplied_records
 
 
-INBOUND_SUMMARY_VERSION = 2
+INBOUND_SUMMARY_VERSION = 3
+BLAST_PERCENTAGE_FORMULAS_VERSION = 1
+CUSTOMER_EMAIL_REPLY_LABELS_VERSION = 1
 CHANNEL_UNREPLIED_SHEETS_VERSION = 1
 SOURCE_CAMPAIGN_LABELS_VERSION = 1
 PERCENT_COLUMNS = frozenset({3, 5, 7, 13, 15, 17})
@@ -69,6 +71,12 @@ def display_cell(value, column: int) -> str:
     return f"{value:,}" if isinstance(value, int) else str(value)
 
 
+def blast_percentage_formula(row: int, blast_column: str) -> str:
+    active, blasted = f"$B{row}", f"{blast_column}{row}"
+    return (f'=IF(AND(ISNUMBER({active}),{active}>0,ISNUMBER({blasted}),{blasted}>=0),'
+            f'{blasted}/{active},"")')
+
+
 def _channel_details(channel: str, report):
     """Keep a channel's original account fields and validate its unreplied total."""
     fields = []
@@ -111,10 +119,13 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
                            viber_report=None, email_report=None, campaign_totals: dict | None = None,
                            sms_report=None, channel_statuses: dict | None = None, *, source_campaigns=()) -> bytes:
     from openpyxl import Workbook
+    from openpyxl.comments import Comment
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.workbook.properties import CalcProperties
     from openpyxl.utils import get_column_letter
 
     workbook = Workbook()
+    workbook.calculation = CalcProperties(calcMode="auto", fullCalcOnLoad=True, forceFullCalc=True)
     sheet = workbook.active
     sheet.title = "Summary"
     for cell_range in ("A1:K1", "L1:L3", "M1:R2", "A2:A3", "B2:B3", "C2:H2", "I2:K2"):
@@ -129,6 +140,10 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     }
     for address, value in labels.items():
         sheet[address] = value
+    sheet["I3"].comment = Comment(
+        "Unique customers who emailed you, counted once per email address within each campaign from DC Checking. "
+        "Customer replies remain counted after an agent responds. Agent responses appear under AGENT WORKED - EMAIL.",
+        "INBOUND REPLY")
     for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
                             source_campaigns=source_campaigns):
         sheet.append(row)
@@ -143,6 +158,14 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
                 cell.data_type = "s"
             if cell.row >= 4:
                 cell.number_format = "0.00%" if cell.column - 1 in PERCENT_COLUMNS else "#,##0"
+    sheet["B2"].comment = Comment("Enter the total active accounts for this campaign manually.", "INBOUND REPLY")
+    for blast_column, percent_column, channel in (("C", "D", "Email"), ("E", "F", "SMS"), ("G", "H", "Viber")):
+        sheet[f"{blast_column}3"].comment = Comment(f"Accounts blasted through {channel}.", "INBOUND REPLY")
+        sheet[f"{percent_column}3"].comment = Comment(
+            "Accounts blasted divided by ACTIVE TICKET × 100. Recalculates when the counts change. "
+            "Stays blank when ACTIVE TICKET is blank or zero, or the blast count is blank.", "INBOUND REPLY")
+        for row in range(4, sheet.max_row + 1):
+            sheet[f"{percent_column}{row}"] = blast_percentage_formula(row, blast_column)
     for column in range(1, 19):
         sheet.column_dimensions[get_column_letter(column)].width = 36 if column == 1 else 18 if column == 12 else 12
     for row in range(1, sheet.max_row + 1):

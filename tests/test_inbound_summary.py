@@ -83,7 +83,9 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(sheet["B4"].value, 100)
             self.assertEqual(sheet["B4"].data_type, "n")
             self.assertEqual(sheet["C4"].value, 50)
-            self.assertEqual(sheet["D4"].value, .5)
+            self.assertEqual(sheet["D4"].value,
+                             '=IF(AND(ISNUMBER($B4),$B4>0,ISNUMBER(C4),C4>=0),C4/$B4,"")')
+            self.assertEqual(sheet["D4"].data_type, "f")
             self.assertEqual(sheet["D4"].number_format, "0.00%")
             self.assertEqual(sheet["I4"].value, 2)
             self.assertEqual(sheet["M4"].value, 1)
@@ -121,12 +123,39 @@ class GroupedSummaryTests(unittest.TestCase):
         try:
             self.assertEqual(book["Summary"]["B4"].value, 0)
             self.assertEqual(book["Summary"]["C4"].value, 10)
-            self.assertIsNone(book["Summary"]["D4"].value)
+            self.assertEqual(book["Summary"]["D4"].data_type, "f")
             self.assertIsNone(book["Summary"]["I4"].value)
             for name in OUTPUT_SHEETS[1:]:
                 self.assertEqual(book[name].max_row, 3)
                 self.assertEqual(book[name]["B1"].value, "Not uploaded")
                 self.assertIsNone(book[name]["B2"].value)
+        finally:
+            book.close()
+
+    def test_blast_coverage_uses_active_total_and_excel_keeps_editable_formulas_for_every_row(self):
+        from openpyxl import load_workbook
+
+        report_date = date(2026, 11, 18)
+        totals = {campaign_totals_key(report_date, "SBC Level 1"): {
+            "active_ticket": 5000, "dc_email": 8, "dc_sms": 2500, "dc_viber": 5000,
+        }}
+        rows = summary_rows("", report_date, "", campaign_totals=totals, source_campaigns=("SBC Level 1", "SBC Level 2"))
+        self.assertEqual([display_cell(rows[0][i], i) for i in (3, 5, 7)], ["0.16%", "50.00%", "100.00%"])
+        book = load_workbook(BytesIO(build_summary_workbook("", report_date, "", campaign_totals=totals,
+                                                          source_campaigns=("SBC Level 1", "SBC Level 2"))))
+        try:
+            self.assertEqual(book.calculation.calcMode, "auto")
+            self.assertTrue(book.calculation.fullCalcOnLoad)
+            for row in (4, 5):
+                for numerator, percentage in (("C", "D"), ("E", "F"), ("G", "H")):
+                    cell = book["Summary"][f"{percentage}{row}"]
+                    self.assertEqual(cell.data_type, "f")
+                    self.assertIn(f"{numerator}{row}/$B{row}", cell.value)
+                    self.assertEqual(cell.number_format, "0.00%")
+            self.assertIsNone(book["Summary"]["B5"].value)
+            self.assertIsNone(book["Summary"]["C5"].value)
+            self.assertEqual(book["Summary"]["B4"].value, 5000)
+            self.assertEqual(book["Summary"]["C4"].value, 8)
         finally:
             book.close()
 

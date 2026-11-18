@@ -10,11 +10,12 @@ from pathlib import Path
 from email_validation import validated_email
 from inbound_reply import (
     CAMPAIGN_HEADER_ALIASES, CampaignReplyCounts, InboundReplyError, build_reply_workbook,
-    excluded_inbound_campaign, normalized_campaign,
+    excluded_inbound_campaign, inbound_csv_delimiter, normalized_campaign,
 )
 
 
-EMAIL_REPLY_VERSION = 3
+EMAIL_REPLY_VERSION = 4
+EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 
 def normalized_email(value: object) -> str:
@@ -42,6 +43,8 @@ class EmailSource:
     records: tuple[EmailRecord, ...]
     excluded_rows: int
     sheet: str
+    lookup_applied: bool = False
+    unmatched_addresses: int = 0
 
 
 @dataclass(frozen=True)
@@ -64,11 +67,13 @@ class EmailReplyReport:
         return len({row.email for row in self.history.records} - {row.email for row in self.accounts})
 
 
-def _positions(row, kind: str) -> dict[str, int] | None:
+def _positions(row, kind: str, *, require_campaign: bool = True) -> dict[str, int] | None:
     keys = [header_key(value) for value in row]
     # The DC Checking "Email" column is a workflow label, not the sender's address.
     aliases = ({"email": {"sender", "from", "senderemail"}, "campaign": CAMPAIGN_HEADER_ALIASES}
                if kind == "dc" else {"email": {"email", "emailaddress"}, "sent": {"sent"}})
+    if kind == "dc" and not require_campaign:
+        aliases.pop("campaign")
     result = {}
     for field, names in aliases.items():
         matches = [index for index, key in enumerate(keys) if key in names]
@@ -82,18 +87,18 @@ def _positions(row, kind: str) -> dict[str, int] | None:
     return result
 
 
-def _read_rows(rows, filename: str, kind: str, sheet: str) -> EmailSource:
+def _read_rows(rows, filename: str, kind: str, sheet: str, *, require_campaign: bool = True) -> EmailSource:
     rows = iter(rows)
     positions = None
     for _ in range(50):
         row = next(rows, None)
         if row is None:
             break
-        positions = _positions(row, kind)
+        positions = _positions(row, kind, require_campaign=require_campaign)
         if positions is not None:
             break
     if positions is None:
-        expected = "sender and Campaign" if kind == "dc" else "email and sent"
+        expected = ("sender and Campaign" if require_campaign else "sender") if kind == "dc" else "email and sent"
         raise InboundReplyError(f"{filename}: expected {expected} columns for this Email upload.")
     headers = tuple(str(value) if value is not None else "" for value in row)
     records = []
@@ -116,7 +121,7 @@ def _read_rows(rows, filename: str, kind: str, sheet: str) -> EmailSource:
     return EmailSource(filename, headers, tuple(records), excluded, sheet)
 
 
-def read_email_source(filename: str, data: bytes, *, kind: str) -> EmailSource:
+def read_email_source(filename: str, data: bytes, *, kind: str, require_campaign: bool = True) -> EmailSource:
     if kind not in {"dc", "history"}:
         raise InboundReplyError("Choose DC Checking or Email History for this upload.")
     extension = Path(filename).suffix.casefold()
@@ -132,11 +137,9 @@ def read_email_source(filename: str, data: bytes, *, kind: str) -> EmailSource:
         if text is None:
             raise InboundReplyError(f"{filename}: save the file as CSV UTF-8 and upload it again.")
         try:
-            try:
-                delimiter = csv.Sniffer().sniff(text[:16384], delimiters=",;\t|").delimiter
-            except csv.Error:
-                delimiter = ","
-            return _read_rows(csv.reader(StringIO(text, newline=""), delimiter=delimiter, strict=True), filename, kind, "CSV")
+            delimiter = inbound_csv_delimiter(text)
+            return _read_rows(csv.reader(StringIO(text, newline=""), delimiter=delimiter, strict=True), filename, kind, "CSV",
+                              require_campaign=require_campaign)
         except csv.Error as error:
             raise InboundReplyError(f"{filename}: the CSV contains an incomplete quoted field.") from error
     if extension != ".xlsx":
@@ -150,19 +153,20 @@ def read_email_source(filename: str, data: bytes, *, kind: str) -> EmailSource:
         candidates = []
         for sheet in workbook:
             sheet.reset_dimensions()
-            if any(_positions(row, kind) is not None
+            if any(_positions(row, kind, require_campaign=require_campaign) is not None
                    for row in sheet.iter_rows(min_row=1, max_row=50, values_only=True)):
                 candidates.append(sheet)
         if len(candidates) != 1:
             raise InboundReplyError(f"{filename}: expected one matching data worksheet for this Email upload.")
         sheet = candidates[0]
-        return _read_rows(sheet.iter_rows(values_only=True), filename, kind, sheet.title)
+        return _read_rows(sheet.iter_rows(values_only=True), filename, kind, sheet.title,
+                          require_campaign=require_campaign)
     finally:
         workbook.close()
 
 
 def match_email_sources(dc: EmailSource, history: EmailSource) -> EmailReplyReport:
-    """DC defines the account population; only sent history entries mark a reply."""
+    """DC contains incoming customer emails; sent history entries identify agent responses."""
     replied_emails = frozenset(row.email for row in history.records if row.sent)
     history_emails = {row.email for row in history.records}
     accounts = {}

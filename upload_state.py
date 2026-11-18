@@ -22,6 +22,7 @@ EMAIL_REPLY_UPLOADS_VERSION = 1
 INBOUND_MANUAL_TOTALS_VERSION = 1
 SMS_REPLY_UPLOADS_VERSION = 1
 SOURCE_CAMPAIGN_UPLOADS_VERSION = 1
+EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
@@ -32,6 +33,7 @@ UPLOAD_KEYS = (
     "inbound_reply_sms_1_upload", "inbound_reply_sms_2_upload",
     "inbound_reply_email_1_upload", "inbound_reply_email_2_upload",
     "inbound_reply_viber_1_upload", "inbound_reply_viber_2_upload",
+    "inbound_reply_email_lookup_uploads",
 )
 FILE_STATE_KEYS = {
     "result", "source_info", "template_info", "source_previews", "sheet_output_modes",
@@ -44,6 +46,7 @@ FILE_STATE_KEYS = {
     "inbound_reply_email_result",
     "inbound_reply_sms_result",
     "inbound_reply_campaign_labels",
+    "inbound_reply_email_lookup",
 }
 FILE_STATE_PREFIXES = (
     "source_sheet_", "template_sheet_", "source_header_", "template_header_",

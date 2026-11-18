@@ -366,7 +366,8 @@ class InboundReplyPageTests(unittest.TestCase):
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual(len(set(seen)), 6)
+            self.assertEqual(len(set(seen)), 7)
+            self.assertIn("inbound_reply_email_lookup_uploads", seen)
             for channel in ("SMS", "EMAIL", "VIBER"):
                 for number, role in ((1, "Agent replies"), (2, "Customer replies")):
                     self.assertEqual(seen_labels[f"inbound_reply_{channel.lower()}_{number}_upload"],

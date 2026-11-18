@@ -15,6 +15,7 @@ from typing import Iterable
 VIBER_REPLY_VERSION = 6
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
 CAMPAIGN_COLUMN_ALIASES_VERSION = 1
+INBOUND_CSV_DELIMITER_VERSION = 1
 CAMPAIGN_HEADER_ALIASES = {"campaign", "campaigns", "bankcampaign", "bankcampaigns", "campaignname"}
 VIBER_CAMPAIGN_REPLIED_VERSION = 1
 VIBER_AGENT_REPLIED_SOURCE = "campaign_replies"
@@ -33,6 +34,17 @@ HEADER_ALIASES = {
 
 class InboundReplyError(ValueError):
     """An input problem that the page can explain to the user."""
+
+
+def inbound_csv_delimiter(text: str) -> str:
+    # Multiline message cells can prevent sniffing the full sample. The header
+    # still identifies semicolon/tab exports without treating message text as CSV.
+    for sample in (text[:16384], text.splitlines()[0] if text else ""):
+        try:
+            return csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+        except csv.Error:
+            continue
+    return ","
 
 
 def normalized_name(value: str) -> str:
@@ -186,10 +198,7 @@ def read_reply_source(filename: str, data: bytes) -> ReplySource:
         if text is None:
             raise InboundReplyError(f"{filename}: save the file as CSV UTF-8 and upload it again.")
         try:
-            try:
-                delimiter = csv.Sniffer().sniff(text[:16384], delimiters=",;\t|").delimiter
-            except csv.Error:
-                delimiter = ","
+            delimiter = inbound_csv_delimiter(text)
             return _read_rows(csv.reader(StringIO(text, newline=""), delimiter=delimiter, strict=True), filename, "CSV")
         except csv.Error as error:
             raise InboundReplyError(f"{filename}: the CSV has an incomplete or invalid quoted field.") from error
