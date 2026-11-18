@@ -188,7 +188,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ("sbc_insurance_page", ("SBC_INSURANCE_PAGE_VERSION", "render_sbc_insurance"), ("sbc_insurance", "automation", "exports", "upload_state")),
         ("inbound_reply", ("VIBER_REPLY_VERSION", "VIBER_CAMPAIGN_REPLIED_VERSION", "VIBER_AGENT_REPLIED_SOURCE", "VIBER_PHONE_MATCHING_VERSION", "VIBER_MATCH_MODE", "VIBER_UNREPLIED_WORKBOOK_VERSION", "match_viber_sources", "read_reply_source", "build_unreplied_workbook", "build_reply_workbook", "normalized_campaign"), ()),
         ("inbound_email", ("EMAIL_REPLY_VERSION", "read_email_source", "match_email_sources", "build_email_unreplied_workbook"), ("email_validation", "inbound_reply")),
-        ("inbound_reply_page", ("INBOUND_REPLY_PAGE_VERSION", "INBOUND_REPLY_TITLE", "VIBER_MATCHING_PAGE_VERSION", "EMAIL_MATCHING_PAGE_VERSION", "render_inbound_reply"), ("upload_state", "inbound_reply", "inbound_email")),
+        ("inbound_reply_page", ("INBOUND_REPLY_PAGE_VERSION", "VIBER_MATCHING_PAGE_VERSION", "EMAIL_MATCHING_PAGE_VERSION", "render_inbound_reply"), ("upload_state", "inbound_reply", "inbound_email")),
         ("autostat_page", (
             "render_autostat", "AUTOSTAT_PAGE_VERSION", "COMPACT_SUMMARY_VERSION", "GROUPED_SOURCE_SETTINGS_VERSION",
             "B2_UPLOAD_VERSION", "DEDICATED_BUCKET_UPLOADS_VERSION", "upload_widget_key",
