@@ -10,16 +10,20 @@ from inbound_reply import InboundReplyError, normalized_campaign, normalized_pho
 
 INBOUND_SUMMARY_VERSION = 2
 CHANNEL_UNREPLIED_SHEETS_VERSION = 1
+SOURCE_CAMPAIGN_LABELS_VERSION = 1
 PERCENT_COLUMNS = frozenset({3, 5, 7, 13, 15, 17})
 
 
-def campaign_groups(viber_report=None, email_report=None, sms_report=None) -> list[dict]:
+def campaign_groups(viber_report=None, email_report=None, sms_report=None, *, source_campaigns=()) -> list[dict]:
     campaigns = {}
     for channel, report in (("viber", viber_report), ("email", email_report), ("sms", sms_report)):
         if report is not None:
             for counts in report.campaigns:
                 group = campaigns.setdefault(normalized_campaign(counts.campaign), {"label": counts.campaign})
                 group[channel] = counts
+    for label in source_campaigns:
+        if label.strip():
+            campaigns.setdefault(normalized_campaign(label), {"label": label.strip()})
     return sorted(campaigns.values(), key=lambda group: group["label"].casefold())
 
 
@@ -32,9 +36,10 @@ def nonnegative_count(value) -> int | None:
 
 
 def summary_rows(campaign: str, report_date: date, sent_to_ops: str, viber_report=None,
-                  email_report=None, campaign_totals: dict | None = None, sms_report=None) -> list[list]:
+                  email_report=None, campaign_totals: dict | None = None, sms_report=None,
+                  *, source_campaigns=()) -> list[list]:
     rows = []
-    for group in campaign_groups(viber_report, email_report, sms_report) or [None]:
+    for group in campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns) or [None]:
         cells = [campaign.strip() or "—", *([None] * 10), sent_to_ops, *([None] * 6)]
         if group is not None:
             cells[0] = group["label"]
@@ -104,7 +109,7 @@ def _channel_details(channel: str, report):
 
 def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
                            viber_report=None, email_report=None, campaign_totals: dict | None = None,
-                           sms_report=None, channel_statuses: dict | None = None) -> bytes:
+                           sms_report=None, channel_statuses: dict | None = None, *, source_campaigns=()) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -124,7 +129,8 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     }
     for address, value in labels.items():
         sheet[address] = value
-    for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report):
+    for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
+                            source_campaigns=source_campaigns):
         sheet.append(row)
     edge = Side(style="thin", color="303744")
     for row in sheet:

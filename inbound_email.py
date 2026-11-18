@@ -8,10 +8,10 @@ from io import BytesIO, StringIO
 from pathlib import Path
 
 from email_validation import validated_email
-from inbound_reply import CampaignReplyCounts, InboundReplyError, build_reply_workbook, normalized_campaign
+from inbound_reply import CAMPAIGN_HEADER_ALIASES, CampaignReplyCounts, InboundReplyError, build_reply_workbook, normalized_campaign
 
 
-EMAIL_REPLY_VERSION = 1
+EMAIL_REPLY_VERSION = 2
 
 
 def normalized_email(value: object) -> str:
@@ -64,7 +64,7 @@ class EmailReplyReport:
 def _positions(row, kind: str) -> dict[str, int] | None:
     keys = [header_key(value) for value in row]
     # The DC Checking "Email" column is a workflow label, not the sender's address.
-    aliases = ({"email": {"sender", "from", "senderemail"}, "campaign": {"campaign", "bankcampaign"}}
+    aliases = ({"email": {"sender", "from", "senderemail"}, "campaign": CAMPAIGN_HEADER_ALIASES}
                if kind == "dc" else {"email": {"email", "emailaddress"}, "sent": {"sent"}})
     result = {}
     for field, names in aliases.items():

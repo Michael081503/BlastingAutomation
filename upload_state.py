@@ -21,6 +21,7 @@ VIBER_REPLY_UPLOADS_VERSION = 1
 EMAIL_REPLY_UPLOADS_VERSION = 1
 INBOUND_MANUAL_TOTALS_VERSION = 1
 SMS_REPLY_UPLOADS_VERSION = 1
+SOURCE_CAMPAIGN_UPLOADS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
@@ -42,6 +43,7 @@ FILE_STATE_KEYS = {
     "inbound_reply_viber_result",
     "inbound_reply_email_result",
     "inbound_reply_sms_result",
+    "inbound_reply_campaign_labels",
 }
 FILE_STATE_PREFIXES = (
     "source_sheet_", "template_sheet_", "source_header_", "template_header_",

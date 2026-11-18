@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 4
+VIBER_REPLY_VERSION = 5
+CAMPAIGN_COLUMN_ALIASES_VERSION = 1
+CAMPAIGN_HEADER_ALIASES = {"campaign", "campaigns", "bankcampaign", "bankcampaigns", "campaignname"}
 VIBER_CAMPAIGN_REPLIED_VERSION = 1
 VIBER_AGENT_REPLIED_SOURCE = "campaign_replies"
 VIBER_PHONE_MATCHING_VERSION = 1
@@ -23,7 +25,7 @@ MATCH_MODES = ("name", "phone")
 HEADER_ALIASES = {
     "name": {"clientname", "contactname", "fullname", "name"},
     "phone": {"phone", "phonenumber", "mobile", "mobilenumber"},
-    "campaign": {"bankcampaign", "campaign"},
+    "campaign": CAMPAIGN_HEADER_ALIASES,
     "message_type": {"messagetype"},
 }
 

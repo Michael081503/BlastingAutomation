@@ -24,7 +24,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 13
+INBOUND_REPLY_PAGE_VERSION = 14
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -37,10 +37,10 @@ CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
 def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
-                           email_report=None, *, include_worked: bool = False, sms_report=None) -> dict:
+                           email_report=None, *, include_worked: bool = False, sms_report=None, source_campaigns=()) -> dict:
     """Keep manual totals with their campaign/date when uploads or visible rows change."""
     saved = {key: dict(value) for key, value in st.session_state.get("inbound_reply_campaign_totals", {}).items()}
-    groups = campaign_groups(viber_report, email_report, sms_report) or [{"label": campaign.strip() or "—"}]
+    groups = campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns) or [{"label": campaign.strip() or "—"}]
     with st.container(border=True, key="inbound_campaign_totals"):
         st.subheader("Edit campaign totals")
         st.caption(
@@ -70,7 +70,7 @@ def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
 def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
                       viber_report: ViberReplyReport | None = None,
                       email_report: EmailReplyReport | None = None,
-                      campaign_totals: dict | None = None, sms_report=None) -> str:
+                      campaign_totals: dict | None = None, sms_report=None, *, source_campaigns=()) -> str:
     """Fill each uploaded channel independently, joining campaign labels exactly."""
     date_label = f"{report_date.strftime('%B').upper()} {report_date.day}, {report_date.year} DATA"
     channel_headers = "".join(
@@ -78,7 +78,8 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
         for channel in ("EMAIL", "SMS", "VIBER")
     )
     body = []
-    for cells in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report):
+    for cells in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
+                              source_campaigns=source_campaigns):
         body.append("<tr>" + "".join(f"<td>{escape(display_cell(value, column))}</td>"
                                     for column, value in enumerate(cells)) + "</tr>")
     return f"""
@@ -212,6 +213,36 @@ def prepare_sms_report(replied_upload, account_upload) -> ViberReplyReport | Non
         st.error(cached["error"])
         return None
     return cached["report"]
+
+
+def prepare_campaign_labels(channels) -> tuple[str, ...]:
+    """Show source campaign names while a channel is still waiting for its other file."""
+    sources = []
+    for channel, uploads, report in channels:
+        if report is not None:
+            continue
+        for index, upload in enumerate(uploads):
+            # Email History has no campaign field; DC Checking supplies its labels.
+            if upload is not None and (channel != "EMAIL" or index == 1):
+                data = upload.getvalue()
+                sources.append((channel, index, upload.name, data))
+    if not sources:
+        st.session_state.pop("inbound_reply_campaign_labels", None)
+        return ()
+    signature = (VIBER_REPLY_VERSION, EMAIL_REPLY_VERSION,
+                 tuple((channel, index, name, sha256(data).hexdigest()) for channel, index, name, data in sources))
+    cached = st.session_state.get("inbound_reply_campaign_labels")
+    if cached is None or cached["signature"] != signature:
+        labels = []
+        for channel, _, name, data in sources:
+            try:
+                source = read_email_source(name, data, kind="dc") if channel == "EMAIL" else read_reply_source(name, data)
+            except InboundReplyError:
+                continue  # Full-pair preparation displays input errors.
+            labels.extend(record.campaign for record in source.records)
+        cached = {"signature": signature, "labels": tuple(dict.fromkeys(labels))}
+        st.session_state["inbound_reply_campaign_labels"] = cached
+    return cached["labels"]
 
 
 def channel_source_status(uploads, report) -> str:
@@ -360,7 +391,8 @@ def render_inbound_reply() -> None:
         st.subheader("Report settings")
         campaign_column, date_column, ops_column = st.columns([2, 1, 1])
         with campaign_column:
-            campaign = st.text_input("Report label (optional)", placeholder="Report name", key="inbound_reply_campaign")
+            campaign = st.text_input("Report label (optional)", placeholder="Report name", key="inbound_reply_campaign",
+                                     help="Campaign names are read automatically from the uploaded Campaign, Campaigns or Bank Campaign column.")
         with date_column:
             report_date = st.date_input(
                 "Report date", value=datetime.now(timezone(timedelta(hours=8))).date(),
@@ -408,21 +440,24 @@ def render_inbound_reply() -> None:
     viber_report = prepare_viber_report(*viber_uploads)
     email_report = prepare_email_report(*email_uploads)
     sms_report = prepare_sms_report(*sms_uploads)
+    channels = (("SMS", sms_uploads, sms_report), ("VIBER", viber_uploads, viber_report), ("EMAIL", email_uploads, email_report))
+    source_campaigns = prepare_campaign_labels(channels)
     manual_totals = render_campaign_totals(report_date, campaign, viber_report, email_report,
-                                           include_worked=True, sms_report=sms_report)
-    statuses = {channel: channel_source_status(uploads, report) for channel, uploads, report in (
-        ("SMS", sms_uploads, sms_report), ("VIBER", viber_uploads, viber_report), ("EMAIL", email_uploads, email_report),
-    )}
+                                           include_worked=True, sms_report=sms_report, source_campaigns=source_campaigns)
+    statuses = {channel: channel_source_status(uploads, report) for channel, uploads, report in channels}
     with output_area:
-        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report))
+        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
+                                  source_campaigns=source_campaigns))
+        st.caption("CAMPAIGN is filled automatically from the uploaded campaign column, with one row per campaign.")
         has_manual_counts = any(value is not None for row in summary_rows(
-            campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report)
+            campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
+            source_campaigns=source_campaigns)
             for value in row[1:11])
         if viber_report is not None or email_report is not None or sms_report is not None or has_manual_counts:
             st.download_button(
                 "Download report (.xlsx)",
                 data=partial(build_summary_workbook, campaign, report_date, sent_to_ops, viber_report, email_report,
-                             manual_totals, sms_report=sms_report, channel_statuses=statuses),
+                             manual_totals, sms_report=sms_report, channel_statuses=statuses, source_campaigns=source_campaigns),
                 file_name=f"INBOUND_REPLY_{report_date.isoformat()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="inbound_reply_summary_download", on_click="ignore", type="primary",
