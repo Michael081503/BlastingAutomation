@@ -18,6 +18,7 @@ SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION = 1
 SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION = 1
 INBOUND_REPLY_UPLOADS_VERSION = 1
 VIBER_REPLY_UPLOADS_VERSION = 1
+EMAIL_REPLY_UPLOADS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
@@ -37,6 +38,7 @@ FILE_STATE_KEYS = {
     "autostat_b4_result", "autostat_b4_source_info", "b4_autostat_result", "b4_autostat_source_info",
     "sbc_insurance_result", "sbc_insurance_source_info",
     "inbound_reply_viber_result",
+    "inbound_reply_email_result",
 }
 FILE_STATE_PREFIXES = (
     "source_sheet_", "template_sheet_", "source_header_", "template_header_",

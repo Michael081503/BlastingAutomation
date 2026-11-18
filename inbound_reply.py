@@ -37,6 +37,10 @@ def normalized_name(value: str) -> str:
     return " ".join("".join(char if char.isalnum() else " " for char in text).split())
 
 
+def normalized_campaign(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
 def normalized_phone(value: str) -> str:
     value = value.strip()
     if re.fullmatch(r"\d+\.0+", value):
@@ -242,7 +246,7 @@ def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource
             person = people.setdefault(identity, MatchedPerson(row.name or phone))
             if phone:
                 person.phones.add(phone)
-            campaign_key = " ".join(unicodedata.normalize("NFKC", row.campaign).casefold().split())
+            campaign_key = normalized_campaign(row.campaign)
             campaign_labels.setdefault(campaign_key, row.campaign)
             group = person.campaigns.setdefault(campaign_key, {
                 "label": campaign_labels[campaign_key], "message_logs": 0, "campaign_replies": 0,
@@ -300,7 +304,7 @@ def unreplied_records(report: ViberReplyReport) -> tuple[ReplyRecord, ...]:
     source = report.message_logs if report.agent_replied_source == "campaign_replies" else report.campaign_replies
     selected = {}
     for row in source.records:
-        campaign_key = " ".join(unicodedata.normalize("NFKC", row.campaign).casefold().split())
+        campaign_key = normalized_campaign(row.campaign)
         key = (campaign_key, normalized_phone(row.phone))
         if key in pending:
             selected.setdefault(key, row)
@@ -309,35 +313,44 @@ def unreplied_records(report: ViberReplyReport) -> tuple[ReplyRecord, ...]:
 
 def build_unreplied_workbook(report: ViberReplyReport) -> bytes:
     """Export campaign counts followed by the corresponding source account details."""
+    records = unreplied_records(report)
+    source = report.message_logs if report.agent_replied_source == "campaign_replies" else report.campaign_replies
+    source_headers = source.headers or ("Name", "Phone", "Bank Campaign", "Message Type")
+    details = []
+    for record in records:
+        values = record.source_values or (record.name, record.phone, record.campaign, record.message_type)
+        values = tuple(values[:len(source_headers)]) + (None,) * max(0, len(source_headers) - len(values))
+        details.append((*values, normalized_phone(record.phone), "Not replied"))
+    return build_reply_workbook(report.campaigns, source_headers, details, matched_header="Matched Phone")
+
+
+def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_headers: tuple[str, ...],
+                         details: list[tuple], *, matched_header: str) -> bytes:
+    """Use the same summary/detail layout for each channel's unreplied accounts."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
-    details = unreplied_records(report)
-    expected = sum(campaign.awaiting_reply for campaign in report.campaigns)
+    expected = sum(campaign.awaiting_reply for campaign in campaigns)
     if len(details) != expected:
         raise InboundReplyError("Unreplied account details do not match the campaign counts. Upload both files again.")
-    source = report.message_logs if report.agent_replied_source == "campaign_replies" else report.campaign_replies
     workbook = Workbook()
     summary = workbook.active
     summary.title = "Summary"
     summary.append(["Campaign", "Not replied"])
-    for campaign in report.campaigns:
+    for campaign in campaigns:
         summary.append([campaign.campaign, campaign.awaiting_reply])
     summary.append(["TOTAL", expected])
     summary.column_dimensions["A"].width = 32
     summary.column_dimensions["B"].width = 20
-    summary.auto_filter.ref = f"A1:B{len(report.campaigns) + 1}"
+    summary.auto_filter.ref = f"A1:B{len(campaigns) + 1}"
 
     sheet = workbook.create_sheet("Unreplied Details")
-    source_headers = source.headers or ("Name", "Phone", "Bank Campaign", "Message Type")
-    sheet.append([*source_headers, "Matched Phone", "Reply Status"])
-    for record in details:
-        values = record.source_values or (record.name, record.phone, record.campaign, record.message_type)
-        values = tuple(values[:len(source_headers)]) + (None,) * max(0, len(source_headers) - len(values))
-        sheet.append([*values, normalized_phone(record.phone), "Not replied"])
+    sheet.append([*source_headers, matched_header, "Reply Status"])
+    for row in details:
+        sheet.append(row)
     sheet.auto_filter.ref = sheet.dimensions
-    for column, header in enumerate([*source_headers, "Matched Phone", "Reply Status"], 1):
+    for column, header in enumerate([*source_headers, matched_header, "Reply Status"], 1):
         key = "".join(char for char in header.casefold() if char.isalnum())
         sheet.column_dimensions[get_column_letter(column)].width = (
             75 if key in {"messagecontent", "replycontent"} else

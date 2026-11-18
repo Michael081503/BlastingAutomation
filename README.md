@@ -20,11 +20,19 @@ Use the sidebar to switch between five separate pages:
 - **NEGATIVE B2 & B4**: B2 and B4 account matching and separate CARDS/BEL campaign files for each bucket. Prepare their activity logs on the AUTOSTAT page.
 - **AUTOSTAT**: upload the automation's output files to prepare logs automatically. Standard uses the GEO/RECO Email and Viber layouts; B2 and B4 use their Email, SMS and Viber templates.
 - **SBC INSURANCE**: upload an unfiltered DataGrid to automatically filter statuses, remove duplicate financing/card accounts and prepare the cleaned output and shared campaign template.
-- **Inbound reply**: six upload slots (two each for SMS, Email and Viber) and the campaign summary layout with DC Worked, Unique Result, Sent to OPS and Agent Worked sections. Viber automatically matches its two files by phone number and shows unique numbers, agent replies and percentages by campaign. Report label, date and Sent to OPS are editable. Clear all files also empties these six slots and their prepared results while keeping the report settings.
+- **Inbound reply**: six upload slots (two each for SMS, Email and Viber) and the campaign summary layout with DC Worked, Unique Result, Sent to OPS and Agent Worked sections. Email matches DC Checking accounts against sent Email History entries by email address; Viber matches its files by phone number. Each channel has a two-sheet unreplied-account Excel download and runs independently. Report label, date and Sent to OPS are editable. Clear all files also empties these six slots and their prepared results while keeping the report settings.
 
 Workbooks stay on the page you select. A DataGrid-looking sheet does not switch GEO/RECO into B2 matching.
 
 Use **Clear all files** with the gold Batman-style icon in the upper-right of the workspace header on any page to empty every upload box at once, including GEO/RECO sources and templates, all AUTOSTAT modes, and the B2/B4 database/account-list uploads. It also clears prepared downloads, previews and source mappings across all pages. Log settings and output preferences are kept. Files already saved to a folder are kept. You can immediately upload a new batch after clearing.
+
+## Inbound reply — Email
+
+Upload **Email History** in the first Email slot and **DC Checking** in the second. DC Checking supplies the account population using **sender** and **Campaign**. Its **Email** column contains workflow labels such as Respond Now and is never used as the customer's address. History uses **email** for the address and a nonblank **sent** value to identify an agent reply, as confirmed by the user. Received-only entries, Person/agent names, assignment fields and AI suggestions do not count as replies. XLSX files with one matching worksheet and CSV exports are accepted.
+
+Matching and duplicate removal use valid email addresses, ignoring capitalization and surrounding whitespace. Each address counts once within its DC campaign. History-only addresses, including unrelated received messages, are outside the account population and are not assigned invented campaigns. History has no campaign column: a sent reply for an address applies to every DC campaign containing that address. The shared report fills Email Reply with the unique DC account count and Agent Worked — Email with the replied count and percentage. Viber remains independent, and empty channel uploads do not block another channel.
+
+The Email download has **Summary** first, with each campaign's unreplied count and a total, followed by **Unreplied Details**, retaining the first original DC row per unreplied email/campaign plus Matched Email and Reply Status. Summary counts equal details row counts, including when an address occurs in more than one campaign. The report includes every uploaded date; Report date is a label and does not filter timestamps. Replacing either file, even with the same filename, rebuilds the report; removing a file or clearing uploads removes previous results. Invalid addresses are excluded and counted. SMS, Active Ticket and DC Worked calculations remain pending their source data and rules.
 
 ## Inbound reply — Viber
 

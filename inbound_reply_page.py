@@ -11,32 +11,48 @@ import streamlit as st
 
 from inbound_reply import (
     VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, InboundReplyError, ViberReplyReport,
-    build_people_csv, build_unreplied_workbook, match_viber_sources, people_rows, read_reply_source,
+    build_people_csv, build_unreplied_workbook, match_viber_sources, normalized_campaign, people_rows, read_reply_source,
+)
+from inbound_email import (
+    EMAIL_REPLY_VERSION, EmailReplyReport, build_email_unreplied_workbook,
+    match_email_sources, read_email_source,
 )
 from upload_state import upload_widget_key
 
 
-INBOUND_REPLY_PAGE_VERSION = 5
+INBOUND_REPLY_PAGE_VERSION = 6
 VIBER_MATCHING_PAGE_VERSION = 4
+EMAIL_MATCHING_PAGE_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
 
 
 def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
-                      viber_report: ViberReplyReport | None = None) -> str:
-    """Fill Viber reply columns; leave unprovided channel and ticket totals blank."""
+                      viber_report: ViberReplyReport | None = None,
+                      email_report: EmailReplyReport | None = None) -> str:
+    """Fill each uploaded channel independently, joining campaign labels exactly."""
     date_label = f"{report_date.strftime('%B').upper()} {report_date.day}, {report_date.year} DATA"
     channel_headers = "".join(
         f'<th scope="col">{channel}</th><th scope="col">%</th>'
         for channel in ("EMAIL", "SMS", "VIBER")
     )
     body = []
-    for counts in (viber_report.campaigns if viber_report and viber_report.campaigns else (None,)):
+    campaigns = {}
+    for channel, report in (("viber", viber_report), ("email", email_report)):
+        if report is not None:
+            for counts in report.campaigns:
+                group = campaigns.setdefault(normalized_campaign(counts.campaign), {"label": counts.campaign})
+                group[channel] = counts
+    for group in sorted(campaigns.values(), key=lambda group: group["label"].casefold()) or [None]:
         cells = [campaign.strip() or "—", *(["—"] * 10), sent_to_ops, *(["—"] * 6)]
-        if counts is not None:
-            cells[0] = counts.campaign
-            cells[10] = f"{counts.unique_people:,}"
-            cells[16] = f"{counts.agent_replied:,}"
-            cells[17] = f"{counts.agent_percent:.2%}" if counts.agent_percent is not None else "—"
+        if group is not None:
+            cells[0] = group["label"]
+            for channel, indexes in (("email", (8, 12, 13)), ("viber", (10, 16, 17))):
+                counts = group.get(channel)
+                if counts is not None:
+                    reply_index, agent_index, percent_index = indexes
+                    cells[reply_index] = f"{counts.unique_people:,}"
+                    cells[agent_index] = f"{counts.agent_replied:,}"
+                    cells[percent_index] = f"{counts.agent_percent:.2%}" if counts.agent_percent is not None else "—"
         body.append("<tr>" + "".join(f"<td>{escape(value)}</td>" for value in cells) + "</tr>")
     return f"""
     <style>
@@ -113,6 +129,74 @@ def prepare_viber_report(log_upload, campaign_upload) -> ViberReplyReport | None
         st.error(cached["error"])
         return None
     return cached["report"]
+
+
+def prepare_email_report(history_upload, dc_upload) -> EmailReplyReport | None:
+    if history_upload is None or dc_upload is None:
+        st.session_state.pop("inbound_reply_email_result", None)
+        return None
+    history_bytes, dc_bytes = history_upload.getvalue(), dc_upload.getvalue()
+    signature = (EMAIL_REPLY_VERSION, sha256(history_bytes).hexdigest(), sha256(dc_bytes).hexdigest(),
+                 history_upload.name, dc_upload.name)
+    cached = st.session_state.get("inbound_reply_email_result")
+    if cached is None or cached["signature"] != signature:
+        st.session_state.pop("inbound_reply_email_result", None)
+        try:
+            if history_bytes == dc_bytes:
+                raise InboundReplyError("The two Email uploads are identical. Upload Email History and DC Checking separately.")
+            history = read_email_source(history_upload.name, history_bytes, kind="history")
+            dc = read_email_source(dc_upload.name, dc_bytes, kind="dc")
+            cached = {"signature": signature, "report": match_email_sources(dc, history)}
+        except InboundReplyError as error:
+            cached = {"signature": signature, "error": str(error)}
+        st.session_state["inbound_reply_email_result"] = cached
+    if "error" in cached:
+        st.error(cached["error"])
+        return None
+    return cached["report"]
+
+
+def render_email_details(report: EmailReplyReport, report_date: date) -> None:
+    totals = report.totals
+    for column, label, value in zip(st.columns(3),
+                                    ("Unique email addresses", "Email replied by agents", "Email awaiting agent reply"),
+                                    (totals.unique_people, totals.agent_replied, totals.awaiting_reply)):
+        column.metric(label, f"{value:,}")
+    st.caption(
+        "DC Checking supplies the account list and campaigns. An address counts as replied when it matches "
+        "an Email History row with a nonblank sent value. Matching and duplicate removal use email addresses."
+    )
+    st.subheader("Email unreplied accounts by campaign")
+    rows = "".join(f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
+                   for campaign in report.campaigns)
+    st.html(
+        '<div class="inbound-reply-report" style="max-width:640px" role="region" '
+        'aria-label="Email unreplied accounts by campaign" tabindex="0">'
+        '<table style="min-width:0"><thead><tr><th scope="col">Campaign</th>'
+        f'<th scope="col">Not replied</th></tr></thead><tbody>{rows}</tbody></table></div>'
+    )
+    st.download_button(
+        "Download Email unreplied report (.xlsx)", data=partial(build_email_unreplied_workbook, report),
+        file_name=f"EMAIL_Unreplied_{report_date.isoformat()}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="inbound_reply_email_unreplied_download", on_click="ignore", type="primary",
+    )
+    st.caption("The Excel workbook contains Summary and Unreplied Details sheets, retaining the original DC Checking fields.")
+    with st.expander("Email matching details"):
+        st.write(
+            f"DC Checking: {len(report.dc.records):,} valid rows. Email History: {len(report.history.records):,} valid rows, "
+            f"including {sum(row.sent for row in report.history.records):,} sent entries. "
+            f"{report.history_only_addresses:,} history-only email addresses are outside the DC account list and are excluded."
+        )
+        st.caption(
+            "Addresses are matched without case or surrounding whitespace. Received-only messages, agent names, "
+            "assignment fields, AI suggestions and DC workflow labels do not mark an account as replied. "
+            "History has no campaign column, so a sent reply matches every DC campaign containing that address. "
+            "All uploaded dates are included; Report date labels the report."
+        )
+        excluded = report.dc.excluded_rows + report.history.excluded_rows
+        if excluded:
+            st.warning(f"Skipped {excluded:,} rows with blank or invalid email addresses.")
 
 
 def render_viber_details(report: ViberReplyReport, report_date: date | None = None) -> None:
@@ -203,6 +287,7 @@ def render_inbound_reply() -> None:
     st.subheader("Upload files")
     uploaded_count = 0
     viber_uploads = []
+    email_uploads = []
     for column, channel in zip(st.columns(3), CHANNELS):
         with column:
             st.markdown(f"**{channel}**")
@@ -211,6 +296,8 @@ def render_inbound_reply() -> None:
                 label = f"{channel} file {number}"
                 if channel == "VIBER":
                     label = "Viber message logs — comparison list" if number == 1 else "Viber campaign replies — replied by agents"
+                elif channel == "EMAIL":
+                    label = "Email History — sent agent replies" if number == 1 else "Email DC Checking — account list"
                 upload = st.file_uploader(
                     label, type=["xlsx", "csv"],
                     key=upload_widget_key(f"inbound_reply_{channel.lower()}_{number}_upload"),
@@ -218,6 +305,8 @@ def render_inbound_reply() -> None:
                 channel_count += upload is not None
                 if channel == "VIBER":
                     viber_uploads.append(upload)
+                elif channel == "EMAIL":
+                    email_uploads.append(upload)
             uploaded_count += channel_count
             st.caption(f"{channel_count} of 2 files uploaded")
     st.caption(f"{uploaded_count} of 6 files uploaded")
@@ -225,10 +314,16 @@ def render_inbound_reply() -> None:
         st.subheader("Report")
         if campaign.strip():
             st.caption(campaign.strip())
-        report = prepare_viber_report(*viber_uploads)
-        st.html(build_report_html(campaign, report_date, sent_to_ops, report))
-        if report is not None:
-            render_viber_details(report, report_date)
-            st.caption("Active Ticket, DC Worked, SMS and Email totals are pending their source data and rules.")
+        viber_report = prepare_viber_report(*viber_uploads)
+        email_report = prepare_email_report(*email_uploads)
+        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report))
+        if email_report is not None:
+            st.subheader("Email")
+            render_email_details(email_report, report_date)
+        if viber_report is not None:
+            st.subheader("Viber")
+            render_viber_details(viber_report, report_date)
+        if viber_report is not None or email_report is not None:
+            st.caption("Active Ticket, DC Worked and SMS totals are pending their source data and rules.")
         else:
-            st.caption("Upload both Viber files to show matched, deduplicated reply totals. SMS and Email rules are pending.")
+            st.caption("Upload both files for Email or Viber to generate that channel's report. SMS rules are pending.")
