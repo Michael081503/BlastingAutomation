@@ -250,7 +250,7 @@ class ViberUnrepliedWorkbookTests(unittest.TestCase):
         try:
             self.assertEqual(workbook.sheetnames, ["Summary", "Unreplied Details"])
             self.assertEqual(list(workbook["Summary"].values), [
-                ("Campaign", "Not replied"), ("B2", 2), ("B3", 0), ("B4", 1), ("TOTAL", 3),
+                ("Campaign", "Not replied"), ("B2", 2), ("B4", 1), ("TOTAL", 3),
             ])
             details = workbook["Unreplied Details"]
             self.assertEqual(list(next(details.values)), [*headers, "Matched Phone", "Reply Status"])
@@ -269,7 +269,8 @@ class ViberUnrepliedWorkbookTests(unittest.TestCase):
             self.assertEqual(details["K2"].number_format, "@")
             self.assertEqual(details["A2"].number_format, "@")
             self.assertEqual(details.freeze_panes, "A2")
-            self.assertEqual(workbook["Summary"]["B5"].value, details.max_row - 1)
+            summary = workbook["Summary"]
+            self.assertEqual(summary.cell(summary.max_row, 2).value, details.max_row - 1)
             self.assertEqual(report.totals.awaiting_reply, 2)  # Summary counts campaign entries.
         finally:
             workbook.close()
@@ -372,8 +373,8 @@ class InboundReplyPageTests(unittest.TestCase):
                 for number, role in ((1, "Agent replies"), (2, "Customer replies")):
                     self.assertEqual(seen_labels[f"inbound_reply_{channel.lower()}_{number}_upload"],
                                      f"{channel} file {number} — {role}")
-            self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].totals.unique_people, 2)
-            self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1", "0"])
+            self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].totals.unique_people, 1)
+            self.assertEqual([metric.value for metric in app.metric], ["1", "0", "1", "0"])
             self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].agent_replied_source, "campaign_replies")
             self.assertEqual(app.session_state["inbound_reply_viber_result"]["report"].match_mode, "phone")
             # Cached name matching must rebuild for identical uploads under the phone policy.
@@ -387,7 +388,7 @@ class InboundReplyPageTests(unittest.TestCase):
             ], pending=True, message_type="Inbound Reply"))
             app.run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1", "0"])
+            self.assertEqual([metric.value for metric in app.metric], ["1", "0", "1", "0"])
             uploads["inbound_reply_viber_1_upload"] = Upload("campaign-replies.csv", source_csv([
                 ("Different Name", "+63 917 123 4567", "B2"),
             ], pending=True, message_type="Inbound Reply"))

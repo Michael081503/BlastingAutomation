@@ -11,6 +11,21 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_modules_refresh_for_all_channel_customer_populations_and_phone_lookups(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import inbound_reply, inbound_campaign_lookup, inbound_summary, inbound_reply_page
+            del inbound_reply.CUSTOMER_REPLY_POPULATION_VERSION
+            del inbound_campaign_lookup.PHONE_CAMPAIGN_LOOKUP_VERSION
+            del inbound_summary.ALL_CHANNEL_REPLY_LABELS_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'inbound_reply', 'inbound_email', 'inbound_campaign_lookup', 'inbound_summary', 'inbound_reply_page'} <= refreshed
+            assert inbound_reply_page.apply_phone_campaign_lookup is inbound_campaign_lookup.apply_phone_campaign_lookup
+            assert inbound_reply_page.PHONE_CAMPAIGN_LOOKUP_VERSION == 1
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_modules_refresh_for_email_campaign_lookup_uploads(self):
         self.run_isolated("""
             import app_startup

@@ -11,6 +11,7 @@ from inbound_reply import InboundReplyError, normalized_campaign, normalized_pho
 INBOUND_SUMMARY_VERSION = 3
 BLAST_PERCENTAGE_FORMULAS_VERSION = 1
 CUSTOMER_EMAIL_REPLY_LABELS_VERSION = 1
+ALL_CHANNEL_REPLY_LABELS_VERSION = 1
 CHANNEL_UNREPLIED_SHEETS_VERSION = 1
 SOURCE_CAMPAIGN_LABELS_VERSION = 1
 PERCENT_COLUMNS = frozenset({3, 5, 7, 13, 15, 17})
@@ -144,6 +145,16 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
         "Unique customers who emailed you, counted once per email address within each campaign from DC Checking. "
         "Customer replies remain counted after an agent responds. Agent responses appear under AGENT WORKED - EMAIL.",
         "INBOUND REPLY")
+    for reply_column, channel, count_column, percent_column in (("J", "SMS", "O", "P"), ("K", "Viber", "Q", "R")):
+        sheet[f"{reply_column}3"].comment = Comment(
+            f"Unique customers who contacted you through {channel}, counted once per phone number within each campaign. "
+            "Contacts found only in the agent-replies file are excluded.", "INBOUND REPLY")
+        sheet[f"{count_column}3"].comment = Comment(
+            f"Customers from {channel} REPLY who received an agent response in the same campaign.", "INBOUND REPLY")
+        sheet[f"{percent_column}3"].comment = Comment(
+            f"Customers answered by agents divided by {channel} REPLY × 100.", "INBOUND REPLY")
+    sheet["M3"].comment = Comment("Customers from EMAIL REPLY who received an agent response.", "INBOUND REPLY")
+    sheet["N3"].comment = Comment("Customers answered by agents divided by EMAIL REPLY × 100.", "INBOUND REPLY")
     for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
                             source_campaigns=source_campaigns):
         sheet.append(row)

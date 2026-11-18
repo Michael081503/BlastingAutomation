@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 6
+VIBER_REPLY_VERSION = 7
+CUSTOMER_REPLY_POPULATION_VERSION = 1
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
 CAMPAIGN_COLUMN_ALIASES_VERSION = 1
 INBOUND_CSV_DELIMITER_VERSION = 1
@@ -91,6 +92,8 @@ class ReplySource:
     excluded_rows: int = 0
     sheet: str = "CSV"
     headers: tuple[str, ...] = ()
+    lookup_applied: bool = False
+    unmatched_addresses: int = 0
 
     @property
     def message_types(self) -> dict[str, int]:
@@ -137,7 +140,7 @@ class ViberReplyReport:
         return _counts("All campaigns", self.people, self.agent_replied_source)
 
 
-def _header_positions(row: Iterable) -> dict[str, int] | None:
+def _header_positions(row: Iterable, *, require_campaign: bool = True) -> dict[str, int] | None:
     keys = ["".join(char for char in str(cell or "").casefold() if char.isalnum()) for cell in row]
     positions = {}
     for field_name, aliases in HEADER_ALIASES.items():
@@ -146,23 +149,23 @@ def _header_positions(row: Iterable) -> dict[str, int] | None:
             return None
         if matches:
             positions[field_name] = matches[0]
-    return positions if {"phone", "campaign"} <= positions.keys() else None
+    required = {"phone", "campaign"} if require_campaign else {"phone"}
+    return positions if required <= positions.keys() else None
 
 
-def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
+def _read_rows(rows: Iterable, filename: str, sheet: str, *, require_campaign: bool = True) -> ReplySource:
     rows = iter(rows)
     positions = None
     for _ in range(50):
         row = next(rows, None)
         if row is None:
             break
-        positions = _header_positions(row)
+        positions = _header_positions(row, require_campaign=require_campaign)
         if positions is not None:
             break
     if positions is None:
-        raise InboundReplyError(
-            f"{filename}: expected Phone and Bank Campaign headers. Client Name or Contact Name is optional."
-        )
+        expected = "Phone and Bank Campaign" if require_campaign else "Phone"
+        raise InboundReplyError(f"{filename}: expected {expected} headers. Client Name or Contact Name is optional.")
     headers = tuple(str(value) if value is not None else "" for value in row)
     records = []
     excluded = 0
@@ -171,7 +174,7 @@ def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
             continue
         values = {name: str(row[index]).strip() if index < len(row) and row[index] is not None else ""
                   for name, index in positions.items()}
-        campaign = values["campaign"] or "Unspecified campaign"
+        campaign = values.get("campaign") or "Unspecified campaign"
         if excluded_inbound_campaign(campaign):
             continue
         if not normalized_name(values.get("name", "")) and not normalized_phone(values["phone"]):
@@ -184,7 +187,7 @@ def _read_rows(rows: Iterable, filename: str, sheet: str) -> ReplySource:
     return ReplySource(filename, tuple(records), excluded, sheet, headers)
 
 
-def read_reply_source(filename: str, data: bytes) -> ReplySource:
+def read_reply_source(filename: str, data: bytes, *, require_campaign: bool = True) -> ReplySource:
     extension = Path(filename).suffix.casefold()
     if extension == ".csv":
         encodings = ("utf-16",) if data.startswith((b"\xff\xfe", b"\xfe\xff")) else ("utf-8-sig", "cp1252")
@@ -199,7 +202,8 @@ def read_reply_source(filename: str, data: bytes) -> ReplySource:
             raise InboundReplyError(f"{filename}: save the file as CSV UTF-8 and upload it again.")
         try:
             delimiter = inbound_csv_delimiter(text)
-            return _read_rows(csv.reader(StringIO(text, newline=""), delimiter=delimiter, strict=True), filename, "CSV")
+            return _read_rows(csv.reader(StringIO(text, newline=""), delimiter=delimiter, strict=True), filename, "CSV",
+                              require_campaign=require_campaign)
         except csv.Error as error:
             raise InboundReplyError(f"{filename}: the CSV has an incomplete or invalid quoted field.") from error
     if extension == ".xlsx":
@@ -213,16 +217,18 @@ def read_reply_source(filename: str, data: bytes) -> ReplySource:
             for sheet in workbook:
                 sheet.reset_dimensions()
                 for row in sheet.iter_rows(min_row=1, max_row=50, values_only=True):
-                    if _header_positions(row) is not None:
+                    if _header_positions(row, require_campaign=require_campaign) is not None:
                         candidates.append(sheet)
                         break
             if len(candidates) != 1:
+                expected = "Phone and Bank Campaign" if require_campaign else "Phone"
                 raise InboundReplyError(
-                    f"{filename}: expected one sheet with Phone and Bank Campaign columns. "
+                    f"{filename}: expected one sheet with {expected} columns. "
                     "Save the required worksheet as CSV and upload that file."
                 )
             sheet = candidates[0]
-            return _read_rows(sheet.iter_rows(values_only=True), filename, sheet.title)
+            return _read_rows(sheet.iter_rows(values_only=True), filename, sheet.title,
+                              require_campaign=require_campaign)
         finally:
             workbook.close()
     raise InboundReplyError(f"{filename}: upload a .csv or .xlsx file.")
@@ -238,7 +244,7 @@ def _counts(label: str, people: Iterable[MatchedPerson], replied_source: str,
 
 def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource, *,
                         agent_replied_source: str, match_mode: str) -> ViberReplyReport:
-    """Deduplicate by the selected identity; phone mode never falls back to names."""
+    """Phone reports count customer replies, matching agent responses within each campaign."""
     if agent_replied_source not in SOURCE_NAMES or match_mode not in MATCH_MODES:
         raise InboundReplyError("Choose the agent-replied file and a person matching rule.")
     sources = dict(zip(SOURCE_NAMES, (message_logs, campaign_replies)))
@@ -272,6 +278,16 @@ def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource
                 "label": campaign_labels[campaign_key], "message_logs": 0, "campaign_replies": 0,
             })
             group[source_name] += 1
+    if match_mode == "phone":
+        customer_source = next(source for source in SOURCE_NAMES if source != agent_replied_source)
+        customers = {}
+        for identity, person in people.items():
+            person.campaigns = {key: group for key, group in person.campaigns.items() if group[customer_source]}
+            if person.campaigns:
+                customers[identity] = person
+        people = customers
+        included = {key for person in people.values() for key in person.campaigns}
+        campaign_labels = {key: label for key, label in campaign_labels.items() if key in included}
     campaigns = tuple(
         _counts(label, (person for person in people.values() if key in person.campaigns), agent_replied_source, key)
         for key, label in sorted(campaign_labels.items(), key=lambda item: item[1].casefold())
