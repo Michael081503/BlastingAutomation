@@ -31,7 +31,7 @@ def bucket_files():
             ("Sheet1", [BUCKET_HEADERS,
                         ("b4@example.com", None, None, None, None, 4, "Mindanao", "09321234567"),
                         ("six@example.com", None, None, None, None, 6, "Region 3", "09331234567"),
-                        (None, None, None, None, "seventy@example.com", 70, "NCR", "09341234567"),
+                        ("seventy@example.com", None, None, None, "ignored@example.com", 70, "NCR", "09341234567"),
                         ("shared@example.com", None, None, None, None, 4, "NCR", "+63 931 123 4567")]),
         ])),
     ]
@@ -55,7 +55,7 @@ class BucketLookupTests(unittest.TestCase):
         self.assertEqual(source.sheets, ("SBC",))
         self.assertEqual(source.campaigns_by_email, {"customer@example.com": ("SBC B2",)})
 
-    def test_file_membership_overrides_area_and_mixed_bucket_codes_and_reads_all_email_columns(self):
+    def test_file_membership_overrides_area_and_mixed_buckets_with_b2_all_emails_and_b4_primary_only(self):
         files = bucket_files()
         b2 = read_email_campaign_source(*files[0])
         b4 = read_email_campaign_source(*files[1])
@@ -70,6 +70,33 @@ class BucketLookupTests(unittest.TestCase):
             "b4@example.com", "six@example.com", "seventy@example.com", "shared@example.com",
         )})
         self.assertEqual(b4.missing_campaign_rows, 0)
+        self.assertNotIn("ignored@example.com", b4.campaigns_by_email)
+
+    def test_b4_reads_only_email_01_without_falling_back_for_blank_or_invalid_primary_cells(self):
+        headers = ("Email (01)", "Email (02)", "Email (03)", "Email (04)", "Email (05)", "Mobile 1")
+        rows = [
+            (" PRIMARY@example.com ", "second@example.com", "third@example.com", "fourth@example.com", "fifth@example.com", "09301234567"),
+            (None, "secondaryonly@example.com", None, None, None, "09311234567"),
+            ("invalid", "fallback@example.com", None, None, None, "09321234567"),
+        ]
+        for extension in ("csv", "xlsx"):
+            with self.subTest(extension=extension):
+                data = csv_bytes(headers, rows) if extension == "csv" else workbook_bytes([("Sheet1", [headers, *rows])])
+                source = read_email_campaign_source(f"B4.{extension}", data)
+                self.assertEqual(source.campaigns_by_email, {"primary@example.com": ("SBC B4",)})
+                self.assertEqual(source.invalid_email_rows, 2)
+                self.assertEqual(source.campaigns_by_phone, {phone: ("SBC B4",) for phone in (
+                    "09301234567", "09311234567", "09321234567",
+                )})
+
+    def test_renamed_bucket_file_uses_primary_email_for_b4_and_retains_b2_secondary_emails(self):
+        source = read_email_campaign_source("renamed.csv", csv_bytes(("Email (01)", "Email (02)", "Bucket Code"), [
+            ("b2@example.com", "b2second@example.com", 2),
+            ("b4@example.com", "b4second@example.com", 4),
+        ]))
+        self.assertEqual(source.campaigns_by_email, {
+            "b2@example.com": ("SBC B2",), "b2second@example.com": ("SBC B2",), "b4@example.com": ("SBC B4",),
+        })
 
     def test_b2_precedes_b4_independent_of_upload_order_and_preserves_other_campaign_memberships(self):
         files = bucket_files() + [("regular.csv", csv_bytes(("email", "LEVEL"), [("shared@example.com", "Level 1")]))]

@@ -29,7 +29,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 21
+INBOUND_REPLY_PAGE_VERSION = 22
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -501,12 +501,13 @@ def render_inbound_reply() -> None:
             "Campaign lookup files", type=["xlsx", "csv"], accept_multiple_files=True,
             key=upload_widget_key("inbound_reply_email_lookup_uploads"),
             help="Upload Regular, GEO, B2 and B4 lookup files together in any order. Keep B2 or B4 in those filenames. "
-                 "Regular uses LEVEL or placement; GEO uses Area. "
+                 "Regular uses LEVEL or placement; GEO uses Area. B4 email matching uses only Email (01). "
                  "Email uses email addresses; SMS and Viber use phone numbers. The OVERALL worksheet is used when available.",
         )
         st.caption("Regular: Level 1 → SBC Level 1, Level 2 → SBC Level 2, and so on. "
                    "GEO: Region 3 → SBC Region 3; Mindanao → SBC Mindanao. "
-                   "B2 → SBC B2; B4 → SBC B4. B2 takes priority for contacts in both bucket files.")
+                   "B2 → SBC B2; B4 → SBC B4 using only Email (01) for email matching. "
+                   "B2 takes priority for contacts in both bucket files.")
         email_lookup = prepare_email_lookup(lookup_uploads)
         if email_lookup is not None:
             for source in email_lookup.sources:

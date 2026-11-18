@@ -14,9 +14,10 @@ from inbound_email import EmailSource, header_key, normalized_email
 from inbound_reply import InboundReplyError, ReplySource, inbound_csv_delimiter, normalized_campaign, normalized_phone
 
 
-EMAIL_CAMPAIGN_LOOKUP_VERSION = 3
+EMAIL_CAMPAIGN_LOOKUP_VERSION = 4
 PHONE_CAMPAIGN_LOOKUP_VERSION = 1
 BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
+B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
 UNMATCHED_CAMPAIGN = "Unmatched campaign"
 
 
@@ -51,10 +52,14 @@ def _positions(row, fixed_campaign: str = "") -> dict | None:
     keys = [header_key(value) for value in row]
     emails = [i for i, key in enumerate(keys) if key in {"debtoremail", "primaryemail"}
               or re.fullmatch(r"email(?:address)?\d*", key)]
+    b4_emails = ([i for i, key in enumerate(keys) if key == "email01"]
+                 or [i for i, key in enumerate(keys) if key == "email1"])
+    if fixed_campaign == "SBC B4":
+        emails = b4_emails
     phones = [i for i, key in enumerate(keys) if re.fullmatch(r"(?:phone|mobile)(?:number)?\d*", key)]
     if not (emails or phones):
         return None
-    contacts = {"emails": emails, "phones": phones}
+    contacts = {"emails": emails, "b4_emails": b4_emails, "phones": phones}
     if fixed_campaign:
         return {**contacts, "category": None, "kind": "fixed"}
     # GEO has both placement and Area: Area determines its campaign.
@@ -97,19 +102,20 @@ def _read_rows(rows, index: dict, phone_index: dict, counts: Counter, *, fixed_c
     for row in rows:
         if not any(value is not None and str(value).strip() for value in row):
             continue
-        addresses = {address for column in positions["emails"] if column < len(row)
+        category = positions["category"]
+        campaign = fixed_campaign or _campaign(row[category] if category is not None and category < len(row) else None,
+                                               positions["kind"])
+        email_columns = positions["b4_emails"] if campaign == "SBC B4" else positions["emails"]
+        addresses = {address for column in email_columns if column < len(row)
                      if (address := normalized_email(row[column]))}
         phones = {phone for column in positions["phones"] if column < len(row)
                   if (phone := normalized_phone(str(row[column] if row[column] is not None else "")))}
-        if positions["emails"] and not addresses:
+        if email_columns and not addresses:
             counts["invalid_email"] += 1
         if positions["phones"] and not phones:
             counts["invalid_phone"] += 1
         if not addresses and not phones:
             continue
-        category = positions["category"]
-        campaign = fixed_campaign or _campaign(row[category] if category is not None and category < len(row) else None,
-                                               positions["kind"])
         if not campaign:
             counts["missing_campaign"] += 1
             continue
