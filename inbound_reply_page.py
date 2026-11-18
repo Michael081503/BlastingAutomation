@@ -20,16 +20,66 @@ from inbound_email import (
 from upload_state import upload_widget_key
 
 
-INBOUND_REPLY_PAGE_VERSION = 8
+INBOUND_REPLY_PAGE_VERSION = 9
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
+MANUAL_CAMPAIGN_TOTALS_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
+
+
+def campaign_groups(viber_report=None, email_report=None) -> list[dict]:
+    campaigns = {}
+    for channel, report in (("viber", viber_report), ("email", email_report)):
+        if report is not None:
+            for counts in report.campaigns:
+                group = campaigns.setdefault(normalized_campaign(counts.campaign), {"label": counts.campaign})
+                group[channel] = counts
+    return sorted(campaigns.values(), key=lambda group: group["label"].casefold())
+
+
+def campaign_totals_key(report_date: date, campaign: str) -> str:
+    return f"{report_date.isoformat()}|{normalized_campaign(campaign)}"
+
+
+def _count(value) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
+                           email_report=None, *, include_worked: bool = False) -> dict:
+    """Keep manual totals with their campaign/date when uploads or visible rows change."""
+    saved = {key: dict(value) for key, value in st.session_state.get("inbound_reply_campaign_totals", {}).items()}
+    groups = campaign_groups(viber_report, email_report) or [{"label": campaign.strip() or "—"}]
+    with st.expander("Edit campaign totals", expanded=True):
+        st.caption(
+            "Enter ACTIVE TICKET and the Email, SMS and Viber DC WORKED counts. "
+            "DC WORKED percentages are calculated automatically from ACTIVE TICKET. "
+            "Values are saved separately for each campaign and report date."
+        )
+        for group in groups:
+            label = group["label"]
+            identity = campaign_totals_key(report_date, label)
+            values = dict(saved.get(identity, {}))
+            widget_prefix = "inbound_reply_total_" + sha256(identity.encode("utf-8")).hexdigest()[:16]
+            st.markdown(f"**{escape(label)}**")
+            fields = [("active_ticket", "ACTIVE TICKET")]
+            if include_worked:
+                fields.extend((f"dc_{channel}", f"DC WORKED — {channel.upper()}") for channel in ("email", "sms", "viber"))
+            for column, (field, field_label) in zip(st.columns(len(fields)), fields):
+                values[field] = column.number_input(
+                    field_label, min_value=0, value=_count(values.get(field)), step=1,
+                    placeholder="Enter total", key=f"{widget_prefix}_{field}",
+                )
+            saved[identity] = values
+    st.session_state["inbound_reply_campaign_totals"] = saved
+    return saved
 
 
 def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
                       viber_report: ViberReplyReport | None = None,
-                      email_report: EmailReplyReport | None = None) -> str:
+                      email_report: EmailReplyReport | None = None,
+                      campaign_totals: dict | None = None) -> str:
     """Fill each uploaded channel independently, joining campaign labels exactly."""
     date_label = f"{report_date.strftime('%B').upper()} {report_date.day}, {report_date.year} DATA"
     channel_headers = "".join(
@@ -37,13 +87,7 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
         for channel in ("EMAIL", "SMS", "VIBER")
     )
     body = []
-    campaigns = {}
-    for channel, report in (("viber", viber_report), ("email", email_report)):
-        if report is not None:
-            for counts in report.campaigns:
-                group = campaigns.setdefault(normalized_campaign(counts.campaign), {"label": counts.campaign})
-                group[channel] = counts
-    for group in sorted(campaigns.values(), key=lambda group: group["label"].casefold()) or [None]:
+    for group in campaign_groups(viber_report, email_report) or [None]:
         cells = [campaign.strip() or "—", *(["—"] * 10), sent_to_ops, *(["—"] * 6)]
         if group is not None:
             cells[0] = group["label"]
@@ -54,6 +98,15 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
                     cells[reply_index] = f"{counts.unique_people:,}"
                     cells[agent_index] = f"{counts.agent_replied:,}"
                     cells[percent_index] = f"{counts.agent_percent:.2%}" if counts.agent_percent is not None else "—"
+        totals = (campaign_totals or {}).get(campaign_totals_key(report_date, cells[0]), {})
+        active = _count(totals.get("active_ticket"))
+        if active is not None:
+            cells[1] = f"{active:,}"
+        for channel, index in (("email", 2), ("sms", 4), ("viber", 6)):
+            worked = _count(totals.get(f"dc_{channel}"))
+            if worked is not None:
+                cells[index] = f"{worked:,}"
+                cells[index + 1] = f"{worked / active:.2%}" if active else "—"
         body.append("<tr>" + "".join(f"<td>{escape(value)}</td>" for value in cells) + "</tr>")
     return f"""
     <style>
@@ -73,9 +126,13 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
       .inbound-reply-report th {{ background: #e2eafb; font-weight: 700; }}
       .inbound-reply-report td {{ background: #fff; font-variant-numeric: tabular-nums; }}
       .inbound-reply-report td:first-child {{ min-width: 155px; white-space: normal; overflow-wrap: anywhere; }}
+      .inbound-campaign-report table {{ min-width: 1804px; table-layout: fixed; font-size: 11px; }}
+      .inbound-campaign-report th, .inbound-campaign-report td {{ padding: 5px 6px; }}
     </style>
-    <div class="inbound-reply-report" role="region" aria-label="Inbound reply summary" tabindex="0">
+    <div class="inbound-reply-report inbound-campaign-report" role="region" aria-label="Inbound reply summary" tabindex="0">
       <table aria-label="Inbound reply campaign report">
+        <colgroup><col style="width:264px">{''.join('<col style="width:88px">' for _ in range(10))}
+        <col style="width:132px">{''.join('<col style="width:88px">' for _ in range(6))}</colgroup>
         <thead>
           <tr>
             <th colspan="11" scope="colgroup">{date_label}</th>
@@ -317,7 +374,10 @@ def render_inbound_reply() -> None:
             st.caption(campaign.strip())
         viber_report = prepare_viber_report(*viber_uploads)
         email_report = prepare_email_report(*email_uploads)
-        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report))
+        table_area = st.container()
+        manual_totals = render_campaign_totals(report_date, campaign, viber_report, email_report, include_worked=True)
+        with table_area:
+            st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals))
         if email_report is not None:
             st.subheader("Email")
             render_email_details(email_report, report_date)
@@ -325,6 +385,6 @@ def render_inbound_reply() -> None:
             st.subheader("Viber")
             render_viber_details(viber_report, report_date)
         if viber_report is not None or email_report is not None:
-            st.caption("Active Ticket, DC Worked and SMS totals are pending their source data and rules.")
+            st.caption("ACTIVE TICKET and DC WORKED counts are entered manually; percentages are automatic. SMS reply processing is pending its files and rules.")
         else:
             st.caption("Upload both files for Email or Viber to generate that channel's report. SMS rules are pending.")
