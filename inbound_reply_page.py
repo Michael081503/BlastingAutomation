@@ -11,39 +11,26 @@ import streamlit as st
 
 from inbound_reply import (
     VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, InboundReplyError, ViberReplyReport,
-    build_people_csv, build_unreplied_workbook, match_viber_sources, normalized_campaign, people_rows, read_reply_source,
+    build_people_csv, build_unreplied_workbook, match_viber_sources, people_rows, read_reply_source,
 )
 from inbound_email import (
     EMAIL_REPLY_VERSION, EmailReplyReport, build_email_unreplied_workbook,
     match_email_sources, read_email_source,
 )
 from upload_state import upload_widget_key
+from inbound_summary import (
+    build_summary_workbook, campaign_groups, campaign_totals_key,
+    display_cell, nonnegative_count as _count, summary_rows,
+)
 
 
-INBOUND_REPLY_PAGE_VERSION = 9
+INBOUND_REPLY_PAGE_VERSION = 10
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
 MANUAL_CAMPAIGN_TOTALS_VERSION = 1
+GROUPED_SUMMARY_OUTPUT_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
-
-
-def campaign_groups(viber_report=None, email_report=None) -> list[dict]:
-    campaigns = {}
-    for channel, report in (("viber", viber_report), ("email", email_report)):
-        if report is not None:
-            for counts in report.campaigns:
-                group = campaigns.setdefault(normalized_campaign(counts.campaign), {"label": counts.campaign})
-                group[channel] = counts
-    return sorted(campaigns.values(), key=lambda group: group["label"].casefold())
-
-
-def campaign_totals_key(report_date: date, campaign: str) -> str:
-    return f"{report_date.isoformat()}|{normalized_campaign(campaign)}"
-
-
-def _count(value) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
@@ -51,7 +38,7 @@ def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
     """Keep manual totals with their campaign/date when uploads or visible rows change."""
     saved = {key: dict(value) for key, value in st.session_state.get("inbound_reply_campaign_totals", {}).items()}
     groups = campaign_groups(viber_report, email_report) or [{"label": campaign.strip() or "—"}]
-    with st.expander("Edit campaign totals", expanded=True):
+    with st.expander("Edit campaign totals", expanded=False):
         st.caption(
             "Enter ACTIVE TICKET and the Email, SMS and Viber DC WORKED counts. "
             "DC WORKED percentages are calculated automatically from ACTIVE TICKET. "
@@ -79,7 +66,7 @@ def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
 def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
                       viber_report: ViberReplyReport | None = None,
                       email_report: EmailReplyReport | None = None,
-                      campaign_totals: dict | None = None) -> str:
+                      campaign_totals: dict | None = None, sms_report=None) -> str:
     """Fill each uploaded channel independently, joining campaign labels exactly."""
     date_label = f"{report_date.strftime('%B').upper()} {report_date.day}, {report_date.year} DATA"
     channel_headers = "".join(
@@ -87,27 +74,9 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
         for channel in ("EMAIL", "SMS", "VIBER")
     )
     body = []
-    for group in campaign_groups(viber_report, email_report) or [None]:
-        cells = [campaign.strip() or "—", *(["—"] * 10), sent_to_ops, *(["—"] * 6)]
-        if group is not None:
-            cells[0] = group["label"]
-            for channel, indexes in (("email", (8, 12, 13)), ("viber", (10, 16, 17))):
-                counts = group.get(channel)
-                if counts is not None:
-                    reply_index, agent_index, percent_index = indexes
-                    cells[reply_index] = f"{counts.unique_people:,}"
-                    cells[agent_index] = f"{counts.agent_replied:,}"
-                    cells[percent_index] = f"{counts.agent_percent:.2%}" if counts.agent_percent is not None else "—"
-        totals = (campaign_totals or {}).get(campaign_totals_key(report_date, cells[0]), {})
-        active = _count(totals.get("active_ticket"))
-        if active is not None:
-            cells[1] = f"{active:,}"
-        for channel, index in (("email", 2), ("sms", 4), ("viber", 6)):
-            worked = _count(totals.get(f"dc_{channel}"))
-            if worked is not None:
-                cells[index] = f"{worked:,}"
-                cells[index + 1] = f"{worked / active:.2%}" if active else "—"
-        body.append("<tr>" + "".join(f"<td>{escape(value)}</td>" for value in cells) + "</tr>")
+    for cells in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report):
+        body.append("<tr>" + "".join(f"<td>{escape(display_cell(value, column))}</td>"
+                                    for column, value in enumerate(cells)) + "</tr>")
     return f"""
     <style>
       .inbound-reply-report {{
@@ -126,13 +95,13 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
       .inbound-reply-report th {{ background: #e2eafb; font-weight: 700; }}
       .inbound-reply-report td {{ background: #fff; font-variant-numeric: tabular-nums; }}
       .inbound-reply-report td:first-child {{ min-width: 155px; white-space: normal; overflow-wrap: anywhere; }}
-      .inbound-campaign-report table {{ min-width: 1804px; table-layout: fixed; font-size: 11px; }}
-      .inbound-campaign-report th, .inbound-campaign-report td {{ padding: 5px 6px; }}
+      .inbound-campaign-report table {{ min-width: 1120px; table-layout: fixed; font-size: clamp(8px, 0.6vw, 10px); }}
+      .inbound-campaign-report th, .inbound-campaign-report td {{ padding: 4px; line-height: 1.25; }}
     </style>
     <div class="inbound-reply-report inbound-campaign-report" role="region" aria-label="Inbound reply summary" tabindex="0">
       <table aria-label="Inbound reply campaign report">
-        <colgroup><col style="width:264px">{''.join('<col style="width:88px">' for _ in range(10))}
-        <col style="width:132px">{''.join('<col style="width:88px">' for _ in range(6))}</colgroup>
+        <colgroup><col style="width:14.634%">{''.join('<col style="width:4.878%">' for _ in range(10))}
+        <col style="width:7.317%">{''.join('<col style="width:4.878%">' for _ in range(6))}</colgroup>
         <thead>
           <tr>
             <th colspan="11" scope="colgroup">{date_label}</th>
@@ -240,7 +209,8 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
         key="inbound_reply_email_unreplied_download", on_click="ignore", type="primary",
     )
     st.caption("The Excel workbook contains Summary and Unreplied Details sheets, retaining the original DC Checking fields.")
-    with st.expander("Email matching details"):
+    with st.container():
+        st.markdown("**Email matching details**")
         st.write(
             f"DC Checking: {len(report.dc.records):,} valid rows. Email History: {len(report.history.records):,} valid rows, "
             f"including {sum(row.sent for row in report.history.records):,} sent entries. "
@@ -294,7 +264,8 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
         file_name="VIBER_Inbound_reply_phones.csv", mime="text/csv",
         key="inbound_reply_viber_download", on_click="ignore",
     )
-    with st.expander("Viber matching details"):
+    with st.container():
+        st.markdown("**Viber matching details**")
         st.write(
             f"Message logs: {len(report.message_logs.records):,} rows. "
             f"Campaign replies: {len(report.campaign_replies.records):,} rows. "
@@ -325,66 +296,69 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
 
 def render_inbound_reply() -> None:
     st.title("INBOUND REPLY")
-    st.caption("Upload six files: two each for SMS, Email, and Viber.")
+    output_area = st.container(key="inbound_summary_output")
 
-    campaign_column, date_column, ops_column = st.columns([2, 1, 1])
-    with campaign_column:
-        campaign = st.text_input("Report label (optional)", placeholder="Report name", key="inbound_reply_campaign")
-    with date_column:
-        report_date = st.date_input(
-            "Report date", value=datetime.now(timezone(timedelta(hours=8))).date(),
-            key="inbound_reply_date",
-        )
-    with ops_column:
-        sent_to_ops = st.selectbox(
-            "Sent to OPS", ("—", "YES", "NO"), key="inbound_reply_sent_to_ops",
-        )
+    with st.expander("Report settings", expanded=False):
+        campaign_column, date_column, ops_column = st.columns([2, 1, 1])
+        with campaign_column:
+            campaign = st.text_input("Report label (optional)", placeholder="Report name", key="inbound_reply_campaign")
+        with date_column:
+            report_date = st.date_input(
+                "Report date", value=datetime.now(timezone(timedelta(hours=8))).date(),
+                key="inbound_reply_date",
+            )
+        with ops_column:
+            sent_to_ops = st.selectbox(
+                "Sent to OPS", ("—", "YES", "NO"), key="inbound_reply_sent_to_ops",
+            )
 
-    report_area = st.container()
-
-    st.subheader("Upload files")
-    uploaded_count = 0
     viber_uploads = []
     email_uploads = []
-    for column, channel in zip(st.columns(3), CHANNELS):
-        with column:
-            st.markdown(f"**{channel}**")
-            channel_count = 0
-            for number in (1, 2):
-                label = f"{channel} file {number}"
-                if channel == "VIBER":
-                    label = "Viber message logs — comparison list" if number == 1 else "Viber campaign replies — replied by agents"
-                elif channel == "EMAIL":
-                    label = "Email History — sent agent replies" if number == 1 else "Email DC Checking — account list"
-                upload = st.file_uploader(
-                    label, type=["xlsx", "csv"],
-                    key=upload_widget_key(f"inbound_reply_{channel.lower()}_{number}_upload"),
-                )
-                channel_count += upload is not None
-                if channel == "VIBER":
-                    viber_uploads.append(upload)
-                elif channel == "EMAIL":
-                    email_uploads.append(upload)
-            uploaded_count += channel_count
-            st.caption(f"{channel_count} of 2 files uploaded")
-    st.caption(f"{uploaded_count} of 6 files uploaded")
-    with report_area:
-        st.subheader("Report")
-        if campaign.strip():
-            st.caption(campaign.strip())
-        viber_report = prepare_viber_report(*viber_uploads)
-        email_report = prepare_email_report(*email_uploads)
-        table_area = st.container()
-        manual_totals = render_campaign_totals(report_date, campaign, viber_report, email_report, include_worked=True)
-        with table_area:
-            st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals))
-        if email_report is not None:
-            st.subheader("Email")
+    with st.expander("Upload files", expanded=False):
+        st.caption("Upload two files for each channel you want to process.")
+        uploaded_count = 0
+        for column, channel in zip(st.columns(3), CHANNELS):
+            with column:
+                st.markdown(f"**{channel}**")
+                channel_count = 0
+                for number in (1, 2):
+                    label = f"{channel} file {number}"
+                    if channel == "VIBER":
+                        label = "Viber message logs — comparison list" if number == 1 else "Viber campaign replies — replied by agents"
+                    elif channel == "EMAIL":
+                        label = "Email History — sent agent replies" if number == 1 else "Email DC Checking — account list"
+                    upload = st.file_uploader(
+                        label, type=["xlsx", "csv"],
+                        key=upload_widget_key(f"inbound_reply_{channel.lower()}_{number}_upload"),
+                    )
+                    channel_count += upload is not None
+                    if channel == "VIBER":
+                        viber_uploads.append(upload)
+                    elif channel == "EMAIL":
+                        email_uploads.append(upload)
+                uploaded_count += channel_count
+                st.caption(f"{channel_count} of 2 files uploaded")
+        st.caption(f"{uploaded_count} of 6 files uploaded")
+
+    viber_report = prepare_viber_report(*viber_uploads)
+    email_report = prepare_email_report(*email_uploads)
+    manual_totals = render_campaign_totals(report_date, campaign, viber_report, email_report, include_worked=True)
+    with output_area:
+        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals))
+        has_manual_counts = any(value is not None for row in summary_rows(
+            campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals)
+            for value in row[1:11])
+        if viber_report is not None or email_report is not None or has_manual_counts:
+            st.download_button(
+                "Download report (.xlsx)",
+                data=partial(build_summary_workbook, campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals),
+                file_name=f"INBOUND_REPLY_{report_date.isoformat()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="inbound_reply_summary_download", on_click="ignore", type="primary",
+            )
+    if email_report is not None:
+        with st.expander("Email account details", expanded=False):
             render_email_details(email_report, report_date)
-        if viber_report is not None:
-            st.subheader("Viber")
+    if viber_report is not None:
+        with st.expander("Viber account details", expanded=False):
             render_viber_details(viber_report, report_date)
-        if viber_report is not None or email_report is not None:
-            st.caption("ACTIVE TICKET and DC WORKED counts are entered manually; percentages are automatic. SMS reply processing is pending its files and rules.")
-        else:
-            st.caption("Upload both files for Email or Viber to generate that channel's report. SMS rules are pending.")
