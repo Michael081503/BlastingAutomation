@@ -16,6 +16,7 @@ import app_startup
 app_startup.refresh_application_modules()
 
 from branding import BANK_ICON, render_bank_branding
+from inbound_reply_page import INBOUND_REPLY_TITLE
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
     OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
@@ -500,7 +501,7 @@ def main() -> None:
         st.Page("pages/NEGATIVE_B2.py", title="NEGATIVE B2 & B4", icon=":material/compare_arrows:", url_path="NEGATIVE_B2"),
         st.Page("pages/AUTOSTAT.py", title="AUTOSTAT", icon=":material/mark_email_read:", url_path="AUTOSTAT"),
         st.Page("pages/SBC_INSURANCE.py", title="SBC INSURANCE", icon=":material/health_and_safety:", url_path="SBC_INSURANCE"),
-        st.Page("pages/INBOUND_REPLY.py", title="Inbound reply", icon=":material/inbox:", url_path="INBOUND_REPLY"),
+        st.Page("pages/INBOUND_REPLY.py", title=INBOUND_REPLY_TITLE, icon=":material/inbox:", url_path="INBOUND_REPLY"),
     ])
     page.run()
 

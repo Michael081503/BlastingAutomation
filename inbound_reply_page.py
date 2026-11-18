@@ -20,7 +20,8 @@ from inbound_email import (
 from upload_state import upload_widget_key
 
 
-INBOUND_REPLY_PAGE_VERSION = 6
+INBOUND_REPLY_PAGE_VERSION = 7
+INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
 CHANNELS = ("SMS", "EMAIL", "VIBER")
@@ -266,7 +267,7 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
 
 
 def render_inbound_reply() -> None:
-    st.title("Inbound reply")
+    st.title(INBOUND_REPLY_TITLE)
     st.caption("Upload six files: two each for SMS, Email, and Viber.")
 
     campaign_column, date_column, ops_column = st.columns([2, 1, 1])
