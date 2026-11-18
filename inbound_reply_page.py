@@ -29,7 +29,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 22
+INBOUND_REPLY_PAGE_VERSION = 23
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -47,7 +47,7 @@ def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
                            email_report=None, *, include_worked: bool = False, sms_report=None, source_campaigns=()) -> dict:
     """Keep manual totals with their campaign/date when uploads or visible rows change."""
     saved = {key: dict(value) for key, value in st.session_state.get("inbound_reply_campaign_totals", {}).items()}
-    groups = campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns) or [{"label": campaign.strip() or "—"}]
+    groups = campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns)
     with st.container(border=True, key="inbound_campaign_totals"):
         st.subheader("Edit campaign totals")
         st.caption(
@@ -55,24 +55,37 @@ def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
             "Each DC WORKED percentage is accounts blasted divided by ACTIVE TICKET × 100. "
             "Values are saved separately for each campaign and report date."
         )
+        if not groups:
+            st.info("Upload campaign lookup files or customer-reply files to show campaign names and enter totals.")
+            return saved
+        st.caption(f"{len(groups):,} campaigns detected from uploaded files.")
         for group in groups:
             label = group["label"]
             identity = campaign_totals_key(report_date, label)
             values = dict(saved.get(identity, {}))
             widget_prefix = "inbound_reply_total_" + sha256(identity.encode("utf-8")).hexdigest()[:16]
-            st.markdown(f"**{escape(label)}**")
-            fields = [("active_ticket", "ACTIVE TICKET")]
-            if include_worked:
-                fields.extend((f"dc_{channel}", f"DC WORKED — {channel.upper()}") for channel in ("email", "sms", "viber"))
-            for column, (field, field_label) in zip(st.columns(len(fields)), fields):
-                values[field] = column.number_input(
-                    field_label, min_value=0, value=_count(values.get(field)), step=1,
-                    placeholder="Enter total", key=f"{widget_prefix}_{field}",
-                    help=("Enter the total active accounts for this campaign."
-                          if field == "active_ticket" else
-                          f"Enter the accounts blasted through {field.removeprefix('dc_').upper()} for this campaign. "
-                          "The percentage uses this count divided by ACTIVE TICKET."),
-                )
+            with st.container(border=True, key=f"{widget_prefix}_campaign"):
+                st.markdown(f"**{escape(label)}**")
+                fields = [("active_ticket", "ACTIVE TICKET")]
+                if include_worked:
+                    fields.extend((f"dc_{channel}", f"DC WORKED — {channel.upper()}") for channel in ("email", "sms", "viber"))
+                for column, (field, field_label) in zip(st.columns(len(fields)), fields):
+                    values[field] = column.number_input(
+                        field_label, min_value=0, value=_count(values.get(field)), step=1,
+                        placeholder="Enter total", key=f"{widget_prefix}_{field}",
+                        help=("Enter the total active accounts for this campaign."
+                              if field == "active_ticket" else
+                              f"Enter the accounts blasted through {field.removeprefix('dc_').upper()} for this campaign. "
+                              "The percentage uses this count divided by ACTIVE TICKET."),
+                    )
+                if include_worked:
+                    active = _count(values.get("active_ticket"))
+                    coverage = []
+                    for channel in ("email", "sms", "viber"):
+                        blasted = _count(values.get(f"dc_{channel}"))
+                        percent = blasted / active if blasted is not None and active else None
+                        coverage.append(f"{channel.title() if channel != 'sms' else 'SMS'}: {display_cell(percent, 3)}")
+                    st.caption("Blast coverage — " + " · ".join(coverage))
             saved[identity] = values
     st.session_state["inbound_reply_campaign_totals"] = saved
     return saved
@@ -259,10 +272,14 @@ def prepare_sms_report(replied_upload, account_upload, lookup: EmailCampaignLook
 
 def prepare_campaign_labels(channels, email_lookup: EmailCampaignLookup | None = None,
                             *, lookup_failed: bool = False) -> tuple[str, ...]:
-    """Show source campaign names while a channel is still waiting for its other file."""
+    """Show lookup campaigns immediately, adding labels from pending customer files."""
+    if lookup_failed:
+        st.session_state.pop("inbound_reply_campaign_labels", None)
+        return ()
+    lookup_labels = email_lookup.campaigns if email_lookup is not None else ()
     sources = []
     for channel, uploads, report in channels:
-        if report is not None or lookup_failed:
+        if report is not None:
             continue
         for index, upload in enumerate(uploads):
             # Campaign rows represent customers who contacted us, from file 2.
@@ -271,13 +288,13 @@ def prepare_campaign_labels(channels, email_lookup: EmailCampaignLookup | None =
                 sources.append((channel, index, upload.name, data))
     if not sources:
         st.session_state.pop("inbound_reply_campaign_labels", None)
-        return ()
+        return lookup_labels
     signature = (VIBER_REPLY_VERSION, EMAIL_REPLY_VERSION,
                  email_lookup.signature if email_lookup is not None else None,
                  tuple((channel, index, name, sha256(data).hexdigest()) for channel, index, name, data in sources))
     cached = st.session_state.get("inbound_reply_campaign_labels")
     if cached is None or cached["signature"] != signature:
-        labels = []
+        labels = list(lookup_labels)
         for channel, _, name, data in sources:
             try:
                 if channel == "EMAIL":

@@ -14,10 +14,11 @@ from inbound_email import EmailSource, header_key, normalized_email
 from inbound_reply import InboundReplyError, ReplySource, inbound_csv_delimiter, normalized_campaign, normalized_phone
 
 
-EMAIL_CAMPAIGN_LOOKUP_VERSION = 4
+EMAIL_CAMPAIGN_LOOKUP_VERSION = 5
 PHONE_CAMPAIGN_LOOKUP_VERSION = 1
 BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
 B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
+LOOKUP_CAMPAIGN_LABELS_VERSION = 1
 UNMATCHED_CAMPAIGN = "Unmatched campaign"
 
 
@@ -31,6 +32,7 @@ class EmailCampaignSource:
     campaigns_by_phone: dict[str, tuple[str, ...]]
     invalid_phone_rows: int
     campaign_label: str = ""
+    campaigns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,11 @@ class EmailCampaignLookup:
     sources: tuple[EmailCampaignSource, ...]
     campaigns_by_email: dict[str, tuple[str, ...]]
     campaigns_by_phone: dict[str, tuple[str, ...]]
+
+    @property
+    def campaigns(self) -> tuple[str, ...]:
+        labels = {normalized_campaign(label): label for source in self.sources for label in source.campaigns}
+        return tuple(sorted(labels.values(), key=str.casefold))
 
 
 def _bucket_campaign(filename: str) -> str:
@@ -87,7 +94,8 @@ def _campaign(value: object, kind: str) -> str:
     return f"SBC {area}"
 
 
-def _read_rows(rows, index: dict, phone_index: dict, counts: Counter, *, fixed_campaign: str = "") -> bool:
+def _read_rows(rows, index: dict, phone_index: dict, counts: Counter, *, fixed_campaign: str = "",
+               campaign_labels: dict | None = None) -> bool:
     rows = iter(rows)
     positions = None
     for _ in range(50):
@@ -105,6 +113,8 @@ def _read_rows(rows, index: dict, phone_index: dict, counts: Counter, *, fixed_c
         category = positions["category"]
         campaign = fixed_campaign or _campaign(row[category] if category is not None and category < len(row) else None,
                                                positions["kind"])
+        if campaign and campaign_labels is not None:
+            campaign_labels.setdefault(normalized_campaign(campaign), campaign)
         email_columns = positions["b4_emails"] if campaign == "SBC B4" else positions["emails"]
         addresses = {address for column in email_columns if column < len(row)
                      if (address := normalized_email(row[column]))}
@@ -144,10 +154,11 @@ def read_email_campaign_source(filename: str, data: bytes) -> EmailCampaignSourc
     """Use OVERALL when available; otherwise merge eligible sheets without duplicate memberships."""
     extension = Path(filename).suffix.casefold()
     fixed_campaign = _bucket_campaign(filename)
-    index, phone_index, counts, sheets = {}, {}, Counter(), []
+    index, phone_index, counts, sheets, labels = {}, {}, Counter(), [], {}
     if extension == ".csv":
         try:
-            if _read_rows(_csv_rows(filename, data), index, phone_index, counts, fixed_campaign=fixed_campaign):
+            if _read_rows(_csv_rows(filename, data), index, phone_index, counts, fixed_campaign=fixed_campaign,
+                          campaign_labels=labels):
                 sheets.append("CSV")
         except csv.Error as error:
             raise InboundReplyError(f"{filename}: the lookup CSV contains an incomplete quoted field.") from error
@@ -173,7 +184,8 @@ def read_email_campaign_source(filename: str, data: bytes) -> EmailCampaignSourc
                 fallback_sheets = account_sheets or fallback_sheets
             for sheet in overall or fallback_sheets:
                 sheet.reset_dimensions()
-                if _read_rows(sheet.iter_rows(values_only=True), index, phone_index, counts, fixed_campaign=fixed_campaign):
+                if _read_rows(sheet.iter_rows(values_only=True), index, phone_index, counts, fixed_campaign=fixed_campaign,
+                              campaign_labels=labels):
                     sheets.append(sheet.title)
             # An unrelated OVERALL sheet must not hide eligible data sheets.
             if overall and not sheets:
@@ -181,7 +193,8 @@ def read_email_campaign_source(filename: str, data: bytes) -> EmailCampaignSourc
                     if sheet in overall:
                         continue
                     sheet.reset_dimensions()
-                    if _read_rows(sheet.iter_rows(values_only=True), index, phone_index, counts, fixed_campaign=fixed_campaign):
+                    if _read_rows(sheet.iter_rows(values_only=True), index, phone_index, counts, fixed_campaign=fixed_campaign,
+                                  campaign_labels=labels):
                         sheets.append(sheet.title)
         finally:
             book.close()
@@ -194,7 +207,7 @@ def read_email_campaign_source(filename: str, data: bytes) -> EmailCampaignSourc
                                {email: tuple(sorted(labels.values(), key=str.casefold)) for email, labels in index.items()},
                                counts["invalid_email"], counts["missing_campaign"],
                                {phone: tuple(sorted(labels.values(), key=str.casefold)) for phone, labels in phone_index.items()},
-                               counts["invalid_phone"], fixed_campaign)
+                               counts["invalid_phone"], fixed_campaign, tuple(sorted(labels.values(), key=str.casefold)))
 
 
 def _resolved_campaigns(index: dict) -> dict[str, tuple[str, ...]]:

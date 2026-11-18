@@ -189,7 +189,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
-            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 1", "SBC Mindanao"])
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 1", "SBC Mindanao", "SBC Region 3"])
             self.assertTrue(all(row[8] == "—" for row in rows(html)))
             uploads["inbound_reply_email_1_upload"] = Upload("history.csv", csv_bytes(("email", "sent"), [
                 ("client@example.com", "Agent reply"),
@@ -198,7 +198,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
             self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1"])
-            self.assertEqual([row[12] for row in rows(html)], ["1", "0"])
+            self.assertEqual([row[12] for row in rows(html)], ["1", "0", "—"])
             call = next(call for call in reversed(downloads.call_args_list)
                         if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
@@ -209,7 +209,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             uploads["inbound_reply_email_lookup_uploads"][0] = Upload("active.xlsx", regular_file("Level 4"))
             app.run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 4", "SBC Mindanao"])
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 4", "SBC Mindanao", "SBC Region 3"])
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("active.xlsx", regular_file("Level 4"))]
             app.run(timeout=20)
             self.assertFalse(app.exception)
