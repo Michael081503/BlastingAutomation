@@ -11,6 +11,22 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_new_endo_mapping_password_and_source_tagging_refresh_together(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import automation, exports, workbook_password, upload_state
+            del automation.NEW_ENDO_SOURCE_VERSION
+            del workbook_password.ENCRYPTED_WORKBOOK_VERSION
+            del upload_state.ENCRYPTED_SOURCE_UPLOADS_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'automation', 'exports', 'workbook_password', 'upload_state'} <= refreshed
+            assert automation.MAPPING_VERSION == 11
+            assert workbook_password.AutomationError is automation.AutomationError
+            assert 'source_password_' in upload_state.FILE_STATE_PREFIXES
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_modules_refresh_for_fresh_endorsement_assignment_scheme(self):
         self.run_isolated("""
             import app_startup
@@ -19,7 +35,7 @@ class StartupTests(unittest.TestCase):
             del automation.ASSIGNMENT_SCHEME_VERSION
             refreshed = app_startup.refresh_application_modules()
             assert {'automation', 'exports', 'geo_autostat'} <= refreshed
-            assert automation.MAPPING_VERSION == 10
+            assert automation.MAPPING_VERSION == 11
             assert exports.assignment_scheme_level is automation.assignment_scheme_level
             assert automation.assignment_scheme_level('Recovery (L1 Unsecured)') == 'Level 1'
             assert app_startup.refresh_application_modules() == set()
@@ -437,7 +453,7 @@ class StartupTests(unittest.TestCase):
             geo = exports.build_geo_exports(template, records, '', 1, '.csv')
             assert geo.counts['mindanao_blank_cards'] == 1
             assert all(file.preview[0]['product'] == 'CARDS' for bundle in (reco, geo) for file in bundle.files)
-            assert automation.MAPPING_VERSION == 10
+            assert automation.MAPPING_VERSION == 11
             assert refresh_application_modules() == set()
         """)
 
@@ -714,7 +730,7 @@ class StartupTests(unittest.TestCase):
             del automation.geo_doclass
             del automation.DERIVED_TEMPLATE_HEADERS
             import app
-            assert app.MAPPING_VERSION == 10
+            assert app.MAPPING_VERSION == 11
             assert 'doclass' in automation.DERIVED_TEMPLATE_HEADERS
             assert exports.geo_doclass is automation.geo_doclass
             assert folder_output.AutomationError is automation.AutomationError
@@ -784,7 +800,7 @@ class StartupTests(unittest.TestCase):
             del automation.SheetInfo.available_fields
             del automation.inspect_source_sheet
             import app
-            assert app.MAPPING_VERSION == 10
+            assert app.MAPPING_VERSION == 11
             assert exports.AutomationError is automation.AutomationError
             workbook = Workbook()
             workbook.active.append(['primary_key', 'email', 'PHONE'])
@@ -809,7 +825,7 @@ class StartupTests(unittest.TestCase):
             del export_config.AUTOSTAT_B2_FILENAMES
             del b2_matching.build_b2_exports
             import app
-            assert app.MAPPING_VERSION == 10
+            assert app.MAPPING_VERSION == 11
             assert automation.WORKBOOK_READER_VERSION == 1
             assert b2_page.build_b2_exports is b2_matching.build_b2_exports
             assert export_config.AUTOSTAT_B2_FILENAMES['CARDS'] == 'NEGATIVE B2 - CARDS'

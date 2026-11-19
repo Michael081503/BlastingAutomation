@@ -23,6 +23,7 @@ INBOUND_MANUAL_TOTALS_VERSION = 1
 SMS_REPLY_UPLOADS_VERSION = 1
 SOURCE_CAMPAIGN_UPLOADS_VERSION = 1
 EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION = 1
+ENCRYPTED_SOURCE_UPLOADS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
@@ -49,6 +50,7 @@ FILE_STATE_KEYS = {
     "inbound_reply_email_lookup",
 }
 FILE_STATE_PREFIXES = (
+    "source_password_",
     "source_sheet_", "template_sheet_", "source_header_", "template_header_",
     "manual_mapping_", "source_mapping_", "output_mode_", "preview_file_",
     "download_", "excel_download_", "b2_sheet_", "b2_header_", "b2_preview_",

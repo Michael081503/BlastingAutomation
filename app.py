@@ -33,6 +33,7 @@ from exports import (
 from email_validation import EMAIL_VALIDATION_VERSION
 from geo_autostat import render_geo_autostat
 from upload_state import upload_widget_key
+from workbook_password import needs_workbook_password, unlock_workbook
 from agent_cycle_page import manila_today, render_agent_cycle
 from agent_availability import AGENT_AVAILABILITY_VERSION
 from agent_availability_page import render_agent_availability
@@ -117,7 +118,7 @@ def render_workbook_page() -> None:
     with st.sidebar.expander("Field mapping"):
         st.dataframe(
             pd.DataFrame(
-                [(source, campaign_output_headers([target])[0])
+                [(source, "CHCode" if target == "cms_tagging" else campaign_output_headers([target])[0])
                  for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items()],
                 columns=["Source header", "Template header"],
             ),
@@ -142,6 +143,17 @@ def render_workbook_page() -> None:
     if source_file is not None:
         source_bytes = source_file.getvalue()
         try:
+            if needs_workbook_password(source_bytes):
+                password = st.text_input(
+                    "Workbook password", type="password",
+                    key=f"source_password_{hashlib.sha256(source_bytes).hexdigest()}",
+                )
+                if not password:
+                    st.session_state.pop("result", None)
+                    st.session_state.pop("geo_autostat_result", None)
+                    st.info("Enter the workbook password to prepare the files.")
+                    return
+                source_bytes = unlock_workbook(source_bytes, password)
             source_sheets = workbook_info(source_bytes)
         except AutomationError as exc:
             st.session_state.pop("result", None)
@@ -261,7 +273,8 @@ def render_workbook_page() -> None:
                 for number, target in enumerate((*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values())):
                     with fields[number % 3]:
                         source_columns[target] = st.selectbox(
-                            f"Source column for {target}", options, index=options.index(defaults.get(target)),
+                            "Source column for CHCode (CMS tagging)" if target == "cms_tagging" else f"Source column for {target}",
+                            options, index=options.index(defaults.get(target)),
                             format_func=column_label,
                             key=f"source_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}_{target}",
                         )
@@ -277,8 +290,11 @@ def render_workbook_page() -> None:
         if missing_fields:
             st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
         geo = source_info.has_area
+        source_tagged = "cms_tagging" in source_info.available_fields
         assignment_date, agents = None, None
-        if geo:
+        if source_tagged:
+            assignment_panel.caption("NEW ENDO: CHCode uses the source CMS TAGGING / TAGGING values.")
+        elif geo:
             availability_date = manila_today()
             with assignment_panel:
                 st.subheader("GEO agent assignment")
@@ -299,10 +315,11 @@ def render_workbook_page() -> None:
             assignment_date, agents = agent_plan
         level_column = (source_columns if source_columns is not None else defaults).get("level")
         assignment_scheme = level_column is not None and normalize_header(source_info.headers[level_column]) == "assignmentscheme"
-        grouped_label = ("Separate Area and Christmas Amnesty groups" if geo else
-                         "Separate RECO placement groups" if assignment_scheme else "Separate Christmas Amnesty groups")
+        grouped_label = ("Separate Mindanao and R3 groups" if geo and source_tagged else
+                         "Separate Area and Christmas Amnesty groups" if geo else
+                         "Separate RECO placement groups" if assignment_scheme or source_tagged else "Separate Christmas Amnesty groups")
         grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
-        if assignment_scheme:
+        if assignment_scheme or source_tagged:
             # Fresh endorsements have placements but no Christmas Amnesty column.
             # Their absent status stays blank while the usual product/level rules apply.
             grouping_fields.pop("ChristmasAmnesty")
@@ -363,7 +380,7 @@ def render_workbook_page() -> None:
                         bundle = builder(
                             template_bytes, mapped.records, template_sheet,
                             template_header, template_extension, encoding=encoding, source_sheet=source_sheet, agents=agents,
-                            **({"available_agent_codes": tuple(code for _, code in agents)} if geo else {}),
+                            **({"available_agent_codes": tuple(code for _, code in agents)} if geo and agents is not None else {}),
                         )
                     else:
                         bundle = build_sheet_exports(

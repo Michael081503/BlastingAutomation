@@ -37,10 +37,10 @@ FIELD_MAPPING = {
     "phone_1": "phone",
     "Christmas Amnesty": "ChristmasAmnesty",
 }
-OPTIONAL_FIELD_MAPPING = {"Area": "AREA"}
+OPTIONAL_FIELD_MAPPING = {"Area": "AREA", "CMS TAGGING": "cms_tagging"}
 SOURCE_ALIASES = {
     "debtor_email": ("email", "email address", "e-mail address", "email 1", "debtor email address", "email id", "EMAIL ADD"),
-    "Account no.": ("account", "account number", "acct no", "acct number", "Account Code"),
+    "Account no.": ("account", "account number", "acct no", "acct number", "Account Code", "ACCOUNT NUMBER / LONG PN #"),
     "financing/Card no.": ("card_no", "cardbnumber", "Card Number/ Short PN"),
     "Name": ("Customer Name",),
     "endo date": ("assign_date", "Assignment Date"),
@@ -48,9 +48,12 @@ SOURCE_ALIASES = {
     "product": ("Product Type", "Promo"),
     "OB (Masterlist)": ("OB",),
     "phone_1": ("phone number", "phone no", "mobile", "mobile number", "mobile no", "contact number", "contact no", "cellphone", "cellphone number"),
+    "Area": ("Region",),
+    "CMS TAGGING": ("TAGGING",),
 }
-MAPPING_VERSION = 10
+MAPPING_VERSION = 11
 ASSIGNMENT_SCHEME_VERSION = 1
+NEW_ENDO_SOURCE_VERSION = 1
 PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 SOURCE_SHEET_SELECTION_VERSION = 1

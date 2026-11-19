@@ -77,7 +77,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
-        ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "SBC_INSURANCE_UPLOADS_VERSION", "SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION", "INBOUND_REPLY_UPLOADS_VERSION", "VIBER_REPLY_UPLOADS_VERSION", "EMAIL_REPLY_UPLOADS_VERSION", "INBOUND_MANUAL_TOTALS_VERSION", "SMS_REPLY_UPLOADS_VERSION", "SOURCE_CAMPAIGN_UPLOADS_VERSION", "EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
+        ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "SBC_INSURANCE_UPLOADS_VERSION", "SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION", "INBOUND_REPLY_UPLOADS_VERSION", "VIBER_REPLY_UPLOADS_VERSION", "EMAIL_REPLY_UPLOADS_VERSION", "INBOUND_MANUAL_TOTALS_VERSION", "SMS_REPLY_UPLOADS_VERSION", "SOURCE_CAMPAIGN_UPLOADS_VERSION", "EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION", "ENCRYPTED_SOURCE_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "CHRISTMAS_THEME_VERSION", "SNOWFALL_VERSION", "CHRISTMAS_SPIDERMAN_VERSION",
             "render_clear_all_files",
@@ -96,6 +96,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
             "ASSIGNMENT_SCHEME_VERSION", "assignment_scheme_level",
+            "NEW_ENDO_SOURCE_VERSION",
             "PRODUCT_NORMALIZATION_VERSION", "normalize_product",
             "create_default_csv_template",
             "DERIVED_TEMPLATE_HEADERS", "geo_doclass",
@@ -113,6 +114,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "write_typed_template_sheet",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
         ), ("email_validation",)),
+        ("workbook_password", ("ENCRYPTED_WORKBOOK_VERSION", "needs_workbook_password", "unlock_workbook"), ("automation",)),
         ("agent_cycle", (
             "AGENT_CYCLE_VERSION", "AgentCycle", "load_cycle", "save_cycle", "cycle_agents", "assign_agents_to_accounts", "reorder_cycle",
         ), ("automation", "export_config")),
@@ -140,6 +142,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "GEO_AGENT_AVAILABILITY_VERSION",
             "RECO_DOCLASS_VERSION", "reco_doclass", "ExportFile.__dataclass_fields__.doclass",
             "SOURCE_MEMBERSHIP_VERSION", "source_account_counts", "validate_source_exports",
+            "SOURCE_CMS_TAGGING_VERSION",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("agent_order", ("AGENT_ORDER_VERSION", "AGENT_ORDER_CALLBACK_VERSION", "AGENT_NATIVE_ROWS_VERSION", "render_agent_order"), ("agent_availability_page",)),

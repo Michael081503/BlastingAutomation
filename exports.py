@@ -70,6 +70,7 @@ GEO_FIXED_AGENTS_VERSION = 1
 GEO_AGENT_AVAILABILITY_VERSION = 1
 RECO_DOCLASS_VERSION = 1
 SOURCE_MEMBERSHIP_VERSION = 1
+SOURCE_CMS_TAGGING_VERSION = 1
 SOURCE_ACCOUNT_FIELDS = ("primary_key", "cardnumber", "indexoneuid")
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
@@ -334,10 +335,18 @@ def _build_channel_files(
     if not records:
         return []
     records = sorted(records, key=lambda record: ob_sort_key(record.get("OB")), reverse=True)
-    if agents is not None:
-        records = assign_agents_to_accounts(records, agents)
+    automatic_records = [record for record in records if "cms_tagging" not in record]
+    source_tagged = len(automatic_records) != len(records)
+    assigned = iter(assign_agents_to_accounts(automatic_records, agents)) if agents is not None and automatic_records else None
+    records = [
+        {**record, "Terms": record["cms_tagging"], "Monthly": None} if "cms_tagging" in record
+        else next(assigned) if assigned is not None else record
+        for record in records
+    ]
     headers = csv_template_headers(template)
-    required = [("Monthly", "Monthly"), ("Terms", "CHCode")] if agents is not None else []
+    required = [("Monthly", "Monthly"), ("Terms", "CHCode")] if agents is not None and automatic_records else []
+    if source_tagged and not required:
+        required.append(("Terms", "CHCode"))
     if reco:
         required.append(("doclass", "doclass"))
     positions = template_column_positions(headers)

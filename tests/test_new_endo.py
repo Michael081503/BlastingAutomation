@@ -1,0 +1,217 @@
+from __future__ import annotations
+
+import csv
+import unittest
+from io import BytesIO, StringIO
+from pathlib import Path
+from unittest.mock import patch
+
+from msoffcrypto.format.ooxml import OOXMLFile
+from openpyxl import Workbook, load_workbook
+from streamlit.testing.v1 import AppTest
+from streamlit.proto.TextInput_pb2 import TextInput
+
+from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, create_default_csv_template, inspect_workbook, read_source
+from export_config import GEO_AGENTS, GEO_RECO_AGENTS
+from exports import build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
+from workbook_password import needs_workbook_password, unlock_workbook
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TEST_PASSWORD = "synthetic-workbook-password"
+
+
+def source_data(*, geo=False, blank_tag=False):
+    workbook = Workbook()
+    workbook.active.title = "Summary"
+    workbook.active.append(["Product", "Total"])
+    workbook.active.append(["MC", 2])
+    sheet = workbook.create_sheet("Sheet1" if geo else "SPM List")
+    if geo:
+        sheet.append([
+            "CURRENT ACA", "PRODUCT", "CARD NUMBER / SHORT PN #", "ACCOUNT NUMBER / LONG PN #",
+            "TAGGING", "CORRECT ASSIGNMENT SCHEME", "CUSTOMER NAME", "ASSIGNMENT DATE", "OB",
+            "Region", "PHONE 1", "EMAIL ADDRESS", "Level",
+        ])
+        sheet.append(["SPM", "MC", "00001234567890123451", "0001", "SOURCE-MINDANAO", "Recovery (L6 Unsecured)",
+                      "First customer", None, 100, "Mindanao", "09171234567", "first@example.com", "Level 6"])
+        sheet.append(["SPM", "MC", "00001234567890123452", "0002", None if blank_tag else "SOURCE-R3", "Recovery (L6 Unsecured)",
+                      "Second customer", None, 900, "Region 3", "09181234567", "second@example.com", "Level 6"])
+    else:
+        sheet.append(["Product", "Card Number/ Short PN", "Account Code", "CMS TAGGING", "Assignment Scheme",
+                      "Customer Name", "Assignment Date", "OB", "PHONE 1", "EMAIL ADD"])
+        sheet.append(["MC", "00001234567890123451", "0001", "SOURCE-L1-A", "Recovery (L1 Unsecured)",
+                      "First customer", None, 100, "09171234567", "first@example.com"])
+        sheet.append(["MC", "00001234567890123452", "0002", None if blank_tag else "SOURCE-L1-B", "Recovery (L1 Unsecured)",
+                      "Second customer", None, 900, "09181234567", "second@example.com"])
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
+def encrypted(data):
+    output = BytesIO()
+    OOXMLFile(BytesIO(data)).encrypt(TEST_PASSWORD, output)
+    return output.getvalue()
+
+
+def csv_rows(file):
+    return list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
+
+
+class Upload(BytesIO):
+    def __init__(self, data, name="NEW ENDO.xlsx"):
+        super().__init__(data)
+        self.name = name
+
+
+class NewEndoMappingTests(unittest.TestCase):
+    def test_geo_region_long_pn_and_tagging_are_detected_without_using_summary_rows(self):
+        data = source_data(geo=True)
+        info = inspect_workbook(data)[1]
+        self.assertTrue(info.has_area)
+        self.assertTrue({"AREA", "cms_tagging", "primary_key", "cardnumber", "phone", "email"} <= set(info.available_fields))
+        records = read_source(data, info.name, info.header_row, allow_missing=True).records
+        self.assertEqual([(record["primary_key"], record["cardnumber"]) for record in records],
+                         [("0001", "00001234567890123451"), ("0002", "00001234567890123452")])
+        self.assertEqual([record["AREA"] for record in records], ["Mindanao", "Region 3"])
+        self.assertEqual([record["cms_tagging"] for record in records], ["SOURCE-MINDANAO", "SOURCE-R3"])
+
+    def test_source_codes_and_blank_monthly_survive_grouping_channels_and_excel(self):
+        for geo in (False, True):
+            with self.subTest(geo=geo):
+                data = source_data(geo=geo, blank_tag=True)
+                sheet = "Sheet1" if geo else "SPM List"
+                records = read_source(data, sheet, 1, allow_missing=True).records
+                expected = {record["primary_key"]: record["cms_tagging"] or "" for record in records}
+                builder = build_geo_exports if geo else build_negative_exports
+                bundles = [
+                    builder(create_default_csv_template(), records, "", 1, ".csv", source_sheet=sheet, agents=GEO_RECO_AGENTS),
+                    build_sheet_exports(create_default_csv_template(), records, "", 1, template_extension=".csv",
+                                        base_name="NEW ENDO - L1", label="NEW ENDO", agents=GEO_RECO_AGENTS, reco=not geo),
+                ]
+                for bundle in bundles:
+                    for file in bundle.files:
+                        rows = csv_rows(file)
+                        self.assertEqual(tuple(file.headers), DEFAULT_TEMPLATE_HEADERS)
+                        self.assertTrue(all(row["CHCode"] == expected[row["primary_key"]] for row in rows))
+                        self.assertTrue(all(row["Monthly"] == "" and row["NewEndo"] == "" for row in rows))
+                        workbook = load_workbook(BytesIO(build_export_excel(file)))
+                        try:
+                            values = list(workbook.active.values)
+                            positions = {header: index for index, header in enumerate(values[0])}
+                            for row in values[1:]:
+                                self.assertEqual(row[positions["CHCode"]] or "", expected[row[positions["primary_key"]]])
+                                self.assertIsNone(row[positions["Monthly"]])
+                                self.assertTrue(row[positions["Terms"]].startswith("0000123456789"))
+                        finally:
+                            workbook.close()
+                if geo:
+                    self.assertEqual({file.group_key for file in bundles[0].files}, {"mindanao_blank_cards", "r3_blank_cards"})
+
+    def test_custom_template_gets_chcode_and_tagged_rows_do_not_advance_automatic_assignment(self):
+        records = [
+            {"primary_key": "source", "cardnumber": "CARD-SOURCE", "product": "CARDS", "level": 1,
+             "email": "source@example.com", "OB": 900, "cms_tagging": "FROM-SOURCE"},
+            {"primary_key": "auto-1", "product": "CARDS", "level": 1, "email": "one@example.com", "OB": 500},
+            {"primary_key": "auto-2", "product": "CARDS", "level": 1, "email": "two@example.com", "OB": 100},
+        ]
+        bundle = build_negative_exports(create_default_csv_template(), records, "", 1, ".csv", agents=GEO_RECO_AGENTS)
+        rows = csv_rows(bundle.files[0])
+        self.assertEqual([row["CHCode"] for row in rows], ["FROM-SOURCE", GEO_RECO_AGENTS[0][1], GEO_RECO_AGENTS[1][1]])
+        headers = [header for header in DEFAULT_TEMPLATE_HEADERS if header not in {"Monthly", "CHCode"}]
+        template = (",".join(headers) + "\n").encode()
+        file = build_sheet_exports(template, records[:1], "", 1, template_extension=".csv", base_name="NEW ENDO", label="NEW ENDO").files[0]
+        self.assertEqual(file.headers, [*headers, "CHCode"])
+        self.assertEqual(csv_rows(file)[0]["CHCode"], "FROM-SOURCE")
+        self.assertEqual(csv_rows(file)[0]["Terms"], "CARD-SOURCE")
+
+
+class EncryptedWorkbookTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.plain = source_data()
+        cls.protected = encrypted(cls.plain)
+
+    def test_unlocks_in_memory_and_preserves_ordinary_workbooks(self):
+        self.assertFalse(needs_workbook_password(self.plain))
+        self.assertTrue(needs_workbook_password(self.protected))
+        self.assertIs(unlock_workbook(self.plain, ""), self.plain)
+        self.assertEqual(unlock_workbook(self.protected, TEST_PASSWORD), self.plain)
+        for password, message in (("", "Enter the workbook password"), ("wrong-password", "password is incorrect")):
+            with self.subTest(password=password), self.assertRaisesRegex(AutomationError, message):
+                unlock_workbook(self.protected, password)
+
+    def test_password_entry_errors_clear_stale_results_and_clear_all_removes_password(self):
+        upload = Upload(self.protected)
+        uploads = {"source_upload": upload}
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
+                patch("agent_cycle_page.render_agent_cycle", return_value=None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn("result", app.session_state)
+            password = next(widget for widget in app.text_input if widget.label == "Workbook password")
+            self.assertEqual(password.proto.type, TextInput.PASSWORD)
+            password.set_value(TEST_PASSWORD).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state["result"]
+            self.assertEqual(result["count"], 2)
+            self.assertEqual(result["source_sheet"], "SPM List")
+            self.assertTrue(all(row["Terms"].startswith("SOURCE-L1") for file in result["files"] for row in file.records))
+            self.assertFalse(any(heading.value == "RECO agent cycle" for heading in app.subheader))
+            password.set_value("wrong-password").run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn("result", app.session_state)
+            self.assertNotIn("geo_autostat_result", app.session_state)
+            self.assertIn("password is incorrect", app.error[0].value)
+            password.set_value(TEST_PASSWORD).run(timeout=20)
+            app.button(key="clear_all_files").click().run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn("result", app.session_state)
+            self.assertFalse(any(key.startswith("source_password_") for key in app.session_state.filtered_state))
+
+
+class GeoNewEndoPageTests(unittest.TestCase):
+    def test_utf8_selection_preserves_names_that_standard_csv_cannot_encode(self):
+        workbook = load_workbook(BytesIO(source_data(geo=True)))
+        workbook["Sheet1"]["G2"] = "Customer \u674e"
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        upload = Upload(output.getvalue())
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs["key"] == "source_upload" else None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertIn("Select CSV UTF-8", app.error[0].value)
+            next(widget for widget in app.selectbox if widget.label == "CSV file type").select("CSV UTF-8 (Comma delimited)").run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            file = next(file for file in app.session_state["result"]["files"]
+                        if file.group_key == "mindanao_blank_cards" and file.channel == "email")
+            rows = list(csv.DictReader(StringIO(file.data.decode("utf-8-sig"))))
+            self.assertEqual(rows[0]["FullName"], "Customer \u674e")
+            self.assertEqual(rows[0]["CHCode"], "SOURCE-MINDANAO")
+
+    def test_geo_upload_splits_mindanao_r3_uses_source_tagging_and_prepares_logs(self):
+        upload = Upload(source_data(geo=True))
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: upload if kwargs["key"] == "source_upload" else None), \
+                patch("agent_availability_page.render_agent_availability", return_value=None), \
+                patch("agent_cycle_page.render_agent_cycle", return_value=None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(len(app.error), 0)
+            result = app.session_state["result"]
+            self.assertTrue(result["geo"] and result["grouped"])
+            self.assertEqual(result["source_sheet"], "Sheet1")
+            self.assertEqual(app.radio[0].value, "Separate Mindanao and R3 groups")
+            self.assertEqual({file.group_key for file in result["files"]}, {"mindanao_blank_cards", "r3_blank_cards"})
+            self.assertEqual([file.count for file in app.session_state["geo_autostat_result"]["bundle"].files], [2, 2])
+            app.radio[0].set_value("All accounts in one group").run(timeout=20)
+            self.assertEqual(len(app.error), 0)
+            self.assertTrue(all(row["Terms"].startswith("SOURCE-") for file in app.session_state["result"]["files"] for row in file.records))
+
+
+if __name__ == "__main__":
+    unittest.main()
