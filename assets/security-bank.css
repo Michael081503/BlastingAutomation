@@ -188,18 +188,25 @@
 
 .sbc-header-mascot {
     position: relative;
-    flex: 0 0 118px;
-    height: 146px;
+    flex: 0 0 116px;
+    height: 164px;
     margin: -0.15rem 0;
     pointer-events: none;
     user-select: none;
 }
 
-.sbc-christmas-tree {
+.sbc-spiderman {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
+    transform-origin: 50% 0;
+    animation: sbc-spider-sway 5.5s ease-in-out infinite;
+}
+
+@keyframes sbc-spider-sway {
+    0%, 100% { transform: rotate(-4deg); }
+    50% { transform: rotate(4deg); }
 }
 
 .sbc-workspace-meta {
@@ -414,7 +421,7 @@ h1 {
     .sbc-header-mascot {
         grid-column: 2;
         grid-row: 1;
-        height: 125px;
+        height: 138px;
         margin: -0.5rem 0;
     }
 }
@@ -461,7 +468,7 @@ h1 {
     }
 
     .sbc-header-mascot {
-        height: 115px;
+        height: 126px;
     }
 
     .sbc-workspace-meta {
@@ -481,6 +488,11 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .sbc-spiderman {
+        animation: none;
+        transform: none;
+    }
+
     [data-testid="stAppViewContainer"]::before,
     [data-testid="stAppViewContainer"]::after {
         animation: none;

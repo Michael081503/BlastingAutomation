@@ -16,6 +16,7 @@ BANK_LOGO = ASSETS_DIRECTORY / "security-bank-logo.png"
 BANK_ICON = ASSETS_DIRECTORY / "security-bank-icon.png"
 CHRISTMAS_THEME_VERSION = 1
 SNOWFALL_VERSION = 1
+CHRISTMAS_SPIDERMAN_VERSION = 1
 
 
 @lru_cache(maxsize=8)
@@ -37,7 +38,7 @@ def render_bank_branding() -> None:
             f'<img src="data:image/png;base64,{_asset_data("security-bank-logo.png")}" alt="Security Bank" class="sbc-brand-logo">'
             '</div>'
             '<div class="sbc-header-mascot" aria-hidden="true">'
-            f'<img src="data:image/svg+xml;base64,{_asset_data("christmas-tree.svg")}" alt="" class="sbc-christmas-tree">'
+            f'<img src="data:image/svg+xml;base64,{_asset_data("christmas-spiderman.svg")}" alt="" class="sbc-spiderman">'
             '</div>'
             '</div>'
         )
