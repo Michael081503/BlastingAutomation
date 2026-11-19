@@ -95,6 +95,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ), ()),
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
+            "ASSIGNMENT_SCHEME_VERSION", "assignment_scheme_level",
             "PRODUCT_NORMALIZATION_VERSION", "normalize_product",
             "create_default_csv_template",
             "DERIVED_TEMPLATE_HEADERS", "geo_doclass",

@@ -15,6 +15,7 @@ from openpyxl import Workbook
 
 from automation import (
     AutomationError,
+    assignment_scheme_level,
     IDENTIFIER_FIELDS,
     csv_template_headers,
     campaign_output_headers,
@@ -210,7 +211,7 @@ def campaign_output_files(files: list[ExportFile], *, excel: bool, protect_csv_i
 
 
 def _level(value: Any) -> str:
-    text = str(value or "").strip().casefold()
+    text = str(assignment_scheme_level(value) or "").strip().casefold()
     match = re.fullmatch(r"(?:level\s*)?(\d+)(?:\.0+)?", text)
     return f"level{int(match.group(1))}" if match else normalize_header(value)
 

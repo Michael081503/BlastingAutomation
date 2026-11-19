@@ -297,14 +297,21 @@ def render_workbook_page() -> None:
                 download_area.error("Check the RECO agent cycle before files can be prepared.")
                 return
             assignment_date, agents = agent_plan
-        grouped_label = "Separate Area and Christmas Amnesty groups" if geo else "Separate Christmas Amnesty groups"
+        level_column = (source_columns if source_columns is not None else defaults).get("level")
+        assignment_scheme = level_column is not None and normalize_header(source_info.headers[level_column]) == "assignmentscheme"
+        grouped_label = ("Separate Area and Christmas Amnesty groups" if geo else
+                         "Separate RECO placement groups" if assignment_scheme else "Separate Christmas Amnesty groups")
         grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
+        if assignment_scheme:
+            # Fresh endorsements have placements but no Christmas Amnesty column.
+            # Their absent status stays blank while the usual product/level rules apply.
+            grouping_fields.pop("ChristmasAmnesty")
         if not geo:
             grouping_fields["level"] = "level"
         missing_grouping = [label for field, label in grouping_fields.items() if field not in source_info.available_fields]
         output_modes = ["All accounts in one group"] if missing_grouping else [grouped_label, "All accounts in one group"]
         saved_modes = st.session_state.setdefault("sheet_output_modes", {})
-        mode_key = (source_digest, source_sheet, source_header)
+        mode_key = (source_digest, source_sheet, source_header, MAPPING_VERSION)
         previous_mode = saved_modes.get(mode_key, output_modes[0])
         output_mode = st.radio(
             "Output files",

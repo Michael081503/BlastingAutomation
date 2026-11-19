@@ -39,16 +39,18 @@ FIELD_MAPPING = {
 }
 OPTIONAL_FIELD_MAPPING = {"Area": "AREA"}
 SOURCE_ALIASES = {
-    "debtor_email": ("email", "email address", "e-mail address", "email 1", "debtor email address", "email id"),
-    "Account no.": ("account", "account number", "acct no", "acct number"),
-    "financing/Card no.": ("card_no", "cardbnumber"),
-    "endo date": ("assign_date",),
-    "level": ("placement",),
+    "debtor_email": ("email", "email address", "e-mail address", "email 1", "debtor email address", "email id", "EMAIL ADD"),
+    "Account no.": ("account", "account number", "acct no", "acct number", "Account Code"),
+    "financing/Card no.": ("card_no", "cardbnumber", "Card Number/ Short PN"),
+    "Name": ("Customer Name",),
+    "endo date": ("assign_date", "Assignment Date"),
+    "level": ("placement", "Assignment Scheme"),
     "product": ("Product Type", "Promo"),
     "OB (Masterlist)": ("OB",),
     "phone_1": ("phone number", "phone no", "mobile", "mobile number", "mobile no", "contact number", "contact no", "cellphone", "cellphone number"),
 }
-MAPPING_VERSION = 9
+MAPPING_VERSION = 10
+ASSIGNMENT_SCHEME_VERSION = 1
 PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 SOURCE_SHEET_SELECTION_VERSION = 1
@@ -136,6 +138,14 @@ def _template_aliases(target: str, *, renamed: bool) -> set[str]:
 def normalize_product(value: Any) -> Any:
     """Convert the MC product code to CARDS before campaign routing."""
     return "CARDS" if isinstance(value, str) and value.strip().casefold() == "mc" else value
+
+
+def assignment_scheme_level(value: Any) -> Any:
+    """Extract an unambiguous level from labels such as Recovery (L1 Unsecured)."""
+    if not isinstance(value, str):
+        return value
+    levels = {int(level) for level in re.findall(r"\b(?:level|l)\s*(\d+)(?![\w.])", value, re.IGNORECASE)}
+    return f"Level {next(iter(levels))}" if len(levels) == 1 else value
 
 
 def ob_sort_key(value: Any) -> tuple[bool, Decimal]:
@@ -375,7 +385,10 @@ def read_source(
     cached = None
     try:
         source = _worksheet(formulas, sheet_name)
-        positions = _column_lookup(_headers(source, header_row), allow_missing=allow_missing, source_columns=source_columns)
+        headers = _headers(source, header_row)
+        positions = _column_lookup(headers, allow_missing=allow_missing, source_columns=source_columns)
+        level_column = positions.get("level")
+        assignment_scheme = level_column is not None and normalize_header(headers[level_column]) == "assignmentscheme"
         contact_columns = {positions[target] for target in ("email", "phone") if target in positions}
         account_columns = {positions[target] for target in ("primary_key", "cardnumber", "indexoneuid") if target in positions}
         if contact_columns & account_columns:
@@ -421,6 +434,8 @@ def read_source(
                     value = None
                 if target == "product":
                     value = normalize_product(value)
+                if target == "level" and assignment_scheme:
+                    value = assignment_scheme_level(value)
                 if target == "ChristmasAmnesty":
                     value = "QUALIFIED" if normalize_header(value) == "qualified" else None
                 record[target] = value
