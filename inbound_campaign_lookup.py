@@ -14,12 +14,13 @@ from inbound_email import EmailSource, header_key, normalized_email
 from inbound_reply import InboundReplyError, ReplySource, inbound_csv_delimiter, normalized_campaign, normalized_phone
 
 
-EMAIL_CAMPAIGN_LOOKUP_VERSION = 6
+EMAIL_CAMPAIGN_LOOKUP_VERSION = 7
 PHONE_CAMPAIGN_LOOKUP_VERSION = 1
 BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
 B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
 LOOKUP_CAMPAIGN_LABELS_VERSION = 1
 REGULAR_LEVEL_GROUPING_VERSION = 1
+MATCHED_CAMPAIGNS_ONLY_VERSION = 1
 UNMATCHED_CAMPAIGN = "Unmatched campaign"
 
 
@@ -239,7 +240,7 @@ def build_email_campaign_lookup(files: list[tuple[str, bytes]]) -> EmailCampaign
 
 
 def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup) -> EmailSource:
-    """Keep every matching campaign per address and retain unmatched accounts explicitly."""
+    """Keep matched campaign memberships; exclude addresses without a lookup match."""
     records, unmatched = [], set()
     header = "Lookup Campaign"
     while header in source.headers:
@@ -248,26 +249,32 @@ def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup
         campaigns = lookup.campaigns_by_email.get(row.email)
         if not campaigns:
             unmatched.add(row.email)
+            continue
         values = row.source_values[:len(source.headers)] + (None,) * max(0, len(source.headers) - len(row.source_values))
-        for campaign in campaigns or (UNMATCHED_CAMPAIGN,):
+        for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))
     return replace(source, headers=(*source.headers, header), records=tuple(records),
                    lookup_applied=True, unmatched_addresses=len(unmatched))
 
 
 def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup) -> ReplySource:
-    """Resolve SMS/Viber campaigns using all phone columns from the same lookup files."""
+    """Keep SMS/Viber accounts with a campaign match in the lookup phone columns."""
     records, unmatched = [], set()
+    excluded = source.excluded_rows
     header = "Lookup Campaign"
     while header in source.headers:
         header += " (lookup)"
     for row in source.records:
         phone = normalized_phone(row.phone)
+        if not phone:
+            excluded += 1
+            continue
         campaigns = lookup.campaigns_by_phone.get(phone)
-        if phone and not campaigns:
+        if not campaigns:
             unmatched.add(phone)
+            continue
         values = row.source_values[:len(source.headers)] + (None,) * max(0, len(source.headers) - len(row.source_values))
-        for campaign in campaigns or (UNMATCHED_CAMPAIGN,):
+        for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))
     return replace(source, headers=(*source.headers, header), records=tuple(records),
-                   lookup_applied=True, unmatched_addresses=len(unmatched))
+                   excluded_rows=excluded, lookup_applied=True, unmatched_addresses=len(unmatched))

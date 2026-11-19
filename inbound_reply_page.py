@@ -29,7 +29,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 23
+INBOUND_REPLY_PAGE_VERSION = 24
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -343,8 +343,8 @@ def render_sms_details(report: ViberReplyReport) -> None:
     if excluded:
         st.warning(f"Skipped {excluded:,} SMS rows without a usable phone number.")
     if report.message_logs.unmatched_addresses:
-        st.warning(f"{report.message_logs.unmatched_addresses:,} SMS customer phone numbers have no campaign lookup match "
-                   "and appear under Unmatched campaign.")
+        st.caption(f"Excluded {report.message_logs.unmatched_addresses:,} SMS customer phone numbers without a campaign "
+                   "match from the report and downloads.")
 
 
 def render_email_details(report: EmailReplyReport, report_date: date) -> None:
@@ -362,8 +362,8 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
         "from any agent. Repeated agent replies count once per customer email address within each campaign."
     )
     if report.dc.unmatched_addresses:
-        st.warning(f"{report.dc.unmatched_addresses:,} email addresses were not found with a usable campaign match "
-                   "in the lookup files. They appear under Unmatched campaign. Upload the remaining lookup files to resolve them.")
+        st.caption(f"Excluded {report.dc.unmatched_addresses:,} email addresses without a campaign match "
+                   "from the report and downloads.")
     st.subheader("Email unreplied accounts by campaign")
     rows = "".join(f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
                    for campaign in report.campaigns)
@@ -414,8 +414,8 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
         "the totals above count each phone number once across all campaigns."
     )
     if report.message_logs.unmatched_addresses:
-        st.warning(f"{report.message_logs.unmatched_addresses:,} Viber customer phone numbers have no campaign lookup match "
-                   "and appear under Unmatched campaign.")
+        st.caption(f"Excluded {report.message_logs.unmatched_addresses:,} Viber customer phone numbers without a campaign "
+                   "match from the report and downloads.")
     st.subheader("Unreplied accounts by campaign")
     summary_rows = "".join(
         f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
@@ -531,7 +531,8 @@ def render_inbound_reply() -> None:
         st.caption("Regular: Levels 1–5 → SBC Level 1; Level 6 → SBC Level 6. "
                    "GEO: Region 3 → SBC Region 3; Mindanao → SBC Mindanao. "
                    "B2 → SBC B2; B4 → SBC B4 using only Email (01) for email matching. "
-                   "B2 takes priority for contacts in both bucket files.")
+                   "B2 takes priority for contacts in both bucket files. "
+                   "Accounts without a campaign lookup match are excluded from the report and downloads.")
         email_lookup = prepare_email_lookup(lookup_uploads)
         if email_lookup is not None:
             for source in email_lookup.sources:

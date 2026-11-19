@@ -168,9 +168,11 @@ class BucketLookupPageTests(unittest.TestCase):
                 self.assertEqual(book["Summary"]["A4"].value, "SBC B2")
                 self.assertEqual(book["Summary"]["A5"].value, "SBC B4")
                 self.assertEqual(book["Summary"]["I4"].value, 3)
-                for title, count in (("Email Unreplied", 10), ("SMS Unreplied", 10), ("Viber Unreplied", 9)):
+                for title, count in (("Email Unreplied", 9), ("SMS Unreplied", 9), ("Viber Unreplied", 8)):
                     self.assertEqual(book[title]["B2"].value, count)
                     self.assertEqual(book[title].max_row - 3, count)
+                    self.assertTrue(all(book[title].cell(row, 2).value in [row[0] for row in displayed()]
+                                        for row in range(4, book[title].max_row + 1)))
                 rows = list(book["Email Unreplied"].iter_rows(min_row=4, values_only=True))
                 self.assertEqual({row[1] for row in rows if row[4] == "shared@example.com"}, {"SBC B2"})
                 self.assertEqual({row[1] for row in rows if row[4] in {"six@example.com", "seventy@example.com"}}, {"SBC B4"})
