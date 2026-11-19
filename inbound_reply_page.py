@@ -147,9 +147,9 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
           </tr>
           <tr>
             {channel_headers}
-            <th scope="col" title="Unique customers who emailed you, counted once per email address within each campaign.">EMAIL REPLY</th>
-            <th scope="col" title="Unique customers who sent SMS replies, counted once per phone number within each campaign.">SMS REPLY</th>
-            <th scope="col" title="Unique customers who sent Viber replies, counted once per phone number within each campaign.">VIBER REPLY</th>
+            <th scope="col" title="Unique customer accounts that replied by email, regardless of receiving mailbox or assigned agent. Counted once per customer email address within each campaign.">EMAIL REPLY</th>
+            <th scope="col" title="Unique customer accounts that replied by SMS, regardless of receiving inbox or assigned agent. Repeated replies count once per phone number within each campaign.">SMS REPLY</th>
+            <th scope="col" title="Unique customer accounts that replied by Viber, regardless of receiving inbox or assigned agent. Repeated replies count once per phone number within each campaign.">VIBER REPLY</th>
             {channel_headers}
           </tr>
         </thead>
@@ -332,8 +332,10 @@ def render_sms_details(report: ViberReplyReport) -> None:
         column.metric(label, f"{value:,}")
     st.caption(
         "SMS matches normalized phone numbers within each campaign. Upload agent replies first "
-        "and customer replies second. SMS REPLY counts customers who contacted you; AGENT WORKED counts "
-        "those customers answered by an agent in the same campaign. Each file needs Phone and either a campaign column "
+        "and customer replies second. SMS REPLY counts customer accounts that replied by SMS, regardless of receiving "
+        "inbox or assigned agent. Repeated replies count once per phone number within each campaign. AGENT WORKED counts "
+        "those customers answered by any agent in the same campaign, with repeated agent replies counted once. "
+        "Each file needs Phone and either a campaign column "
         "or the campaign lookup files. "
         "SMS Unreplied in the main output workbook contains the full account details."
     )
@@ -354,8 +356,10 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
     st.caption(
         ("DC Checking supplies incoming customer emails; uploaded lookup files supply the campaigns. " if report.dc.lookup_applied
          else "DC Checking supplies incoming customer emails and campaigns. ") +
-        "UNIQUE RESULT — EMAIL REPLY counts each customer email address once per campaign. "
-        "AGENT WORKED — EMAIL counts those customers with a matching Email History row containing a nonblank sent value."
+        "UNIQUE RESULT — EMAIL REPLY counts customer accounts that replied by email, regardless of receiving mailbox "
+        "or assigned agent. Repeated replies count once per customer email address within each campaign. "
+        "AGENT WORKED — EMAIL counts those customers with a matching Email History row containing a nonblank sent value "
+        "from any agent. Repeated agent replies count once per customer email address within each campaign."
     )
     if report.dc.unmatched_addresses:
         st.warning(f"{report.dc.unmatched_addresses:,} email addresses were not found with a usable campaign match "
@@ -402,8 +406,10 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply, totals.matched_both_files)):
         column.metric(label, f"{value:,}")
     st.caption(
-        "Viber Reply counts unique customers in the customer-replies file. Agent Worked counts those customers with "
-        "a matching agent response in the same campaign, divided by Viber Reply for the percentage. "
+        "Viber Reply counts customer accounts that replied by Viber, regardless of receiving inbox or assigned agent. "
+        "Agent Worked counts those customers with a matching response from any agent in the same campaign, "
+        "divided by Viber Reply for the percentage. Repeated customer or agent replies count once per phone number "
+        "within each campaign. "
         "Each campaign counts a phone number once; "
         "the totals above count each phone number once across all campaigns."
     )
@@ -495,9 +501,10 @@ def render_inbound_reply() -> None:
                     help_text = None
                     if channel == "EMAIL":
                         help_text = ("Email History with sent agent replies." if number == 1 else
-                                     "DC Checking containing incoming customer emails, matched by sender.")
+                                     "DC Checking containing customer replies from any receiving mailbox or assigned agent, matched by sender.")
                     elif channel == "VIBER":
-                        help_text = "Campaign replies export containing agent-replied accounts." if number == 1 else "Message logs containing customer replies to compare."
+                        help_text = ("Message logs export containing Agent Reply rows." if number == 1 else
+                                     "Campaign replies export containing Inbound Reply rows from customers.")
                     upload = st.file_uploader(
                         label, type=["xlsx", "csv"], help=help_text,
                         key=upload_widget_key(f"inbound_reply_{channel.lower()}_{number}_upload"),
@@ -521,7 +528,7 @@ def render_inbound_reply() -> None:
                  "Regular uses LEVEL or placement; GEO uses Area. B4 email matching uses only Email (01). "
                  "Email uses email addresses; SMS and Viber use phone numbers. The OVERALL worksheet is used when available.",
         )
-        st.caption("Regular: Level 1 → SBC Level 1, Level 2 → SBC Level 2, and so on. "
+        st.caption("Regular: Levels 1–5 → SBC Level 1; Level 6 → SBC Level 6. "
                    "GEO: Region 3 → SBC Region 3; Mindanao → SBC Mindanao. "
                    "B2 → SBC B2; B4 → SBC B4 using only Email (01) for email matching. "
                    "B2 takes priority for contacts in both bucket files.")
@@ -547,6 +554,11 @@ def render_inbound_reply() -> None:
     with output_area:
         st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
                                   source_campaigns=source_campaigns))
+        st.caption(
+            "For Email, SMS and Viber, UNIQUE RESULT counts customer accounts that replied, regardless of receiving inbox "
+            "or assigned agent. AGENT WORKED counts those accounts answered by any agent. Repeated customer or agent "
+            "replies count once per account within each channel and campaign."
+        )
         has_manual_counts = any(value is not None for row in summary_rows(
             campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
             source_campaigns=source_campaigns)

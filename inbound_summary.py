@@ -142,18 +142,23 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     for address, value in labels.items():
         sheet[address] = value
     sheet["I3"].comment = Comment(
-        "Unique customers who emailed you, counted once per email address within each campaign from DC Checking. "
+        "Unique customer accounts that replied by email, regardless of receiving mailbox or assigned agent. "
+        "Repeated replies count once per customer email address within each campaign from DC Checking. "
         "Customer replies remain counted after an agent responds. Agent responses appear under AGENT WORKED - EMAIL.",
         "INBOUND REPLY")
     for reply_column, channel, count_column, percent_column in (("J", "SMS", "O", "P"), ("K", "Viber", "Q", "R")):
         sheet[f"{reply_column}3"].comment = Comment(
-            f"Unique customers who contacted you through {channel}, counted once per phone number within each campaign. "
+            f"Unique customer accounts that replied through {channel}, regardless of receiving inbox or assigned agent. "
+            "Repeated replies count once per phone number within each campaign. "
             "Contacts found only in the agent-replies file are excluded.", "INBOUND REPLY")
         sheet[f"{count_column}3"].comment = Comment(
-            f"Customers from {channel} REPLY who received an agent response in the same campaign.", "INBOUND REPLY")
+            f"Customers from {channel} REPLY who received a response from any agent in the same campaign. "
+            "Repeated agent replies count once per phone number within each campaign.", "INBOUND REPLY")
         sheet[f"{percent_column}3"].comment = Comment(
             f"Customers answered by agents divided by {channel} REPLY × 100.", "INBOUND REPLY")
-    sheet["M3"].comment = Comment("Customers from EMAIL REPLY who received an agent response.", "INBOUND REPLY")
+    sheet["M3"].comment = Comment(
+        "Customers from EMAIL REPLY who received a response from any agent. "
+        "Repeated agent replies count once per customer email address within each campaign.", "INBOUND REPLY")
     sheet["N3"].comment = Comment("Customers answered by agents divided by EMAIL REPLY × 100.", "INBOUND REPLY")
     for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
                             source_campaigns=source_campaigns):

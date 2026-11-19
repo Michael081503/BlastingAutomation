@@ -10,10 +10,11 @@ from unittest.mock import patch
 from openpyxl import Workbook, load_workbook
 
 from inbound_campaign_lookup import (
-    UNMATCHED_CAMPAIGN, apply_email_campaign_lookup, build_email_campaign_lookup, read_email_campaign_source,
+    UNMATCHED_CAMPAIGN, apply_email_campaign_lookup, apply_phone_campaign_lookup,
+    build_email_campaign_lookup, read_email_campaign_source,
 )
 from inbound_email import build_email_unreplied_workbook, match_email_sources, read_email_source
-from inbound_reply import InboundReplyError
+from inbound_reply import InboundReplyError, match_viber_sources, read_reply_source
 from inbound_summary import build_summary_workbook
 from test_inbound_display import table_cells
 from test_inbound_email import csv_bytes
@@ -51,10 +52,55 @@ def geo_file():
 
 
 class CampaignLookupTests(unittest.TestCase):
+    def test_levels_two_to_five_merge_into_level_one_without_duplicating_replies(self):
+        data = workbook_bytes([("OVERALL", [
+            ("debtor_email", "LEVEL", "phone_1"),
+            *(("shared@example.com", f"Level {level}", "09171234567") for level in range(1, 6)),
+            ("six@example.com", "Level 6", "09181234567"),
+        ])])
+        lookup = build_email_campaign_lookup([("Regular.xlsx", data)])
+        self.assertEqual(lookup.campaigns, ("SBC Level 1", "SBC Level 6"))
+        self.assertEqual(lookup.campaigns_by_email, {
+            "shared@example.com": ("SBC Level 1",), "six@example.com": ("SBC Level 6",),
+        })
+        self.assertEqual(lookup.campaigns_by_phone, {
+            "09171234567": ("SBC Level 1",), "09181234567": ("SBC Level 6",),
+        })
+        dc = read_email_source("dc.csv", csv_bytes(("sender",), [
+            ("SHARED@example.com",), ("shared@example.com",), ("six@example.com",),
+        ]), kind="dc", require_campaign=False)
+        history = read_email_source("history.csv", csv_bytes(("email", "sent"), [
+            ("shared@example.com", "Agent response"), ("shared@example.com", "Second response"),
+        ]), kind="history")
+        email = match_email_sources(apply_email_campaign_lookup(dc, lookup), history)
+        self.assertEqual([(c.campaign, c.unique_people, c.agent_replied) for c in email.campaigns],
+                         [("SBC Level 1", 1, 1), ("SBC Level 6", 1, 0)])
+        customers = read_reply_source("customers.csv", csv_bytes(("Phone",), [
+            ("09171234567",), ("+63 917 123 4567",), ("09181234567",),
+        ]), require_campaign=False)
+        agents = read_reply_source("agents.csv", csv_bytes(("Phone",), [
+            ("09171234567",), ("09171234567",),
+        ]), require_campaign=False)
+        phone = match_viber_sources(apply_phone_campaign_lookup(customers, lookup),
+                                   apply_phone_campaign_lookup(agents, lookup),
+                                   agent_replied_source="campaign_replies", match_mode="phone")
+        self.assertEqual([(c.campaign, c.unique_people, c.agent_replied) for c in phone.campaigns],
+                         [("SBC Level 1", 1, 1), ("SBC Level 6", 1, 0)])
+        output = build_summary_workbook("", date(2026, 11, 19), "", phone, email, sms_report=phone)
+        book = load_workbook(BytesIO(output))
+        try:
+            self.assertEqual(book.sheetnames, ["Summary", "SMS Unreplied", "Viber Unreplied", "Email Unreplied"])
+            self.assertEqual([book["Summary"].cell(row, 1).value for row in (4, 5)], ["SBC Level 1", "SBC Level 6"])
+            self.assertEqual([book["Summary"].cell(4, col).value for col in (9, 10, 11, 13, 15, 17)], [1] * 6)
+            for name in ("SMS Unreplied", "Viber Unreplied", "Email Unreplied"):
+                self.assertEqual(book[name]["B4"].value, "SBC Level 6")
+        finally:
+            book.close()
+
     def test_real_header_shapes_use_area_before_placement_and_level_without_filename_or_order(self):
         files = [("first.xlsx", geo_file()), ("second.xlsx", regular_file("LEVEL 2"))]
         expected = {
-            "client@example.com": ("SBC Level 2",),
+            "client@example.com": ("SBC Level 1",),
             "north@example.com": ("SBC Region 3",),
             "south@example.com": ("SBC Mindanao",),
         }
@@ -80,7 +126,7 @@ class CampaignLookupTests(unittest.TestCase):
         ])
         source = read_email_campaign_source("active.xlsx", data)
         self.assertEqual(source.sheets, ("First", "Second"))
-        self.assertEqual(source.campaigns_by_email, {"client@example.com": ("SBC Level 2",)})
+        self.assertEqual(source.campaigns_by_email, {"client@example.com": ("SBC Level 1",)})
         self.assertEqual((source.invalid_email_rows, source.missing_campaign_rows), (1, 1))
         csv_source = read_email_campaign_source("active.csv", csv_bytes(("email", "Area", "placement"), [
             ("north@example.com", "REGION 3", "Level 6"),
@@ -206,14 +252,14 @@ class CampaignLookupPageTests(unittest.TestCase):
                 self.assertEqual(book["Email Unreplied"].cell(4, 2).value, "SBC Mindanao")
             finally:
                 book.close()
-            uploads["inbound_reply_email_lookup_uploads"][0] = Upload("active.xlsx", regular_file("Level 4"))
+            uploads["inbound_reply_email_lookup_uploads"][0] = Upload("active.xlsx", regular_file("Level 7"))
             app.run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 4", "SBC Mindanao", "SBC Region 3"])
-            uploads["inbound_reply_email_lookup_uploads"] = [Upload("active.xlsx", regular_file("Level 4"))]
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 7", "SBC Mindanao", "SBC Region 3"])
+            uploads["inbound_reply_email_lookup_uploads"] = [Upload("active.xlsx", regular_file("Level 7"))]
             app.run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 4", UNMATCHED_CAMPAIGN])
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 7", UNMATCHED_CAMPAIGN])
             self.assertTrue(any("1 email addresses were not found" in warning.value for warning in app.warning))
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("bad.xlsx", b"broken")]
             app.run(timeout=20)

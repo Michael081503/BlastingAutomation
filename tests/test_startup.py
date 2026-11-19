@@ -58,6 +58,25 @@ class StartupTests(unittest.TestCase):
             assert app_startup.refresh_application_modules() == set()
         """)
 
+    def test_cached_modules_refresh_for_regular_level_grouping(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import inbound_campaign_lookup, inbound_reply_page
+            del inbound_campaign_lookup.REGULAR_LEVEL_GROUPING_VERSION
+            inbound_campaign_lookup.EMAIL_CAMPAIGN_LOOKUP_VERSION = 5
+            refreshed = app_startup.refresh_application_modules()
+            assert {'inbound_campaign_lookup', 'inbound_reply_page'} <= refreshed
+            assert inbound_reply_page.build_email_campaign_lookup is inbound_campaign_lookup.build_email_campaign_lookup
+            data = b'email,LEVEL,phone_1\\nshared@example.com,Level 2,09171234567\\nshared@example.com,Level 5,09171234567\\nsix@example.com,Level 6,09181234567\\n'
+            lookup = inbound_reply_page.build_email_campaign_lookup([('Regular.csv', data)])
+            assert lookup.campaigns == ('SBC Level 1', 'SBC Level 6')
+            assert lookup.campaigns_by_email['shared@example.com'] == ('SBC Level 1',)
+            assert lookup.campaigns_by_phone['09171234567'] == ('SBC Level 1',)
+            assert lookup.signature[0] == inbound_reply_page.EMAIL_CAMPAIGN_LOOKUP_VERSION == 6
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_modules_refresh_for_lookup_campaign_totals_editor(self):
         self.run_isolated("""
             import app_startup

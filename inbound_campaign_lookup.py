@@ -14,11 +14,12 @@ from inbound_email import EmailSource, header_key, normalized_email
 from inbound_reply import InboundReplyError, ReplySource, inbound_csv_delimiter, normalized_campaign, normalized_phone
 
 
-EMAIL_CAMPAIGN_LOOKUP_VERSION = 5
+EMAIL_CAMPAIGN_LOOKUP_VERSION = 6
 PHONE_CAMPAIGN_LOOKUP_VERSION = 1
 BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
 B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
 LOOKUP_CAMPAIGN_LABELS_VERSION = 1
+REGULAR_LEVEL_GROUPING_VERSION = 1
 UNMATCHED_CAMPAIGN = "Unmatched campaign"
 
 
@@ -88,7 +89,10 @@ def _campaign(value: object, kind: str) -> str:
         return f"SBC B{match[1]}" if match else ""
     if kind == "level":
         match = re.fullmatch(r"(?:level\s*)?(\d+)(?:\.0)?", text, re.IGNORECASE)
-        return f"SBC Level {int(match[1])}" if match and int(match[1]) > 0 else ""
+        if not match or int(match[1]) <= 0:
+            return ""
+        level = int(match[1])
+        return f"SBC Level {1 if level in (2, 3, 4, 5) else level}"
     match = re.fullmatch(r"region[\s_-]*(\d+)", text, re.IGNORECASE)
     area = f"Region {int(match[1])}" if match else ("NCR" if text.casefold() == "ncr" else text.title())
     return f"SBC {area}"

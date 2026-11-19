@@ -34,8 +34,8 @@ def all_channel_uploads(level="Level 1"):
         ("ana@example.com", level, None, phones["ana"], None),
         ("ben@example.com", level, phones["ben"], None, None),
         ("cara@example.com", level, None, None, phones["cara"]),
-        ("dan@example.com", "Level 2", phones["dan"], None, None),
-        ("ella@example.com", "Level 2", phones["ella"], None, None),
+        ("dan@example.com", "Level 6", phones["dan"], None, None),
+        ("ella@example.com", "Level 6", phones["ella"], None, None),
     ])])
     geo = workbook_bytes([("OVERALL", [
         ("email", "placement", "Phone 1", "Area"),
@@ -96,17 +96,17 @@ class PhonePopulationTests(unittest.TestCase):
     def test_phone_only_lookup_uses_all_columns_and_keeps_multiple_campaign_memberships(self):
         lookup = build_email_campaign_lookup([("regular.csv", csv_bytes(("LEVEL", "phone_1", "phone_2", "phone_3"), [
             ("Level 1", "09171234567", "+63 918 123 4567", "09191234567"),
-            ("Level 2", "09171234567", None, None),
+            ("Level 6", "09171234567", None, None),
         ]))])
         self.assertEqual(lookup.campaigns_by_email, {})
         self.assertEqual(lookup.campaigns_by_phone, {
-            "09171234567": ("SBC Level 1", "SBC Level 2"),
+            "09171234567": ("SBC Level 1", "SBC Level 6"),
             "09181234567": ("SBC Level 1",), "09191234567": ("SBC Level 1",),
         })
         source = read_reply_source("customers.csv", csv_bytes(("Phone",), [("09171234567",), ("09201234567",)]),
                                    require_campaign=False)
         resolved = apply_phone_campaign_lookup(source, lookup)
-        self.assertEqual([row.campaign for row in resolved.records], ["SBC Level 1", "SBC Level 2", "Unmatched campaign"])
+        self.assertEqual([row.campaign for row in resolved.records], ["SBC Level 1", "SBC Level 6", "Unmatched campaign"])
         self.assertEqual(resolved.unmatched_addresses, 1)
         self.assertEqual(resolved.headers, ("Phone", "Lookup Campaign"))
         self.assertEqual(source.headers, ("Phone",))
@@ -142,7 +142,7 @@ class AllChannelsPageTests(unittest.TestCase):
         from upload_state import render_clear_all_files
 
         uploads = all_channel_uploads()
-        expected_labels = ["SBC Level 1", "SBC Level 2", "SBC Mindanao", "SBC Region 3", "Unmatched campaign"]
+        expected_labels = ["SBC Level 1", "SBC Level 6", "SBC Mindanao", "SBC Region 3", "Unmatched campaign"]
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
                 patch("inbound_reply_page.inbound_report_date", return_value=REPORT_DATE), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
@@ -178,13 +178,13 @@ class AllChannelsPageTests(unittest.TestCase):
                     self.assertIn("Source: Lookup Campaign", [cell.value for cell in sheet[3]])
             finally:
                 book.close()
-            uploads["inbound_reply_email_lookup_uploads"] = all_channel_uploads("Level 4")["inbound_reply_email_lookup_uploads"]
+            uploads["inbound_reply_email_lookup_uploads"] = all_channel_uploads("Level 7")["inbound_reply_email_lookup_uploads"]
             app.run(timeout=20)
-            self.assertEqual([row[0] for row in displayed()], ["SBC Level 2", "SBC Level 4", *expected_labels[2:]])
+            self.assertEqual([row[0] for row in displayed()], ["SBC Level 6", "SBC Level 7", *expected_labels[2:]])
             self.assertTrue(all(row[1] == "—" for row in displayed()))
             uploads["inbound_reply_email_lookup_uploads"] = uploads["inbound_reply_email_lookup_uploads"][:1]
             app.run(timeout=20)
-            self.assertEqual([row[0] for row in displayed()], ["SBC Level 2", "SBC Level 4", "Unmatched campaign"])
+            self.assertEqual([row[0] for row in displayed()], ["SBC Level 6", "SBC Level 7", "Unmatched campaign"])
             for channel in ("email", "sms", "viber"):
                 report = app.session_state[f"inbound_reply_{channel}_result"]["report"]
                 source = report.dc if channel == "email" else report.message_logs

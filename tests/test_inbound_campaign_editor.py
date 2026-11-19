@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def regular_catalog(last_level=6):
     return Upload("Regular.xlsx", workbook_bytes([("OVERALL", [
         ("Name", "debtor_email", "LEVEL", "phone_1"),
-        *((f"Sample {level}", f"level{level}@example.com" if level != 3 else None,
-           f"Level {level}", f"094{level}1234567" if level != 3 else None)
+        *((f"Sample {level}", f"level{level}@example.com" if level != last_level else None,
+           f"Level {level}", f"094{level}1234567" if level != last_level else None)
           for level in (1, 2, 3, 4, 5, last_level)),
     ])]))
 
@@ -44,10 +44,10 @@ class CampaignCatalogTests(unittest.TestCase):
     def test_campaigns_come_from_account_rows_even_without_usable_contacts(self):
         uploads = catalog_uploads()
         lookup = build_email_campaign_lookup([(u.name, u.getvalue()) for u in uploads])
-        expected = ("SBC B2", "SBC B4", *(f"SBC Level {n}" for n in range(1, 7)), "SBC Mindanao", "SBC Region 3")
+        expected = ("SBC B2", "SBC B4", "SBC Level 1", "SBC Level 6", "SBC Mindanao", "SBC Region 3")
         self.assertEqual(lookup.campaigns, expected)
-        self.assertFalse(any("SBC Level 3" in labels for labels in lookup.campaigns_by_email.values()))
-        self.assertFalse(any("SBC Level 3" in labels for labels in lookup.campaigns_by_phone.values()))
+        self.assertFalse(any("SBC Level 6" in labels for labels in lookup.campaigns_by_email.values()))
+        self.assertFalse(any("SBC Level 6" in labels for labels in lookup.campaigns_by_phone.values()))
         reverse = build_email_campaign_lookup([(u.name, u.getvalue()) for u in reversed(uploads)])
         self.assertEqual(reverse.campaigns, expected)
 
@@ -61,7 +61,7 @@ class CampaignEditorPageTests(unittest.TestCase):
         from streamlit.testing.v1 import AppTest
         from upload_state import render_clear_all_files
 
-        expected = ["SBC B2", "SBC B4", *(f"SBC Level {n}" for n in range(1, 7)), "SBC Mindanao", "SBC Region 3"]
+        expected = ["SBC B2", "SBC B4", "SBC Level 1", "SBC Level 6", "SBC Mindanao", "SBC Region 3"]
         files = catalog_uploads()
         uploads = {}
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
@@ -87,10 +87,10 @@ class CampaignEditorPageTests(unittest.TestCase):
             self.assertFalse(app.error)
             self.assertEqual(editor_labels(), expected)
             self.assertEqual(list(summary()), expected)
-            self.assertEqual(len(app.number_input), 40)
+            self.assertEqual(len(app.number_input), 4 * len(expected))
             self.assertTrue(all(widget.value is None for widget in app.number_input))
             self.assertEqual(len(app.metric), 0)
-            self.assertTrue(any("10 campaigns detected" in caption.value for caption in app.caption))
+            self.assertTrue(any("6 campaigns detected" in caption.value for caption in app.caption))
             for field, value in (("active_ticket", 5000), ("dc_email", 4337), ("dc_sms", 3500), ("dc_viber", 2500)):
                 app.number_input(key=total_key("SBC Level 1", field)).set_value(value).run(timeout=20)
                 self.assertFalse(app.exception)
@@ -128,13 +128,13 @@ class CampaignEditorPageTests(unittest.TestCase):
             call = next(call for call in reversed(downloads.call_args_list) if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
-                self.assertEqual([book["Summary"].cell(r, 1).value for r in range(4, 14)], expected)
+                self.assertEqual([book["Summary"].cell(r, 1).value for r in range(4, 4 + len(expected))], expected)
                 self.assertEqual(book["Summary"]["B5"].value, 3000)
                 self.assertEqual(book["Summary"]["B6"].value, 5000)
                 self.assertEqual(book["Summary"]["C6"].value, 4337)
                 self.assertEqual(book["Summary"]["D6"].data_type, "f")
                 self.assertEqual(book["Summary"]["I6"].value, 1)
-                self.assertIsNone(book["Summary"]["I8"].value)
+                self.assertIsNone(book["Summary"]["I7"].value)
             finally:
                 book.close()
             app.button(key="clear_all_files").click().run(timeout=20)
