@@ -25,11 +25,11 @@ from inbound_campaign_lookup import (
 from upload_state import upload_widget_key
 from inbound_summary import (
     BLAST_PERCENTAGE_FORMULAS_VERSION, build_summary_workbook, campaign_groups, campaign_totals_key,
-    display_cell, nonnegative_count as _count, summary_rows,
+    display_cell, nonnegative_count as _count, overall_blast_row, summary_rows,
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 24
+INBOUND_REPLY_PAGE_VERSION = 25
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -102,10 +102,13 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
         for channel in ("EMAIL", "SMS", "VIBER")
     )
     body = []
-    for cells in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
-                              source_campaigns=source_campaigns):
+    rows = summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
+                        source_campaigns=source_campaigns)
+    for cells in rows:
         body.append("<tr>" + "".join(f"<td>{escape(display_cell(value, column))}</td>"
                                     for column, value in enumerate(cells)) + "</tr>")
+    footer = "".join(f"<td>{escape(display_cell(value, column))}</td>"
+                     for column, value in enumerate(overall_blast_row(rows)))
     return f"""
     <style>
       .inbound-reply-report {{
@@ -128,6 +131,7 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
       .inbound-campaign-report table {{ min-width: 1080px; table-layout: auto; font-size: 11px; }}
       .inbound-campaign-report th, .inbound-campaign-report td {{ padding: 6px 4px; line-height: 1.35; }}
       .inbound-campaign-report th {{ white-space: normal; overflow-wrap: normal; word-break: normal; }}
+      .inbound-campaign-report tfoot td {{ background: #e8f2ec; font-weight: 700; border-top-width: 2px; }}
     </style>
     <div class="inbound-reply-report inbound-campaign-report" role="region" aria-label="Inbound reply summary" tabindex="0">
       <table aria-label="Inbound reply campaign report">
@@ -154,6 +158,7 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
           </tr>
         </thead>
         <tbody>{''.join(body)}</tbody>
+        <tfoot aria-label="Overall blast coverage"><tr>{footer}</tr></tfoot>
       </table>
     </div>
     """
@@ -555,6 +560,11 @@ def render_inbound_reply() -> None:
     with output_area:
         st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
                                   source_campaigns=source_campaigns))
+        st.caption(
+            "TOTAL — ALL CAMPAIGNS shows each channel's total DC WORKED divided by total ACTIVE TICKET. "
+            "Enter ACTIVE TICKET and that channel's blast count for every campaign to show its overall percentage; "
+            "enter 0 when there were no blasts."
+        )
         st.caption(
             "For Email, SMS and Viber, UNIQUE RESULT counts customer accounts that replied, regardless of receiving inbox "
             "or assigned agent. AGENT WORKED counts those accounts answered by any agent. Repeated customer or agent "

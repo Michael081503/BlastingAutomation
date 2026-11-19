@@ -100,6 +100,21 @@ class StartupTests(unittest.TestCase):
             assert app_startup.refresh_application_modules() == set()
         """)
 
+    def test_cached_modules_refresh_for_overall_blast_coverage(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import inbound_summary, inbound_reply_page
+            del inbound_summary.OVERALL_BLAST_COVERAGE_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'inbound_summary', 'inbound_reply_page'} <= refreshed
+            assert inbound_reply_page.overall_blast_row is inbound_summary.overall_blast_row
+            rows = [['A', 100, 50, None, 0, None, 100, None] + [None] * 10,
+                    ['B', 900, 90, None, 100, None, 0, None] + [None] * 10]
+            assert inbound_reply_page.overall_blast_row(rows)[1:8] == [1000, 140, .14, 100, .1, 100, .1]
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_modules_refresh_for_lookup_campaign_totals_editor(self):
         self.run_isolated("""
             import app_startup

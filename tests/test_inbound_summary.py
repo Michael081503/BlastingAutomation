@@ -9,7 +9,10 @@ from unittest.mock import patch
 
 from inbound_email import match_email_sources, read_email_source
 from inbound_reply import CampaignReplyCounts, match_viber_sources, read_reply_source
-from inbound_summary import build_summary_workbook, campaign_totals_key, display_cell, summary_rows
+from inbound_summary import (
+    OVERALL_BLAST_LABEL, build_summary_workbook, campaign_totals_key, display_cell,
+    overall_blast_row, summary_rows,
+)
 from test_inbound_email import DC_HEADERS, HISTORY_HEADERS, csv_bytes
 
 
@@ -40,6 +43,124 @@ def reports():
     ]))
     return (match_viber_sources(logs, replies, agent_replied_source="campaign_replies", match_mode="phone"),
             match_email_sources(dc, history))
+
+
+class OverallBlastCoverageTests(unittest.TestCase):
+    report_date = date(2026, 11, 18)
+
+    def totals(self):
+        return {campaign_totals_key(self.report_date, label): values for label, values in (
+            ("Small", {"active_ticket": 100, "dc_email": 50, "dc_sms": 100, "dc_viber": 50}),
+            ("Large", {"active_ticket": 900, "dc_email": 90, "dc_sms": 100, "dc_viber": 450}),
+            ("Removed campaign", {"active_ticket": 9999, "dc_email": 9999, "dc_sms": 9999, "dc_viber": 9999}),
+        )}
+
+    def rows(self, totals=None, *, campaigns=("Small", "Large"), report_date=None):
+        return summary_rows("", report_date or self.report_date, "",
+                            campaign_totals=self.totals() if totals is None else totals, source_campaigns=campaigns)
+
+    def test_overall_coverage_divides_summed_counts_and_excludes_other_campaigns_and_dates(self):
+        overall = overall_blast_row(self.rows())
+        self.assertEqual(overall[:8], [OVERALL_BLAST_LABEL, 1000, 140, .14, 200, .2, 500, .5])
+        self.assertEqual(overall[8:], [None] * 10)
+        self.assertEqual([display_cell(overall[index], index) for index in (3, 5, 7)],
+                         ["14.00%", "20.00%", "50.00%"])
+        self.assertEqual(overall_blast_row(self.rows(campaigns=("Small",)))[:4], [OVERALL_BLAST_LABEL, 100, 50, .5])
+        self.assertEqual(overall_blast_row(self.rows(report_date=date(2026, 11, 19)))[1:8], [None] * 7)
+
+    def test_missing_counts_zero_blasts_and_zero_active_do_not_create_false_percentages(self):
+        totals = self.totals()
+        small = totals[campaign_totals_key(self.report_date, "Small")]
+        for value in (None, -1, True, "50"):
+            with self.subTest(missing_blast=value):
+                small["dc_email"] = value
+                result = overall_blast_row(self.rows(totals))
+                self.assertEqual(result[2], 90)
+                self.assertIsNone(result[3])
+                self.assertEqual(result[5], .2)
+        small["dc_email"] = 0
+        result = overall_blast_row(self.rows(totals))
+        self.assertEqual(result[3], .09)
+        small["active_ticket"] = None
+        self.assertTrue(all(overall_blast_row(self.rows(totals))[index] is None for index in (3, 5, 7)))
+        for values in totals.values():
+            values.update(active_ticket=0, dc_email=0, dc_sms=0, dc_viber=0)
+        self.assertEqual(overall_blast_row(self.rows(totals))[1:8], [0, 0, None, 0, None, 0, None])
+        small["active_ticket"] = 100
+        self.assertEqual(overall_blast_row(self.rows(totals))[1:8], [100, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(overall_blast_row([])[1:], [None] * 17)
+
+    def test_html_footer_keeps_campaign_rows_and_shows_overall_channel_percentages(self):
+        from inbound_reply_page import build_report_html
+        from test_inbound_display import table_cells
+
+        html = build_report_html("", self.report_date, "", campaign_totals=self.totals(),
+                                 source_campaigns=("Small", "Large"))
+        self.assertEqual([row[0] for row in table_cells(html)], ["Large", "Small"])
+        footer = html.split('<tfoot aria-label="Overall blast coverage">')[1].split('</tfoot>')[0]
+        cells = [cell.split('</td>')[0] for cell in footer.split('<td>')[1:]]
+        self.assertEqual(cells[:8], [OVERALL_BLAST_LABEL, "1,000", "140", "14.00%", "200", "20.00%", "500", "50.00%"])
+
+    def test_excel_footer_recalculates_from_campaign_cells_and_keeps_four_output_sheets(self):
+        from openpyxl import load_workbook
+
+        book = load_workbook(BytesIO(build_summary_workbook("", self.report_date, "", campaign_totals=self.totals(),
+                                                          source_campaigns=("Small", "Large"))))
+        try:
+            self.assertEqual(book.sheetnames, OUTPUT_SHEETS)
+            sheet = book["Summary"]
+            self.assertEqual(sheet["A6"].value, OVERALL_BLAST_LABEL)
+            self.assertEqual(sheet["B6"].value, '=IF(COUNT(B4:B5)=0,"",SUM(B4:B5))')
+            self.assertEqual(sheet["C6"].value, '=IF(COUNT(C4:C5)=0,"",SUM(C4:C5))')
+            for column, percent_column in (("C", "D"), ("E", "F"), ("G", "H")):
+                cell = sheet[f"{percent_column}6"]
+                self.assertEqual(cell.data_type, "f")
+                self.assertIn(f'SUM({column}$4:{column}$5)/SUM($B$4:$B$5)', cell.value)
+                self.assertIn(f'COUNT({column}$4:{column}$5)=ROWS({column}$4:{column}$5)', cell.value)
+                self.assertIn('COUNT($B$4:$B$5)=ROWS($B$4:$B$5)', cell.value)
+                self.assertEqual(cell.number_format, "0.00%")
+                self.assertTrue(cell.font.bold)
+            self.assertEqual(sheet.max_row, 6)
+            self.assertEqual(sheet.print_area, "'Summary'!$A$1:$R$6")
+            self.assertEqual(book.calculation.calcMode, "auto")
+            self.assertTrue(book.calculation.fullCalcOnLoad)
+            self.assertIsNone(sheet["I6"].value)
+        finally:
+            book.close()
+
+    def test_page_edits_refresh_overall_percentages_and_downloaded_counts(self):
+        from hashlib import sha256
+        from openpyxl import load_workbook
+        from streamlit.testing.v1 import AppTest
+
+        with patch("branding.render_bank_branding"), patch("streamlit.file_uploader", return_value=None), \
+                patch("inbound_reply_page.inbound_report_date", return_value=self.report_date), \
+                patch("inbound_reply_page.prepare_campaign_labels", return_value=("Small", "Large")), \
+                patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py"))
+            app.session_state["inbound_reply_campaign_totals"] = self.totals()
+            app.run(timeout=20)
+
+            def footer():
+                self.assertFalse(app.exception)
+                call = next(call for call in reversed(html.call_args_list)
+                            if 'aria-label="Inbound reply summary"' in call.args[0])
+                return call.args[0].split('<tfoot aria-label="Overall blast coverage">')[1].split('</tfoot>')[0]
+
+            self.assertIn("14.00%", footer())
+            prefix = "inbound_reply_total_" + sha256(campaign_totals_key(self.report_date, "Large").encode()).hexdigest()[:16]
+            app.number_input(key=prefix + "_dc_email").set_value(450).run(timeout=20)
+            self.assertNotIn("14.00%", footer())
+            self.assertIn("50.00%", footer())
+            call = next(call for call in reversed(downloads.call_args_list)
+                        if call.kwargs.get("key") == "inbound_reply_summary_download")
+            book = load_workbook(BytesIO(call.kwargs["data"]()))
+            try:
+                self.assertEqual(book["Summary"]["C4"].value, 450)
+                self.assertEqual(book["Summary"]["A6"].value, OVERALL_BLAST_LABEL)
+                self.assertEqual(book["Summary"]["D6"].data_type, "f")
+            finally:
+                book.close()
 
 
 class GroupedSummaryTests(unittest.TestCase):

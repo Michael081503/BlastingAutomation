@@ -8,8 +8,10 @@ from io import BytesIO
 from inbound_reply import InboundReplyError, normalized_campaign, normalized_phone, unreplied_records
 
 
-INBOUND_SUMMARY_VERSION = 3
+INBOUND_SUMMARY_VERSION = 4
 BLAST_PERCENTAGE_FORMULAS_VERSION = 1
+OVERALL_BLAST_COVERAGE_VERSION = 1
+OVERALL_BLAST_LABEL = "TOTAL — ALL CAMPAIGNS"
 CUSTOMER_EMAIL_REPLY_LABELS_VERSION = 1
 ALL_CHANNEL_REPLY_LABELS_VERSION = 1
 CHANNEL_UNREPLIED_SHEETS_VERSION = 1
@@ -70,6 +72,27 @@ def display_cell(value, column: int) -> str:
     if column in PERCENT_COLUMNS:
         return f"{value:.2%}"
     return f"{value:,}" if isinstance(value, int) else str(value)
+
+
+def overall_blast_row(rows: list[list]) -> list:
+    """Sum current campaigns; calculate coverage only from complete entered counts."""
+    totals = [OVERALL_BLAST_LABEL, *([None] * 17)]
+    counts = {column: [nonnegative_count(row[column]) for row in rows] for column in (1, 2, 4, 6)}
+    for column, values in counts.items():
+        known = [value for value in values if value is not None]
+        totals[column] = sum(known) if known else None
+    if rows and all(value is not None for value in counts[1]) and totals[1]:
+        for column in (2, 4, 6):
+            if all(value is not None for value in counts[column]):
+                totals[column + 1] = totals[column] / totals[1]
+    return totals
+
+
+def overall_blast_formula(first_row: int, last_row: int, blast_column: str) -> str:
+    active = f"$B${first_row}:$B${last_row}"
+    blasted = f"{blast_column}${first_row}:{blast_column}${last_row}"
+    return (f'=IF(AND(COUNT({active})=ROWS({active}),MIN({active})>=0,SUM({active})>0,'
+            f'COUNT({blasted})=ROWS({blasted}),MIN({blasted})>=0),SUM({blasted})/SUM({active}),"")')
 
 
 def blast_percentage_formula(row: int, blast_column: str) -> str:
@@ -160,28 +183,41 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
         "Customers from EMAIL REPLY who received a response from any agent. "
         "Repeated agent replies count once per customer email address within each campaign.", "INBOUND REPLY")
     sheet["N3"].comment = Comment("Customers answered by agents divided by EMAIL REPLY × 100.", "INBOUND REPLY")
-    for row in summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
-                            source_campaigns=source_campaigns):
+    rows = summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
+                        source_campaigns=source_campaigns)
+    for row in rows:
         sheet.append(row)
+    last_campaign_row = sheet.max_row
+    sheet.append(overall_blast_row(rows))
+    total_row = sheet.max_row
     edge = Side(style="thin", color="303744")
     for row in sheet:
         for cell in row:
             cell.border = Border(left=edge, right=edge, top=edge, bottom=edge)
-            cell.font = Font(name="Arial", size=9, bold=cell.row <= 3, color="242831")
+            cell.font = Font(name="Arial", size=9, bold=cell.row <= 3 or cell.row == total_row, color="242831")
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            cell.fill = PatternFill("solid", fgColor="E2EAFB" if cell.row <= 3 else "FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="E2EAFB" if cell.row <= 3 else
+                                    "E8F2EC" if cell.row == total_row else "FFFFFF")
             if isinstance(cell.value, str):
                 cell.data_type = "s"
             if cell.row >= 4:
                 cell.number_format = "0.00%" if cell.column - 1 in PERCENT_COLUMNS else "#,##0"
     sheet["B2"].comment = Comment("Enter the total active accounts for this campaign manually.", "INBOUND REPLY")
+    for column in ("B", "C", "E", "G"):
+        values = f"{column}4:{column}{last_campaign_row}"
+        sheet[f"{column}{total_row}"] = f'=IF(COUNT({values})=0,"",SUM({values}))'
+    sheet[f"A{total_row}"].comment = Comment(
+        "Overall blast coverage uses total DC WORKED divided by total ACTIVE TICKET across the campaigns above. "
+        "Each channel's percentage stays blank until every campaign has ACTIVE TICKET and that channel's blast count. "
+        "Enter zero when a campaign has no blasts for that channel.", "INBOUND REPLY")
     for blast_column, percent_column, channel in (("C", "D", "Email"), ("E", "F", "SMS"), ("G", "H", "Viber")):
         sheet[f"{blast_column}3"].comment = Comment(f"Accounts blasted through {channel}.", "INBOUND REPLY")
         sheet[f"{percent_column}3"].comment = Comment(
             "Accounts blasted divided by ACTIVE TICKET × 100. Recalculates when the counts change. "
             "Stays blank when ACTIVE TICKET is blank or zero, or the blast count is blank.", "INBOUND REPLY")
-        for row in range(4, sheet.max_row + 1):
+        for row in range(4, last_campaign_row + 1):
             sheet[f"{percent_column}{row}"] = blast_percentage_formula(row, blast_column)
+        sheet[f"{percent_column}{total_row}"] = overall_blast_formula(4, last_campaign_row, blast_column)
     for column in range(1, 19):
         sheet.column_dimensions[get_column_letter(column)].width = 36 if column == 1 else 18 if column == 12 else 12
     for row in range(1, sheet.max_row + 1):

@@ -173,7 +173,7 @@ class AllChannelsPageTests(unittest.TestCase):
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
                 self.assertEqual([book["Summary"].cell(r, 1).value for r in range(4, 4 + len(expected_labels))], expected_labels)
-                self.assertEqual(book["Summary"].max_row, 3 + len(expected_labels))
+                self.assertEqual(book["Summary"].max_row, 4 + len(expected_labels))
                 for cell in ("I4", "J4", "K4"):
                     self.assertEqual(book["Summary"][cell].value, 3)
                 for cell, expected in (("M4", 2), ("N4", 2 / 3), ("O4", 1), ("P4", 1 / 3), ("Q4", 2), ("R4", 2 / 3)):
@@ -229,7 +229,7 @@ class AllChannelsPageTests(unittest.TestCase):
                         if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
-                self.assertEqual(book["Summary"].max_row, 4)
+                self.assertEqual(book["Summary"].max_row, 5)
                 self.assertEqual(book["Summary"]["A4"].value, "SBC Level 1")
                 for title in ("SMS Unreplied", "Viber Unreplied", "Email Unreplied"):
                     self.assertEqual(book[title]["B1"].value, "Processed")

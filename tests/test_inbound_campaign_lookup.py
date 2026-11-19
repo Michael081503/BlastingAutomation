@@ -202,7 +202,7 @@ class CampaignLookupTests(unittest.TestCase):
         try:
             self.assertEqual([book["Summary"].cell(i, 1).value for i in (4, 5)],
                              ["SBC Level 1", "SBC Mindanao"])
-            self.assertEqual(book["Summary"].max_row, 5)
+            self.assertEqual(book["Summary"].max_row, 6)
             values = list(book["Email Unreplied"].values)
             self.assertEqual(len(values[3:]), 2)
             self.assertEqual(book["Email Unreplied"]["B2"].value, 2)

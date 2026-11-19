@@ -68,7 +68,7 @@ class CampaignColumnTests(unittest.TestCase):
                 output = build_summary_workbook("", date(2026, 11, 18), "—", phones, email, sms_report=phones)
                 book = load_workbook(BytesIO(output))
                 try:
-                    self.assertEqual(book["Summary"].max_row, 4)
+                    self.assertEqual(book["Summary"].max_row, 5)
                     self.assertEqual(book["Summary"]["A4"].value, "SBC Cards B2")
                     for name in ("SMS Unreplied", "Viber Unreplied", "Email Unreplied"):
                         self.assertEqual(book[name]["B2"].value, 1)
