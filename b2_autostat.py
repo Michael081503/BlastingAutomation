@@ -13,8 +13,9 @@ from autostat import (
 )
 
 
-B2_AUTOSTAT_VERSION = 7
-B4_AUTOSTAT_VERSION = 3
+B2_AUTOSTAT_VERSION = 8
+B4_AUTOSTAT_VERSION = 4
+TEN_DIGIT_PHONE_VERSION = 1
 B2_B4_REMARK_DATE_VERSION = 1
 B2_PRIMARY_KEY_VERSION = 1
 B2_COLLECTOR_TERMS_VERSION = 2
@@ -130,8 +131,7 @@ def build_b2_autostat_exports(
                     "REMARKS": f"{contact} | EMAIL SENT | {collector}",
                 })
             else:
-                # The B2 templates use local eleven-digit mobile numbers.
-                mobile = "0" + contact
+                mobile = contact
                 ending = "  SMS SENT" if channel == "SMS" else " VIBER SENT"
                 row.update({"Account number": account, "Mobile Number": mobile,
                             "REMARKS": f"{mobile} |{ending}"})

@@ -90,7 +90,7 @@ class ProtectedCsvTests(unittest.TestCase):
                                 rows = list(csv.DictReader(StringIO(protected.decode(encoding))))
                                 self.assertEqual([row[header] for row in rows], ['\t' + key for key, _, _ in identifiers])
                                 if 'Mobile Number' in file.headers:
-                                    self.assertTrue(all(row['Mobile Number'] == '\t09171234567' for row in rows))
+                                    self.assertTrue(all(row['Mobile Number'] == '\t9171234567' for row in rows))
                                 self.assertEqual(build_export_csv(replace(file, data=protected)), protected)
                         saved = load_workbook(BytesIO(build_autostat_excel(logs)))
                         for sheet in saved:
@@ -125,7 +125,7 @@ class ProtectedCsvTests(unittest.TestCase):
                                 for header in ('primary_key', 'Terms'):
                                     self.assertEqual(row[header], '\t' + record['cardnumber' if header == 'Terms' else header])
                                 self.assertEqual(row['indexoneuid'], record['indexoneuid'])
-                                self.assertEqual(row['phone'], '\t09171234567' if file.channel == 'viber' else '')
+                                self.assertEqual(row['phone'], '\t9171234567' if file.channel == 'viber' else '')
                                 self.assertEqual(row['OB'], '1234.5')
                                 self.assertEqual(row['Level'], '1')
                                 self.assertEqual(row['FullName'], records[0]['FullName'])

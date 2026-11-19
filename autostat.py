@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import csv
-import math
 import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
 from itertools import islice
 from pathlib import Path
@@ -22,6 +20,7 @@ from automation import (
     source_column_positions, uses_campaign_headers, write_text_csv_sheet,
 )
 from email_validation import validated_email
+from phone_validation import PHONE_NORMALIZATION_VERSION, validated_phone
 from export_config import AUTOSTAT_BEL_FILENAMES
 from exports import export_filename
 
@@ -67,36 +66,6 @@ def autostat_source_excluded(name: str) -> bool:
     return "sbcinsurance" in normalize_header(stem) or bool(re.search(
         r"(?:^|[\W_])b[24](?:$|[\W_])", stem, re.IGNORECASE,
     ))
-
-
-def validated_phone(value: Any) -> str | None:
-    """Keep the rightmost ten digits only when there are ten and they start at 9."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        if isinstance(value, float) and (not math.isfinite(value) or not value.is_integer()):
-            return None
-        text = str(int(value))
-    elif isinstance(value, str):
-        text = value.strip()
-        # CSV exports sometimes render integral Excel numbers as .0 or E notation.
-        if re.fullmatch(r"\+?\d+(?:\.\d+)?[eE][+-]?\d{1,3}|\+?\d+\.0+", text):
-            try:
-                number = Decimal(text)
-                if number != number.to_integral_value() or not 0 <= number < 10**30:
-                    return None
-                text = str(int(number))
-            except InvalidOperation:
-                return None
-    else:
-        return None
-    if not re.fullmatch(r"\+?[0-9(][0-9\s().-]*", text):
-        return None
-    digits = re.sub(r"[^0-9]", "", text)
-    if len(digits) < 10:
-        return None
-    phone = digits[-10:]
-    return phone if phone.startswith("9") else None
 
 
 def _blank(value: Any) -> bool:

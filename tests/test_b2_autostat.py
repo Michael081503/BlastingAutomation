@@ -90,13 +90,13 @@ class B2AutostatTests(unittest.TestCase):
             "REMARKS DATE": "10/30/2026 16:02:03", "Email": "User@example.com", "Collector": "COLLECTOR1",
         })
         for row, channel, remark in (
-            (sms, "SMS", "09171234567 |  SMS SENT"),
-            (viber, "VIBER", "09171234567 | VIBER SENT"),
+            (sms, "SMS", "9171234567 |  SMS SENT"),
+            (viber, "VIBER", "9171234567 | VIBER SENT"),
         ):
             self.assertEqual(row, {
                 "Account number": "0005156041234567897", "Name": "Sample Person",
                 "STATUS CODE": f"{channel} BLAST SENT - WAITING FOR REPLY", "REMARKS": remark,
-                "REMARKS BY": "MBURGOS", "REMARKS DATE": "10/30/2026 16:02:03", "Mobile Number": "09171234567",
+                "REMARKS BY": "MBURGOS", "REMARKS DATE": "10/30/2026 16:02:03", "Mobile Number": "9171234567",
             })
         with ZipFile(BytesIO(bundle.zip_data)) as archive:
             self.assertEqual(archive.namelist(), [file.filename for file in bundle.files])

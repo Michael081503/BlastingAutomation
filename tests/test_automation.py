@@ -221,7 +221,7 @@ class MappingTests(unittest.TestCase):
                 data = source_file([{'primary_key': '0001', phone_header: '09171234567'}], headers=['primary_key', phone_header])
                 row = read_source(data, 'NEGATIVE', 1, allow_missing=True).records[0]
                 self.assertEqual(row['primary_key'], '0001')
-                self.assertEqual(row['phone'], '09171234567')
+                self.assertEqual(row['phone'], '9171234567')
                 self.assertIsNone(row['email'])
         for headers, values, error in (
             (['email'], {'email': 'first@example.com'}, 'No account-number column'),
@@ -256,6 +256,7 @@ class MappingTests(unittest.TestCase):
         self.assertEqual([cell.value for cell in sheet[1]], campaign_output_headers(headers))
         actual = dict(zip(campaign_output_headers(headers), [cell.value for cell in sheet[2]]))
         expected = {campaign_output_headers([target])[0]: sample_row()[source] for source, target in FIELD_MAPPING.items()}
+        expected["phone"] = "9171234567"
         expected["Extra"] = None
         self.assertEqual(actual, expected)
         for column in ("primary_key", "cardnumber", "phone", "indexoneuid"):
@@ -302,7 +303,7 @@ class MappingTests(unittest.TestCase):
         sheet.cell(2, 10, 9171234567).number_format = "00000000000"
         row = read_source(save(workbook), "NEGATIVE", 1).records[0]
         self.assertEqual(row["primary_key"], "0000000456")
-        self.assertEqual(row["phone"], "09171234567")
+        self.assertEqual(row["phone"], "9171234567")
 
     def test_blank_rows_skipped_duplicates_and_missing_email_kept(self):
         source = source_file([sample_row(), {}, sample_row(), sample_row(debtor_email=None)])
@@ -672,6 +673,8 @@ class ChannelTests(unittest.TestCase):
                 for source_header, target in FIELD_MAPPING.items():
                     actual_header = next(header for header in headers if header.casefold() == target.casefold())
                     value = None if target == ("phone" if file.channel == "email" else "email") else expected[target]
+                    if target == "phone" and value is not None:
+                        value = "9171234567" if values["primary_key"] == "0002" else "9181234567"
                     self.assertEqual(values[actual_header], "" if value is None else str(value))
                 for header in ("Monthly", "Terms", "doclass", "AREA", "NewEndo"):
                     self.assertEqual(values[header], "")

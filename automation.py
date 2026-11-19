@@ -22,6 +22,7 @@ from openpyxl.utils.cell import range_boundaries
 from openpyxl.utils.exceptions import InvalidFileException
 
 from email_validation import validated_email
+from phone_validation import PHONE_NORMALIZATION_VERSION, first_valid_phone
 
 
 FIELD_MAPPING = {
@@ -51,7 +52,7 @@ SOURCE_ALIASES = {
     "Area": ("Region",),
     "CMS TAGGING": ("TAGGING",),
 }
-MAPPING_VERSION = 11
+MAPPING_VERSION = 12
 ASSIGNMENT_SCHEME_VERSION = 1
 NEW_ENDO_SOURCE_VERSION = 1
 PRODUCT_NORMALIZATION_VERSION = 1
@@ -361,8 +362,8 @@ def has_contact_value(value: Any) -> bool:
 
 
 def has_contact_details(record: dict[str, Any]) -> bool:
-    """Keep accounts with a valid email address or a nonempty phone field."""
-    return validated_email(record.get("email")) is not None or has_contact_value(record.get("phone"))
+    """Keep accounts with a valid email address or a usable ten-digit mobile."""
+    return validated_email(record.get("email")) is not None or first_valid_phone(record.get("phone")) is not None
 
 
 def _identifier(value: Any, number_format: str) -> str | None:
@@ -425,7 +426,9 @@ def read_source(
                         f'{sheet_name}, row {row_number}, {target}: Excel error {value}. '
                         "Fix that source cell before processing."
                     )
-                if target in IDENTIFIER_FIELDS:
+                if target == "phone":
+                    value = first_valid_phone(value)
+                elif target in IDENTIFIER_FIELDS:
                     value = _identifier(value, cell.number_format)
                 elif target == "email":
                     email = validated_email(value)

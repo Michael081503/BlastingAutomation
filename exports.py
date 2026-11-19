@@ -36,6 +36,7 @@ from export_config import (
     OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from email_validation import validated_email
+from phone_validation import first_valid_phone
 from agent_cycle import assign_agents_to_accounts
 
 
@@ -300,8 +301,9 @@ def separate_channels(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
         email = validated_email(record.get("email"))
         if email is not None:
             channels["email"].append({**record, "email": email, "phone": None})
-        if has_contact_value(record.get("phone")):
-            channels["viber"].append({**record, "email": None})
+        phone = first_valid_phone(record.get("phone"))
+        if phone is not None:
+            channels["viber"].append({**record, "email": None, "phone": phone})
     return channels
 
 

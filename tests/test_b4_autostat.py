@@ -58,7 +58,7 @@ class B4AutostatTests(unittest.TestCase):
             self.assertTrue(all(row["REMARKS BY"] == "MBURGOS" for row in rows(file)))
         self.assertEqual([row["Collector"] for row in rows(b4.files[0])], ["KPALIMA", "AMRANCELI"])
         self.assertEqual(rows(b4.files[0])[0]["REMARKS"], "two@example.com | EMAIL SENT | KPALIMA")
-        self.assertEqual(rows(b4.files[1])[0]["Mobile Number"], "09181234567")
+        self.assertEqual(rows(b4.files[1])[0]["Mobile Number"], "9181234567")
 
     def test_excel_and_zip_names_and_account_text_follow_b4_channels(self):
         bundle = build_b4_autostat_exports([source()], timestamp=NOW)

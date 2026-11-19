@@ -83,6 +83,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "render_clear_all_files",
         ), ("upload_state",)),
         ("email_validation", ("EMAIL_VALIDATION_VERSION", "validated_email"), ()),
+        ("phone_validation", ("PHONE_NORMALIZATION_VERSION", "validated_phone", "first_valid_phone"), ()),
         ("export_config", (
             "CHANNEL_SUFFIXES", "OUTPUT_FILENAMES", "OUTPUT_FOLDER", "ZIP_FILENAME",
             "GEO_OUTPUT_FILENAMES", "GEO_ZIP_FILENAME", "AUTOSTAT_BEL_FILENAMES",
@@ -97,6 +98,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
             "ASSIGNMENT_SCHEME_VERSION", "assignment_scheme_level",
             "NEW_ENDO_SOURCE_VERSION",
+            "PHONE_NORMALIZATION_VERSION", "first_valid_phone",
             "PRODUCT_NORMALIZATION_VERSION", "normalize_product",
             "create_default_csv_template",
             "DERIVED_TEMPLATE_HEADERS", "geo_doclass",
@@ -113,7 +115,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "write_text_csv_sheet",
             "write_typed_template_sheet",
             "MappedData.valid_email_rows", "MappedData.missing_email_rows",
-        ), ("email_validation",)),
+        ), ("email_validation", "phone_validation")),
         ("workbook_password", ("ENCRYPTED_WORKBOOK_VERSION", "needs_workbook_password", "unlock_workbook"), ("automation",)),
         ("agent_cycle", (
             "AGENT_CYCLE_VERSION", "AgentCycle", "load_cycle", "save_cycle", "cycle_agents", "assign_agents_to_accounts", "reorder_cycle",
@@ -157,6 +159,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "COMPILED_OUTPUT_VERSION", "BLANK_TIMESTAMP_VERSION",
             "AUTOSTAT_EXCLUSIONS_VERSION", "autostat_source_excluded",
             "CONTACT_VALIDATION_VERSION", "_validated_candidates",
+            "PHONE_NORMALIZATION_VERSION", "validated_phone",
             "ACCOUNT_TEXT_EXPORT_VERSION", "build_autostat_excel",
             "ACCOUNT_NUMBER_NORMALIZATION_VERSION", "account_number_text",
             "ACCOUNT_INTEGRITY_VERSION", "EXCEL_CHANNEL_OUTPUT_VERSION",
@@ -186,6 +189,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ("b2_page", ("render_b2_page", "BROWSER_DOWNLOADS_ONLY_VERSION", "B4_PAGE_VERSION", "B2_COMPACT_DOWNLOADS_VERSION", "ZIP_FORMAT_VERSION", "B2_B4_CSV_PROTECTION_VERSION", "upload_widget_key", "render_agent_availability"), ("b2_matching", "autostat", "automation", "exports", "folder_output", "export_config", "upload_state", "agent_availability_page")),
         ("b2_autostat", (
             "B2_AUTOSTAT_VERSION", "B2_EMAIL_HEADERS", "B2_PHONE_HEADERS", "B2ActivitySource",
+            "TEN_DIGIT_PHONE_VERSION",
             "b2_metadata_columns", "build_b2_autostat_exports", "B2_PRIMARY_KEY_VERSION", "b2_account_sheet",
             "B2_COLLECTOR_TERMS_VERSION",
             "B2_B4_REMARK_DATE_VERSION",

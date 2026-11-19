@@ -132,7 +132,7 @@ class WorkflowPageTests(unittest.TestCase):
                     self.assertEqual(email[1]["REMARKS"], "csv@example.com | EMAIL SENT | COL1")
                     for file in result["bundle"].files[1:]:
                         self.assertEqual([row["Account number"] for row in csv_rows(file)], ["000000000000000003", "000000000000000001"])
-                        self.assertEqual([row["Mobile Number"] for row in csv_rows(file)], ["09181234567", "09171234567"])
+                        self.assertEqual([row["Mobile Number"] for row in csv_rows(file)], ["9181234567", "9171234567"])
                     app.run(timeout=20)
                     self.assertEqual(app.session_state[prefix + "result"]["timestamp"], result["timestamp"])
                     for excel in (True, False):

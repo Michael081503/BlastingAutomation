@@ -44,7 +44,7 @@ class SourceMappingTests(unittest.TestCase):
         data = source_data(['Ledger Ref', 'Inbox', 'Handset'], [['00001', 'first@example.com', '09171234567']])
         row = read_source(data, 'Accounts', 1, allow_missing=True, source_columns={'primary_key': 0, 'email': 1, 'phone': 2}).records[0]
         self.assertEqual(row['primary_key'], '00001')
-        self.assertEqual(row['phone'], '09171234567')
+        self.assertEqual(row['phone'], '9171234567')
 
     def test_manual_mapping_resolves_ambiguity_and_rejects_invalid_selections(self):
         data = source_data(['primary_key', 'email', 'Email Address'], [['00001', 'first@example.com', 'chosen@example.com']])

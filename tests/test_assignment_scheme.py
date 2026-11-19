@@ -75,7 +75,7 @@ class AssignmentSchemeTests(unittest.TestCase):
         self.assertEqual(record["level"], "Level 1")
         self.assertEqual(record["product"], "CARDS")
         self.assertEqual(record["email"], "person1@example.com")
-        self.assertEqual(record["phone"], "09171234567")
+        self.assertEqual(record["phone"], "9171234567")
         self.assertIsNone(record["ChristmasAmnesty"])
         self.assertIsNone(record["indexoneuid"])
 

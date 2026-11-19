@@ -11,6 +11,23 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parents[1]
 
 
 class StartupTests(unittest.TestCase):
+    def test_cached_phone_policy_refreshes_campaigns_and_bucket_activity_logs(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import phone_validation, automation, autostat, exports, b2_autostat
+            del phone_validation.PHONE_NORMALIZATION_VERSION
+            del b2_autostat.TEN_DIGIT_PHONE_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'phone_validation', 'automation', 'autostat', 'exports', 'b2_autostat'} <= refreshed
+            assert autostat.validated_phone is phone_validation.validated_phone
+            assert exports.first_valid_phone is phone_validation.first_valid_phone
+            assert automation.MAPPING_VERSION == 12
+            assert b2_autostat.B2_AUTOSTAT_VERSION == 8
+            assert b2_autostat.B4_AUTOSTAT_VERSION == 4
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_new_endo_mapping_password_and_source_tagging_refresh_together(self):
         self.run_isolated("""
             import app_startup
@@ -21,7 +38,7 @@ class StartupTests(unittest.TestCase):
             del upload_state.ENCRYPTED_SOURCE_UPLOADS_VERSION
             refreshed = app_startup.refresh_application_modules()
             assert {'automation', 'exports', 'workbook_password', 'upload_state'} <= refreshed
-            assert automation.MAPPING_VERSION == 11
+            assert automation.MAPPING_VERSION == 12
             assert workbook_password.AutomationError is automation.AutomationError
             assert 'source_password_' in upload_state.FILE_STATE_PREFIXES
             assert app_startup.refresh_application_modules() == set()
@@ -35,7 +52,7 @@ class StartupTests(unittest.TestCase):
             del automation.ASSIGNMENT_SCHEME_VERSION
             refreshed = app_startup.refresh_application_modules()
             assert {'automation', 'exports', 'geo_autostat'} <= refreshed
-            assert automation.MAPPING_VERSION == 11
+            assert automation.MAPPING_VERSION == 12
             assert exports.assignment_scheme_level is automation.assignment_scheme_level
             assert automation.assignment_scheme_level('Recovery (L1 Unsecured)') == 'Level 1'
             assert app_startup.refresh_application_modules() == set()
@@ -453,7 +470,7 @@ class StartupTests(unittest.TestCase):
             geo = exports.build_geo_exports(template, records, '', 1, '.csv')
             assert geo.counts['mindanao_blank_cards'] == 1
             assert all(file.preview[0]['product'] == 'CARDS' for bundle in (reco, geo) for file in bundle.files)
-            assert automation.MAPPING_VERSION == 11
+            assert automation.MAPPING_VERSION == 12
             assert refresh_application_modules() == set()
         """)
 
@@ -730,7 +747,7 @@ class StartupTests(unittest.TestCase):
             del automation.geo_doclass
             del automation.DERIVED_TEMPLATE_HEADERS
             import app
-            assert app.MAPPING_VERSION == 11
+            assert app.MAPPING_VERSION == 12
             assert 'doclass' in automation.DERIVED_TEMPLATE_HEADERS
             assert exports.geo_doclass is automation.geo_doclass
             assert folder_output.AutomationError is automation.AutomationError
@@ -800,7 +817,7 @@ class StartupTests(unittest.TestCase):
             del automation.SheetInfo.available_fields
             del automation.inspect_source_sheet
             import app
-            assert app.MAPPING_VERSION == 11
+            assert app.MAPPING_VERSION == 12
             assert exports.AutomationError is automation.AutomationError
             workbook = Workbook()
             workbook.active.append(['primary_key', 'email', 'PHONE'])
@@ -813,7 +830,7 @@ class StartupTests(unittest.TestCase):
             assert set(info.available_fields) == {'primary_key', 'email', 'phone'}
             mapped = app.read_source(data, info.name, 1, allow_missing=True)
             assert mapped.records[0]['primary_key'] == '0001'
-            assert mapped.records[0]['phone'] == '09171234567'
+            assert mapped.records[0]['phone'] == '9171234567'
             assert mapped.records[0]['product'] is None
         """)
 
@@ -825,7 +842,7 @@ class StartupTests(unittest.TestCase):
             del export_config.AUTOSTAT_B2_FILENAMES
             del b2_matching.build_b2_exports
             import app
-            assert app.MAPPING_VERSION == 11
+            assert app.MAPPING_VERSION == 12
             assert automation.WORKBOOK_READER_VERSION == 1
             assert b2_page.build_b2_exports is b2_matching.build_b2_exports
             assert export_config.AUTOSTAT_B2_FILENAMES['CARDS'] == 'NEGATIVE B2 - CARDS'
@@ -888,8 +905,8 @@ class StartupTests(unittest.TestCase):
             assert {'b2_autostat', 'autostat_page'} <= refreshed
             assert autostat_page.build_b2_autostat_exports is b2_autostat.build_b2_autostat_exports
             assert autostat_page.B2_UPLOAD_VERSION == 1
-            assert b2_autostat.B2_AUTOSTAT_VERSION == 7
-            assert b2_autostat.B4_AUTOSTAT_VERSION == 3
+            assert b2_autostat.B2_AUTOSTAT_VERSION == 8
+            assert b2_autostat.B4_AUTOSTAT_VERSION == 4
             data = b'cardnumber,primary_key,email,phone,Collector,Terms\\nCARD,000123,one@example.com,09171234567,OLD,AGENT1\\n'
             import autostat
             source = autostat.SourceSelection('B2.csv', data, autostat.inspect_contact_source(data, '.csv')[0])
