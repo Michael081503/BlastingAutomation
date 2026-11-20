@@ -18,7 +18,7 @@ app_startup.refresh_application_modules()
 from branding import BANK_ICON, render_bank_branding
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
-    OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
+    NEW_ENDO_OUTPUT_FILENAMES, OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
@@ -27,6 +27,7 @@ from exports import (
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
     RECO_DOCLASS_VERSION, GEO_FIXED_AGENTS_VERSION, GEO_AGENT_AVAILABILITY_VERSION,
     SOURCE_MEMBERSHIP_VERSION, source_account_counts, validate_source_exports,
+    NEW_ENDO_COMBINED_OUTPUT_VERSION, NEW_ENDO_GROUP_LABELS, build_new_endo_exports,
     build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
 )
@@ -152,6 +153,7 @@ def render_workbook_page() -> None:
                 if not password:
                     st.session_state.pop("result", None)
                     st.session_state.pop("geo_autostat_result", None)
+                    st.session_state.pop("new_endo_source_cache", None)
                     st.info("Enter the workbook password to prepare the files.")
                     return
                 source_bytes = unlock_workbook(source_bytes, password)
@@ -159,6 +161,7 @@ def render_workbook_page() -> None:
         except AutomationError as exc:
             st.session_state.pop("result", None)
             st.session_state.pop("geo_autostat_result", None)
+            st.session_state.pop("new_endo_source_cache", None)
             st.error(str(exc))
             return
     with settings:
@@ -170,6 +173,7 @@ def render_workbook_page() -> None:
         )
 
     if source_file is None:
+        st.session_state.pop("new_endo_source_cache", None)
         st.session_state.pop("result", None)
         st.session_state.pop("geo_autostat_result", None)
         with assignment_panel:
@@ -292,6 +296,30 @@ def render_workbook_page() -> None:
             st.info("Available values will be copied. These fields are missing from the source and will stay blank: " + ", ".join(missing_fields))
         geo = source_info.has_area
         source_tagged = "cms_tagging" in source_info.available_fields
+        tagged_mapped = None
+        new_endo = False
+        if source_tagged and can_prepare:
+            mapped_signature = (source_digest, source_sheet, source_header, MAPPING_VERSION,
+                                tuple(source_columns.items()) if source_columns is not None else None)
+            cached_mapping = st.session_state.get("new_endo_source_cache")
+            if cached_mapping is None or cached_mapping["signature"] != mapped_signature:
+                try:
+                    cached_mapping = {"signature": mapped_signature, "mapped": read_source(
+                        source_bytes, source_sheet, source_header, allow_missing=True, source_columns=source_columns)}
+                    st.session_state["new_endo_source_cache"] = cached_mapping
+                except AutomationError as exc:
+                    st.session_state.pop("result", None)
+                    st.session_state.pop("geo_autostat_result", None)
+                    st.session_state.pop("new_endo_source_cache", None)
+                    st.error(str(exc))
+                    return
+            tagged_mapped = cached_mapping["mapped"]
+            new_endo = not any(record.get("AREA") is not None and str(record["AREA"]).strip()
+                               for record in tagged_mapped.records)
+            if new_endo:
+                geo = False
+        else:
+            st.session_state.pop("new_endo_source_cache", None)
         assignment_date, agents = None, None
         if source_tagged:
             assignment_panel.caption("CHCode uses the source TAG TO / CMS TAGGING / TAGGING values. TAG TO takes priority.")
@@ -319,6 +347,9 @@ def render_workbook_page() -> None:
         grouped_label = ("Separate Mindanao and R3 groups" if geo and source_tagged else
                          "Separate Area and Christmas Amnesty groups" if geo else
                          "Separate RECO placement groups" if assignment_scheme or source_tagged else "Separate Christmas Amnesty groups")
+        if new_endo:
+            grouped_label = "Separate NEW ENDO placement groups"
+            assignment_panel.caption("NEW ENDO keeps email and phone together in one file per placement, such as NEW ENDO L6.csv.")
         grouping_fields = {"ChristmasAmnesty": "Christmas Amnesty", "product": "product"}
         if assignment_scheme or source_tagged:
             # Fresh endorsements have placements but no Christmas Amnesty column.
@@ -327,7 +358,8 @@ def render_workbook_page() -> None:
         if not geo:
             grouping_fields["level"] = "level"
         missing_grouping = [label for field, label in grouping_fields.items() if field not in source_info.available_fields]
-        output_modes = ["All accounts in one group"] if missing_grouping else [grouped_label, "All accounts in one group"]
+        output_modes = ([grouped_label] if new_endo else ["All accounts in one group"] if missing_grouping
+                        else [grouped_label, "All accounts in one group"])
         saved_modes = st.session_state.setdefault("sheet_output_modes", {})
         mode_key = (source_digest, source_sheet, source_header, MAPPING_VERSION)
         previous_mode = saved_modes.get(mode_key, output_modes[0])
@@ -356,6 +388,7 @@ def render_workbook_page() -> None:
         GEO_AGENT_AVAILABILITY_VERSION, AGENT_AVAILABILITY_VERSION,
         (RECO_DOCLASS_VERSION, tuple(RECO_DOCLASS_BY_FILENAME.items())) if not geo else None,
         tuple(source_columns.items()) if source_columns is not None else None,
+        NEW_ENDO_COMBINED_OUTPUT_VERSION, new_endo, tuple(NEW_ENDO_OUTPUT_FILENAMES.items()),
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result.get("signature") != signature:
@@ -370,13 +403,16 @@ def render_workbook_page() -> None:
         st.session_state.pop("result", None)
         try:
             with st.spinner(f"Reading {source_sheet} and filling the template…"):
-                mapped = read_source(
+                mapped = tagged_mapped if tagged_mapped is not None else read_source(
                     source_bytes, source_sheet, source_header, allow_missing=True, source_columns=source_columns,
                 )
                 source_accounts = source_account_counts(mapped.records)
                 export_result = {}
                 if mapped.records:
-                    if grouped:
+                    if new_endo:
+                        bundle = build_new_endo_exports(template_bytes, mapped.records, template_sheet,
+                                                        template_header, template_extension, encoding=encoding)
+                    elif grouped:
                         builder = build_geo_exports if geo else build_negative_exports
                         bundle = builder(
                             template_bytes, mapped.records, template_sheet,
@@ -404,6 +440,7 @@ def render_workbook_page() -> None:
                     "source_accounts": source_accounts,
                     "grouped": grouped,
                     "geo": geo,
+                    "new_endo": new_endo,
                     "excel_output": excel_output,
                     "protect_csv_identifiers": not excel_output,
                     "count": len(mapped.records),
@@ -449,7 +486,7 @@ def render_workbook_page() -> None:
         files = result["files"]
         zip_format = "Excel" if excel_output else "CSV"
         zip_contents = ".xlsx workbooks" if excel_output else ".csv files"
-        workflow = "GEO" if result["geo"] else "RECO"
+        workflow = "NEW ENDO" if result["new_endo"] else "GEO" if result["geo"] else "RECO"
         with download_area:
             st.download_button(
                 f"Download {workflow} {zip_format} ZIP ({zip_contents})",
@@ -480,15 +517,19 @@ def render_workbook_page() -> None:
             return
         files = result["files"]
         counts = result["group_counts"]
-        labels = (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet}
-        review_keys = GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS
+        labels = (NEW_ENDO_GROUP_LABELS if result["new_endo"] else
+                  (GEO_GROUP_LABELS if result["geo"] else GROUP_LABELS) if result["grouped"] else {"all": source_sheet})
+        review_keys = {"cards_review"} if result["new_endo"] else GEO_REVIEW_GROUP_KEYS if result["geo"] else REVIEW_GROUP_KEYS
         by_channel = {(file.group_key, file.channel): file for file in files}
+        combined = {file.group_key: file for file in files if file.channel == "combined"}
         st.dataframe(pd.DataFrame([
             {
                 "Group": label,
                 "Accounts": counts[key],
-                "Email rows": by_channel[(key, "email")].count if (key, "email") in by_channel else 0,
-                "Viber rows": by_channel[(key, "viber")].count if (key, "viber") in by_channel else 0,
+                "Email rows": (sum(bool(record.get("email")) for record in combined[key].records) if key in combined else
+                               by_channel[(key, "email")].count if (key, "email") in by_channel else 0),
+                "Viber rows": (sum(bool(record.get("phone")) for record in combined[key].records) if key in combined else
+                               by_channel[(key, "viber")].count if (key, "viber") in by_channel else 0),
             }
             for key, label in labels.items()
             if key not in review_keys or counts[key]
@@ -513,6 +554,7 @@ def render_workbook_page() -> None:
             key=f"excel_download_{file.key}" if excel_output else f"download_{file.key}",
             on_click="ignore", type="primary",
             help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
+            "CSV account numbers include a leading tab to retain all digits in Excel; phone keeps its ten-digit value." if not file.protect_csv_phone else
             "CSV account numbers and phones include a leading tab to retain all digits in Excel. indexoneuid has no added prefix.",
         )
         show_preview(file.preview, file.count, file.headers)

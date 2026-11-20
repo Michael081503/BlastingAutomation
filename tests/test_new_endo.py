@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 import unittest
 from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
+from zipfile import ZipFile
 
 from msoffcrypto.format.ooxml import OOXMLFile
 from openpyxl import Workbook, load_workbook
@@ -16,7 +18,11 @@ from automation import (
     inspect_workbook, read_source, source_column_positions,
 )
 from export_config import GEO_AGENTS, GEO_RECO_AGENTS
-from exports import build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
+from exports import (
+    build_csv_zip, build_export_csv, build_export_excel, build_geo_exports,
+    build_negative_exports, build_new_endo_exports, build_sheet_exports,
+    source_account_counts, validate_source_exports,
+)
 from workbook_password import needs_workbook_password, unlock_workbook
 
 
@@ -61,6 +67,18 @@ def encrypted(data):
 
 def csv_rows(file):
     return list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
+
+
+def blank_region_endo():
+    workbook = load_workbook(BytesIO(source_data(geo=True, tag_header="TAG TO")))
+    sheet = workbook["Sheet1"]
+    for row in (2, 3):
+        sheet.cell(row, 10).value = None
+        sheet.cell(row, 8).value = datetime(2026, 11, 13)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
 
 
 class Upload(BytesIO):
@@ -161,6 +179,83 @@ class NewEndoMappingTests(unittest.TestCase):
             read_source(data, "SPM List", 1, allow_missing=True)
         records = read_source(data, "SPM List", 1, allow_missing=True, source_columns={"cms_tagging": 3}).records
         self.assertEqual([row["cms_tagging"] for row in records], ["SOURCE-L1-A", "SOURCE-L1-B"])
+
+
+class CombinedNewEndoTests(unittest.TestCase):
+    def test_reference_layout_keeps_both_contacts_codes_dates_and_account_protection(self):
+        records = read_source(blank_region_endo(), "Sheet1", 1, allow_missing=True).records
+        bundle = build_new_endo_exports(create_default_csv_template(), records, "", 1, ".csv")
+        self.assertEqual([file.filename for file in bundle.files], ["NEW ENDO L6.csv"])
+        file = bundle.files[0]
+        self.assertEqual(file.count, 2)
+        self.assertEqual(file.headers, list(DEFAULT_TEMPLATE_HEADERS))
+        rows = list(csv.DictReader(StringIO(build_export_csv(file).decode("cp1252"))))
+        self.assertEqual([row["primary_key"] for row in rows], ["\t0002", "\t0001"])
+        self.assertEqual([row["CHCode"] for row in rows], ["SOURCE-R3", "SOURCE-MINDANAO"])
+        self.assertEqual([row["phone"] for row in rows], ["9181234567", "9171234567"])
+        self.assertTrue(all(row["email"] and row["phone"] and row["Terms"].startswith("\t0000") for row in rows))
+        self.assertTrue(all(row["doclass"] == "SBC Cards L6" and row["EndoDate"] == "13/11/2026 0:00" for row in rows))
+        self.assertTrue(all(row[key] == "" for row in rows for key in ("Monthly", "AREA", "ChristmasAmnesty", "NewEndo")))
+        validate_source_exports(bundle.files, source_account_counts(records), source_sheet="Sheet1")
+        with ZipFile(BytesIO(build_csv_zip(bundle.files))) as archive:
+            self.assertEqual(archive.namelist(), ["NEW ENDO L6.csv"])
+            self.assertEqual(archive.read(file.filename), build_export_csv(file))
+        book = load_workbook(BytesIO(build_export_excel(file)))
+        try:
+            headers = {cell.value: cell.column for cell in book.active[1]}
+            self.assertEqual(book.active.cell(2, headers["EndoDate"]).value, datetime(2026, 11, 13))
+            self.assertEqual(book.active.cell(2, headers["CHCode"]).value, "SOURCE-R3")
+            self.assertEqual(book.active.cell(2, headers["phone"]).value, "9181234567")
+            self.assertEqual(book.active.cell(2, headers["Terms"]).value, "00001234567890123452")
+        finally:
+            book.close()
+
+    def test_placements_partial_contacts_and_review_rows_remain_separate(self):
+        records = [
+            {"primary_key": "L1", "product": "MC", "level": 1, "email": "one@example.com", "cms_tagging": "AGENT-1"},
+            {"primary_key": "L6", "product": "CARDS", "level": 6, "phone": "09171234567", "cms_tagging": None},
+            {"primary_key": "PL", "product": "BEL", "level": 6, "email": "pl@example.com", "cms_tagging": "AGENT-PL"},
+            {"primary_key": "REVIEW", "product": "CARDS", "level": "Unknown", "email": "review@example.com", "cms_tagging": "AGENT-R"},
+            {"primary_key": "NO-CONTACT", "product": "CARDS", "level": 6, "cms_tagging": "NO-CONTACT"},
+        ]
+        original = [dict(record) for record in records]
+        bundle = build_new_endo_exports(create_default_csv_template(), records, "", 1, ".csv")
+        self.assertEqual({file.filename for file in bundle.files},
+                         {"NEW ENDO L1.csv", "NEW ENDO L6.csv", "NEW ENDO PL.csv", "NEW ENDO CARDS REVIEW.csv"})
+        self.assertEqual(bundle.no_contact_rows_skipped, 1)
+        self.assertEqual(sum(file.count for file in bundle.files), 4)
+        l6 = next(file for file in bundle.files if file.filename == "NEW ENDO L6.csv")
+        self.assertEqual(csv_rows(l6)[0]["CHCode"], "")
+        self.assertEqual(csv_rows(l6)[0]["email"], "")
+        validate_source_exports(bundle.files, source_account_counts(records[:-1]), source_sheet="Accounts")
+        self.assertEqual(records, original)
+
+    def test_blank_region_upload_uses_reference_output_and_refreshes_for_populated_geo_areas(self):
+        uploads = {"source_upload": Upload(encrypted(blank_region_endo()))}
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
+                patch("agent_availability_page.render_agent_availability", return_value=None), \
+                patch("agent_cycle_page.render_agent_cycle", return_value=None):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            next(widget for widget in app.text_input if widget.label == "Workbook password").set_value(TEST_PASSWORD).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            result = app.session_state["result"]
+            self.assertTrue(result["new_endo"])
+            self.assertFalse(result["geo"])
+            self.assertEqual([file.filename for file in result["files"]], ["NEW ENDO L6.csv"])
+            self.assertEqual(app.radio[0].value, "Separate NEW ENDO placement groups")
+            self.assertIn("new_endo_source_cache", app.session_state)
+            uploads["source_upload"] = Upload(source_data(geo=True, tag_header="TAG TO"))
+            app.run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            result = app.session_state["result"]
+            self.assertFalse(result["new_endo"])
+            self.assertTrue(result["geo"])
+            self.assertEqual(len(result["files"]), 4)
+            app.button(key="clear_all_files").click().run(timeout=20)
+            self.assertNotIn("new_endo_source_cache", app.session_state)
+            self.assertNotIn("result", app.session_state)
 
 
 class EncryptedWorkbookTests(unittest.TestCase):

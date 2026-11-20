@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import csv
+from datetime import date, datetime
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from io import BytesIO, StringIO
@@ -33,7 +34,7 @@ from automation import (
 )
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
-    OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
+    NEW_ENDO_OUTPUT_FILENAMES, OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from email_validation import validated_email
 from phone_validation import first_valid_phone
@@ -72,6 +73,14 @@ GEO_AGENT_AVAILABILITY_VERSION = 1
 RECO_DOCLASS_VERSION = 1
 SOURCE_MEMBERSHIP_VERSION = 1
 SOURCE_CMS_TAGGING_VERSION = 1
+NEW_ENDO_COMBINED_OUTPUT_VERSION = 1
+NEW_ENDO_GROUP_LABELS = {
+    "cards_level_1": "NEW ENDO / CARDS / Level 1",
+    "cards_level_6": "NEW ENDO / CARDS / Level 6",
+    "bel": "NEW ENDO / BEL",
+    "other_products": "NEW ENDO / Other loan products",
+    "cards_review": "NEW ENDO / CARDS / Other or missing placement (review)",
+}
 SOURCE_ACCOUNT_FIELDS = ("primary_key", "cardnumber", "indexoneuid")
 AREA_LABELS = {"mindanao": "Mindanao", "r3": "R3", "area_review": "Other or missing Area (review)"}
 GEO_PRODUCT_GROUP_LABELS = {
@@ -106,6 +115,7 @@ class ExportFile:
     preview: list[dict[str, Any]]
     records: list[dict[str, Any]]
     doclass: str | None = None
+    protect_csv_phone: bool = True
 
 
 @dataclass
@@ -177,7 +187,8 @@ def build_export_csv(file: ExportFile, *, protect_identifiers: bool = True) -> b
 
     A leading tab survives Excel's CSV save/reopen cycle, unlike a text formula.
     This is part of the CSV field value; plain upload bytes remain available.
-    Account numbers and phones are prefixed. indexoneuid stays unchanged.
+    Account numbers are prefixed. Phone protection follows the export layout;
+    NEW ENDO keeps plain ten-digit phones. indexoneuid stays unchanged.
     """
     if not protect_identifiers:
         return file.data
@@ -187,9 +198,11 @@ def build_export_csv(file: ExportFile, *, protect_identifiers: bool = True) -> b
     writer = csv.writer(output, lineterminator="\r\n")
     headers = next(rows)
     writer.writerow(headers)
-    fields = {normalize_header(field) for field in CSV_PROTECTED_IDENTIFIER_FIELDS}
+    protected_fields = (CSV_PROTECTED_IDENTIFIER_FIELDS if getattr(file, "protect_csv_phone", True)
+                        else CSV_PROTECTED_IDENTIFIER_FIELDS - {"phone"})
+    fields = {normalize_header(field) for field in protected_fields}
     columns = {index for index, header in enumerate(headers) if normalize_header(header) in fields}
-    columns.update(index for target, index in source_column_positions(headers).items() if target in CSV_PROTECTED_IDENTIFIER_FIELDS)
+    columns.update(index for target, index in source_column_positions(headers).items() if target in protected_fields)
     for row in rows:
         for column in columns:
             if row[column] and not row[column].startswith("\t"):
@@ -451,6 +464,59 @@ def build_negative_exports(
         zip_name=ZIP_FILENAME, encoding=encoding, source_sheet=source_sheet, agents=agents,
         reco=True,
     )
+
+
+def build_new_endo_exports(
+    template: bytes, records: list[dict[str, Any]], sheet_name: str, header_row: int,
+    template_extension: str = ".xlsx", *, encoding: str = "cp1252",
+) -> ExportBundle:
+    """Write one source-tagged file per placement, retaining both contact methods."""
+    template = _csv_export_template(template, sheet_name, header_row, template_extension)
+    headers = csv_template_headers(template)
+    positions = template_column_positions(headers)
+    missing = [header for target, header in (("Terms", "CHCode"), ("doclass", "doclass")) if target not in positions]
+    if missing:
+        output = StringIO(newline="")
+        csv.writer(output).writerow([*headers, *missing])
+        template = output.getvalue().encode("utf-8-sig")
+        headers = csv_template_headers(template)
+    groups = {key: [] for key in NEW_ENDO_GROUP_LABELS}
+    for record in records:
+        if not has_contact_details(record):
+            continue
+        product = normalize_product(record.get("product"))
+        if normalize_header(product) == "cards":
+            level = _level(record.get("level"))
+            key = {"level1": "cards_level_1", "level6": "cards_level_6"}.get(level, "cards_review")
+        else:
+            key = "bel" if normalize_header(product) == "bel" else "other_products"
+        groups[key].append({
+            **record, "product": product, "email": validated_email(record.get("email")),
+            "phone": first_valid_phone(record.get("phone")), "Terms": record.get("cms_tagging"), "Monthly": None,
+        })
+    files = []
+    for key, records_in_group in groups.items():
+        if not records_in_group:
+            continue
+        filename = export_filename(NEW_ENDO_OUTPUT_FILENAMES[key], ".csv")
+        doclass = reco_doclass(filename)
+        rows = [{**record, "doclass": doclass} for record in sorted(
+            records_in_group, key=lambda record: ob_sort_key(record.get("OB")), reverse=True)]
+        csv_rows = []
+        for record in rows:
+            value = record.get("endodate")
+            if isinstance(value, (date, datetime)):
+                hour, minute = (value.hour, value.minute) if isinstance(value, datetime) else (0, 0)
+                value = value.strftime("%d/%m/%Y") + f" {hour}:{minute:02d}"
+            csv_rows.append({**record, "endodate": value})
+        files.append(ExportFile(
+            key=key, group_key=key, channel="combined", label=NEW_ENDO_GROUP_LABELS[key], filename=filename,
+            data=fill_csv_template(template, csv_rows, encoding=encoding, doclass=doclass), count=len(rows),
+            missing_emails=sum(not record["email"] for record in rows), headers=headers, preview=rows[:100],
+            records=rows, doclass=doclass, protect_csv_phone=False,
+        ))
+    return _bundle(files, {key: len(rows) for key, rows in groups.items()}, "NEW ENDO.zip",
+                   sum(not has_contact_details(record) for record in records))
 
 
 def build_geo_exports(

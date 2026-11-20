@@ -77,7 +77,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
     exception and dataclass identities stable.
     """
     modules = (
-        ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "SBC_INSURANCE_UPLOADS_VERSION", "SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION", "INBOUND_REPLY_UPLOADS_VERSION", "VIBER_REPLY_UPLOADS_VERSION", "EMAIL_REPLY_UPLOADS_VERSION", "INBOUND_MANUAL_TOTALS_VERSION", "SMS_REPLY_UPLOADS_VERSION", "SOURCE_CAMPAIGN_UPLOADS_VERSION", "EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION", "ENCRYPTED_SOURCE_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
+        ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "SBC_INSURANCE_UPLOADS_VERSION", "SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION", "INBOUND_REPLY_UPLOADS_VERSION", "VIBER_REPLY_UPLOADS_VERSION", "EMAIL_REPLY_UPLOADS_VERSION", "INBOUND_MANUAL_TOTALS_VERSION", "SMS_REPLY_UPLOADS_VERSION", "SOURCE_CAMPAIGN_UPLOADS_VERSION", "EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION", "ENCRYPTED_SOURCE_UPLOADS_VERSION", "NEW_ENDO_OUTPUT_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "CHRISTMAS_THEME_VERSION", "SNOWFALL_VERSION", "CHRISTMAS_SPIDERMAN_VERSION",
             "render_clear_all_files",
@@ -92,6 +92,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "GEO_RECO_AGENTS", "GEO_RECO_CYCLE_START",
             "GEO_AGENTS", "GEO_AGENT_ROSTER_VERSION",
             "RECO_DOCLASS_BY_FILENAME",
+            "NEW_ENDO_OUTPUT_FILENAMES",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (
@@ -146,6 +147,8 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "RECO_DOCLASS_VERSION", "reco_doclass", "ExportFile.__dataclass_fields__.doclass",
             "SOURCE_MEMBERSHIP_VERSION", "source_account_counts", "validate_source_exports",
             "SOURCE_CMS_TAGGING_VERSION",
+            "NEW_ENDO_COMBINED_OUTPUT_VERSION", "NEW_ENDO_GROUP_LABELS", "build_new_endo_exports",
+            "ExportFile.__dataclass_fields__.protect_csv_phone",
         ), ("email_validation", "export_config", "automation", "agent_cycle")),
         ("folder_output", ("save_files_to_folder", "FOLDER_OUTPUT_VERSION"), ("automation", "exports")),
         ("agent_order", ("AGENT_ORDER_VERSION", "AGENT_ORDER_CALLBACK_VERSION", "AGENT_NATIVE_ROWS_VERSION", "render_agent_order"), ("agent_availability_page",)),

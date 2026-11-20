@@ -59,6 +59,28 @@ class StartupTests(unittest.TestCase):
             assert app_startup.refresh_application_modules() == set()
         """)
 
+    def test_cached_modules_refresh_for_combined_new_endo_reference_output(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import export_config, exports, upload_state
+            del export_config.NEW_ENDO_OUTPUT_FILENAMES
+            del exports.NEW_ENDO_COMBINED_OUTPUT_VERSION
+            del upload_state.NEW_ENDO_OUTPUT_UPLOADS_VERSION
+            refreshed = app_startup.refresh_application_modules()
+            assert {'export_config', 'exports', 'upload_state'} <= refreshed
+            assert 'new_endo_source_' in upload_state.FILE_STATE_PREFIXES
+            records = [{'primary_key': '0001', 'product': 'MC', 'level': 6,
+                        'email': 'client@example.com', 'phone': '09171234567', 'cms_tagging': 'SOURCE-AGENT'}]
+            from automation import create_default_csv_template
+            bundle = exports.build_new_endo_exports(create_default_csv_template(), records, '', 1, '.csv')
+            assert [file.filename for file in bundle.files] == ['NEW ENDO L6.csv']
+            assert bundle.files[0].records[0]['email'] == 'client@example.com'
+            assert bundle.files[0].records[0]['phone'] == '9171234567'
+            assert not bundle.files[0].protect_csv_phone
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
     def test_cached_modules_refresh_for_fresh_endorsement_assignment_scheme(self):
         self.run_isolated("""
             import app_startup

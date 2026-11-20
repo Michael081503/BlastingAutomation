@@ -74,6 +74,15 @@ CHANNEL_SUFFIXES = {
 # Filename for the download containing all of the separate files.
 ZIP_FILENAME = "NEGATIVE_CHRISTMAS_AMNESTY_FILES.zip"
 
+# Source-tagged NEW ENDO accounts without populated GEO areas keep both contacts.
+NEW_ENDO_OUTPUT_FILENAMES = {
+    "cards_level_1": "NEW ENDO L1",
+    "cards_level_6": "NEW ENDO L6",
+    "bel": "NEW ENDO PL",
+    "other_products": "NEW ENDO LOANS - PL",
+    "cards_review": "NEW ENDO CARDS REVIEW",
+}
+
 # Default destination for "Save files to folder". Relative paths start here in the project.
 # You can also change this folder in the app before saving.
 OUTPUT_FOLDER = "output"
