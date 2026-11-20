@@ -22,7 +22,7 @@ class StartupTests(unittest.TestCase):
             assert {'phone_validation', 'automation', 'autostat', 'exports', 'b2_autostat'} <= refreshed
             assert autostat.validated_phone is phone_validation.validated_phone
             assert exports.first_valid_phone is phone_validation.first_valid_phone
-            assert automation.MAPPING_VERSION == 12
+            assert automation.MAPPING_VERSION == 13
             assert b2_autostat.B2_AUTOSTAT_VERSION == 8
             assert b2_autostat.B4_AUTOSTAT_VERSION == 4
             assert app_startup.refresh_application_modules() == set()
@@ -38,9 +38,24 @@ class StartupTests(unittest.TestCase):
             del upload_state.ENCRYPTED_SOURCE_UPLOADS_VERSION
             refreshed = app_startup.refresh_application_modules()
             assert {'automation', 'exports', 'workbook_password', 'upload_state'} <= refreshed
-            assert automation.MAPPING_VERSION == 12
+            assert automation.MAPPING_VERSION == 13
             assert workbook_password.AutomationError is automation.AutomationError
             assert 'source_password_' in upload_state.FILE_STATE_PREFIXES
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
+    def test_cached_modules_refresh_for_tag_to_agent_codes(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import automation, exports, geo_autostat
+            del automation.TAG_TO_CHCODE_VERSION
+            automation.MAPPING_VERSION = 12
+            refreshed = app_startup.refresh_application_modules()
+            assert {'automation', 'exports', 'geo_autostat'} <= refreshed
+            assert automation.MAPPING_VERSION == 13
+            assert exports.source_column_positions is automation.source_column_positions
+            assert automation.source_column_positions(['TAG TO', 'CMS TAGGING', 'TAGGING'])['cms_tagging'] == 0
             assert app_startup.refresh_application_modules() == set()
         """)
 
@@ -52,7 +67,7 @@ class StartupTests(unittest.TestCase):
             del automation.ASSIGNMENT_SCHEME_VERSION
             refreshed = app_startup.refresh_application_modules()
             assert {'automation', 'exports', 'geo_autostat'} <= refreshed
-            assert automation.MAPPING_VERSION == 12
+            assert automation.MAPPING_VERSION == 13
             assert exports.assignment_scheme_level is automation.assignment_scheme_level
             assert automation.assignment_scheme_level('Recovery (L1 Unsecured)') == 'Level 1'
             assert app_startup.refresh_application_modules() == set()
@@ -527,7 +542,7 @@ class StartupTests(unittest.TestCase):
             geo = exports.build_geo_exports(template, records, '', 1, '.csv')
             assert geo.counts['mindanao_blank_cards'] == 1
             assert all(file.preview[0]['product'] == 'CARDS' for bundle in (reco, geo) for file in bundle.files)
-            assert automation.MAPPING_VERSION == 12
+            assert automation.MAPPING_VERSION == 13
             assert refresh_application_modules() == set()
         """)
 
@@ -804,7 +819,7 @@ class StartupTests(unittest.TestCase):
             del automation.geo_doclass
             del automation.DERIVED_TEMPLATE_HEADERS
             import app
-            assert app.MAPPING_VERSION == 12
+            assert app.MAPPING_VERSION == 13
             assert 'doclass' in automation.DERIVED_TEMPLATE_HEADERS
             assert exports.geo_doclass is automation.geo_doclass
             assert folder_output.AutomationError is automation.AutomationError
@@ -874,7 +889,7 @@ class StartupTests(unittest.TestCase):
             del automation.SheetInfo.available_fields
             del automation.inspect_source_sheet
             import app
-            assert app.MAPPING_VERSION == 12
+            assert app.MAPPING_VERSION == 13
             assert exports.AutomationError is automation.AutomationError
             workbook = Workbook()
             workbook.active.append(['primary_key', 'email', 'PHONE'])
@@ -899,7 +914,7 @@ class StartupTests(unittest.TestCase):
             del export_config.AUTOSTAT_B2_FILENAMES
             del b2_matching.build_b2_exports
             import app
-            assert app.MAPPING_VERSION == 12
+            assert app.MAPPING_VERSION == 13
             assert automation.WORKBOOK_READER_VERSION == 1
             assert b2_page.build_b2_exports is b2_matching.build_b2_exports
             assert export_config.AUTOSTAT_B2_FILENAMES['CARDS'] == 'NEGATIVE B2 - CARDS'

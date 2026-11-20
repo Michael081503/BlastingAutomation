@@ -98,6 +98,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
             "ASSIGNMENT_SCHEME_VERSION", "assignment_scheme_level",
             "NEW_ENDO_SOURCE_VERSION",
+            "TAG_TO_CHCODE_VERSION",
             "PHONE_NORMALIZATION_VERSION", "first_valid_phone",
             "PRODUCT_NORMALIZATION_VERSION", "normalize_product",
             "create_default_csv_template",

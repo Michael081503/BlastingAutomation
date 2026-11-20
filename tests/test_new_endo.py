@@ -11,7 +11,10 @@ from openpyxl import Workbook, load_workbook
 from streamlit.testing.v1 import AppTest
 from streamlit.proto.TextInput_pb2 import TextInput
 
-from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, create_default_csv_template, inspect_workbook, read_source
+from automation import (
+    AutomationError, DEFAULT_TEMPLATE_HEADERS, create_default_csv_template,
+    inspect_workbook, read_source, source_column_positions,
+)
 from export_config import GEO_AGENTS, GEO_RECO_AGENTS
 from exports import build_export_excel, build_geo_exports, build_negative_exports, build_sheet_exports
 from workbook_password import needs_workbook_password, unlock_workbook
@@ -21,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEST_PASSWORD = "synthetic-workbook-password"
 
 
-def source_data(*, geo=False, blank_tag=False):
+def source_data(*, geo=False, blank_tag=False, tag_header=None):
     workbook = Workbook()
     workbook.active.title = "Summary"
     workbook.active.append(["Product", "Total"])
@@ -30,7 +33,7 @@ def source_data(*, geo=False, blank_tag=False):
     if geo:
         sheet.append([
             "CURRENT ACA", "PRODUCT", "CARD NUMBER / SHORT PN #", "ACCOUNT NUMBER / LONG PN #",
-            "TAGGING", "CORRECT ASSIGNMENT SCHEME", "CUSTOMER NAME", "ASSIGNMENT DATE", "OB",
+            tag_header or "TAGGING", "CORRECT ASSIGNMENT SCHEME", "CUSTOMER NAME", "ASSIGNMENT DATE", "OB",
             "Region", "PHONE 1", "EMAIL ADDRESS", "Level",
         ])
         sheet.append(["SPM", "MC", "00001234567890123451", "0001", "SOURCE-MINDANAO", "Recovery (L6 Unsecured)",
@@ -38,7 +41,7 @@ def source_data(*, geo=False, blank_tag=False):
         sheet.append(["SPM", "MC", "00001234567890123452", "0002", None if blank_tag else "SOURCE-R3", "Recovery (L6 Unsecured)",
                       "Second customer", None, 900, "Region 3", "09181234567", "second@example.com", "Level 6"])
     else:
-        sheet.append(["Product", "Card Number/ Short PN", "Account Code", "CMS TAGGING", "Assignment Scheme",
+        sheet.append(["Product", "Card Number/ Short PN", "Account Code", tag_header or "CMS TAGGING", "Assignment Scheme",
                       "Customer Name", "Assignment Date", "OB", "PHONE 1", "EMAIL ADD"])
         sheet.append(["MC", "00001234567890123451", "0001", "SOURCE-L1-A", "Recovery (L1 Unsecured)",
                       "First customer", None, 100, "09171234567", "first@example.com"])
@@ -79,9 +82,9 @@ class NewEndoMappingTests(unittest.TestCase):
         self.assertEqual([record["cms_tagging"] for record in records], ["SOURCE-MINDANAO", "SOURCE-R3"])
 
     def test_source_codes_and_blank_monthly_survive_grouping_channels_and_excel(self):
-        for geo in (False, True):
-            with self.subTest(geo=geo):
-                data = source_data(geo=geo, blank_tag=True)
+        for geo, tag_header in ((False, None), (True, None), (False, "TAG TO"), (True, "TAG TO")):
+            with self.subTest(geo=geo, tag_header=tag_header):
+                data = source_data(geo=geo, blank_tag=True, tag_header=tag_header)
                 sheet = "Sheet1" if geo else "SPM List"
                 records = read_source(data, sheet, 1, allow_missing=True).records
                 expected = {record["primary_key"]: record["cms_tagging"] or "" for record in records}
@@ -126,6 +129,38 @@ class NewEndoMappingTests(unittest.TestCase):
         self.assertEqual(file.headers, [*headers, "CHCode"])
         self.assertEqual(csv_rows(file)[0]["CHCode"], "FROM-SOURCE")
         self.assertEqual(csv_rows(file)[0]["Terms"], "CARD-SOURCE")
+
+    def test_tag_to_aliases_take_priority_over_other_tagging_columns_including_blank_cells(self):
+        for header in ("TAG TO", "tag to", " TAG_TO ", "Tag-To"):
+            with self.subTest(header=header):
+                workbook = load_workbook(BytesIO(source_data(geo=True, blank_tag=True, tag_header=header)))
+                sheet = workbook["Sheet1"]
+                column = sheet.max_column + 1
+                for offset, label in enumerate(("CMS TAGGING", "TAGGING")):
+                    sheet.cell(1, column + offset, label)
+                    sheet.cell(2, column + offset, "OTHER-AGENT")
+                    sheet.cell(3, column + offset, "DO-NOT-FILL-BLANK")
+                output = BytesIO()
+                workbook.save(output)
+                workbook.close()
+                data = output.getvalue()
+                info = inspect_workbook(data)[1]
+                self.assertEqual(source_column_positions(info.headers)["cms_tagging"], 4)
+                records = read_source(data, info.name, info.header_row, allow_missing=True).records
+                self.assertEqual([row["cms_tagging"] for row in records], ["SOURCE-MINDANAO", None])
+
+    def test_duplicate_tag_to_columns_require_an_explicit_mapping(self):
+        workbook = load_workbook(BytesIO(source_data(tag_header="TAG TO")))
+        sheet = workbook["SPM List"]
+        sheet.cell(1, sheet.max_column + 1, "TAG_TO")
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        data = output.getvalue()
+        with self.assertRaisesRegex(AutomationError, "Duplicate or ambiguous header"):
+            read_source(data, "SPM List", 1, allow_missing=True)
+        records = read_source(data, "SPM List", 1, allow_missing=True, source_columns={"cms_tagging": 3}).records
+        self.assertEqual([row["cms_tagging"] for row in records], ["SOURCE-L1-A", "SOURCE-L1-B"])
 
 
 class EncryptedWorkbookTests(unittest.TestCase):
@@ -174,6 +209,30 @@ class EncryptedWorkbookTests(unittest.TestCase):
 
 
 class GeoNewEndoPageTests(unittest.TestCase):
+    def test_encrypted_tag_to_upload_keeps_source_codes_without_agent_assignment(self):
+        uploads = {"source_upload": Upload(encrypted(source_data(geo=True, tag_header="TAG TO")))}
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
+                patch("agent_availability_page.render_agent_availability", return_value=None) as availability, \
+                patch("agent_cycle_page.render_agent_cycle", return_value=None) as rotation:
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            password = next(widget for widget in app.text_input if widget.label == "Workbook password")
+            password.set_value(TEST_PASSWORD).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            rotation.assert_not_called()
+            availability.assert_not_called()
+            result = app.session_state["result"]
+            self.assertEqual(result["source_sheet"], "Sheet1")
+            self.assertEqual(result["count"], 2)
+            expected = {"0001": "SOURCE-MINDANAO", "0002": "SOURCE-R3"}
+            for file in result["files"]:
+                for row in csv_rows(file):
+                    self.assertEqual(row["CHCode"], expected[row["primary_key"]])
+            app.radio[0].set_value("All accounts in one group").run(timeout=20)
+            self.assertFalse(app.error)
+            self.assertTrue(all(row["CHCode"] == expected[row["primary_key"]]
+                                for file in app.session_state["result"]["files"] for row in csv_rows(file)))
+
     def test_utf8_selection_preserves_names_that_standard_csv_cannot_encode(self):
         workbook = load_workbook(BytesIO(source_data(geo=True)))
         workbook["Sheet1"]["G2"] = "Customer \u674e"

@@ -50,11 +50,12 @@ SOURCE_ALIASES = {
     "OB (Masterlist)": ("OB",),
     "phone_1": ("phone number", "phone no", "mobile", "mobile number", "mobile no", "contact number", "contact no", "cellphone", "cellphone number"),
     "Area": ("Region",),
-    "CMS TAGGING": ("TAGGING",),
+    "CMS TAGGING": ("TAGGING", "TAG TO"),
 }
-MAPPING_VERSION = 12
+MAPPING_VERSION = 13
 ASSIGNMENT_SCHEME_VERSION = 1
 NEW_ENDO_SOURCE_VERSION = 1
+TAG_TO_CHCODE_VERSION = 1
 PRODUCT_NORMALIZATION_VERSION = 1
 WORKBOOK_READER_VERSION = 1
 SOURCE_SHEET_SELECTION_VERSION = 1
@@ -172,7 +173,9 @@ def geo_doclass(area: Any) -> str | None:
     return GEO_DOCLASS_BY_AREA.get(normalize_header(area))
 
 
-def _source_aliases(source: str) -> set[str]:
+def _source_aliases(source: str, normalized_headers: list[str] | tuple[str, ...] = ()) -> set[str]:
+    if source == "CMS TAGGING" and "tagto" in normalized_headers:
+        return {"tagto"}
     target = {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.get(source, source)
     return {normalize_header(label) for label in (source, target, *SOURCE_ALIASES.get(source, ()))}
 
@@ -183,7 +186,7 @@ def source_column_positions(headers: list[Any] | tuple[str, ...]) -> dict[str, i
     renamed = uses_campaign_headers(headers)
     positions = {}
     for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items():
-        aliases = _source_aliases(source)
+        aliases = _source_aliases(source, labels)
         if renamed and target == "cardnumber":
             aliases.add("terms")
         matches = [index for index, label in enumerate(labels) if label in aliases]
@@ -325,7 +328,7 @@ def _column_lookup(
                 raise AutomationError(f'Choose an existing source column for "{target}".')
             positions[target] = column
             continue
-        aliases = _template_aliases(target, renamed=renamed) if template else _source_aliases(source)
+        aliases = _template_aliases(target, renamed=renamed) if template else _source_aliases(source, normalized)
         if not template and target == "cardnumber" and renamed:
             aliases.add("terms")
         matches = [index for index, value in enumerate(normalized) if value in aliases]

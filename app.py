@@ -118,7 +118,8 @@ def render_workbook_page() -> None:
     with st.sidebar.expander("Field mapping"):
         st.dataframe(
             pd.DataFrame(
-                [(source, "CHCode" if target == "cms_tagging" else campaign_output_headers([target])[0])
+                [("TAG TO / CMS TAGGING / TAGGING" if target == "cms_tagging" else source,
+                  "CHCode" if target == "cms_tagging" else campaign_output_headers([target])[0])
                  for source, target in {**FIELD_MAPPING, **OPTIONAL_FIELD_MAPPING}.items()],
                 columns=["Source header", "Template header"],
             ),
@@ -273,7 +274,7 @@ def render_workbook_page() -> None:
                 for number, target in enumerate((*TARGET_HEADERS, *OPTIONAL_FIELD_MAPPING.values())):
                     with fields[number % 3]:
                         source_columns[target] = st.selectbox(
-                            "Source column for CHCode (CMS tagging)" if target == "cms_tagging" else f"Source column for {target}",
+                            "Source column for CHCode (TAG TO / CMS tagging)" if target == "cms_tagging" else f"Source column for {target}",
                             options, index=options.index(defaults.get(target)),
                             format_func=column_label,
                             key=f"source_mapping_{source_digest}_{source_sheet}_{source_header}_{MAPPING_VERSION}_{target}",
@@ -293,7 +294,7 @@ def render_workbook_page() -> None:
         source_tagged = "cms_tagging" in source_info.available_fields
         assignment_date, agents = None, None
         if source_tagged:
-            assignment_panel.caption("NEW ENDO: CHCode uses the source CMS TAGGING / TAGGING values.")
+            assignment_panel.caption("CHCode uses the source TAG TO / CMS TAGGING / TAGGING values. TAG TO takes priority.")
         elif geo:
             availability_date = manila_today()
             with assignment_panel:
