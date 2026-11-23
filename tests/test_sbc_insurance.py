@@ -191,6 +191,31 @@ class InsuranceMasterlistTests(unittest.TestCase):
         self.assertEqual(result.stats["Invalid masterlist email entries"], 1)
         self.assertTrue(all(not row.record["email"] and not row.record["phone"] for row in original.rows))
         self.assertTrue(all(not r["email"] and not r["phone"] for r in prepare_insurance(original).file.records))
+        workbook = load_workbook(BytesIO(build_filtered_datagrid(result)))
+        sheet = workbook.active
+        headers, *rows = sheet.values
+        self.assertEqual(headers, (*HEADERS, "EMAIL", "MOBILE"))
+        self.assertEqual([values[-2:] for values in rows],
+                         [("first@example.com", "9171234567"), ("second@example.com", None), (None, None), (None, None)])
+        self.assertEqual((sheet["J2"].data_type, sheet["J2"].number_format), ("s", "@"))
+        workbook.close()
+
+    def test_filtered_datagrid_reuses_existing_contact_columns(self):
+        original = source([
+            [*row("A", "0001", "RNA"), "old@example.com"],
+            [*row("B", "0002", "RNA"), "keep@example.com"],
+        ], [*HEADERS, "EMAIL"])
+        master = read_insurance_masterlist(workbook_bytes([
+            ["0001", "new@example.com", "09171234567", None, None, None],
+            ["0002", None, "09181234567", None, None, None],
+        ], MASTER_HEADERS), "Insurance", 1)
+        workbook = load_workbook(BytesIO(build_filtered_datagrid(prepare_insurance(original, masterlist=master))))
+        headers, *rows = workbook.active.values
+        self.assertEqual(headers, (*HEADERS, "EMAIL", "MOBILE"))
+        self.assertEqual([values[-2:] for values in rows],
+                         [("new@example.com", "9171234567"), ("keep@example.com", "9181234567")])
+        self.assertEqual(original.rows[0].values[-1], "old@example.com")
+        workbook.close()
 
     def test_addresses_are_available_without_changing_the_campaign_columns(self):
         financing = "000123456789012345678901"
@@ -208,7 +233,7 @@ class InsuranceMasterlistTests(unittest.TestCase):
         self.assertEqual(workbook.active.max_column, 16)
         workbook.close()
         workbook = load_workbook(BytesIO(build_filtered_datagrid(result)))
-        self.assertEqual([c.value for c in workbook.active[1]], HEADERS)
+        self.assertEqual([c.value for c in workbook.active[1]], [*HEADERS, "EMAIL", "MOBILE"])
         workbook.close()
         workbook = load_workbook(BytesIO(build_filtered_datagrid(result, include_masterlist=True)))
         self.assertEqual([c.value for c in workbook.active[1]], [*HEADERS, "Masterlist EMAIL", "Masterlist MOBILE",
@@ -267,12 +292,17 @@ class InsurancePageTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
             self.assertEqual(len(app.multiselect), 0)
             self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"], "first@example.com")
+            self.assertEqual(app.dataframe[2].value[["EMAIL", "MOBILE"]].iloc[0].tolist(),
+                             ["first@example.com", "9171234567"])
             master = Upload(workbook_bytes([["0001", "new@example.com", None, "New street", None, None]], MASTER_HEADERS))
             app.run(timeout=20)
             self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"], "new@example.com")
+            self.assertEqual(app.dataframe[2].value[["EMAIL", "MOBILE"]].iloc[0].tolist(),
+                             ["new@example.com", ""])
             master = None
             app.run(timeout=20)
             self.assertIsNone(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"])
+            self.assertEqual(app.dataframe[2].value.columns.tolist(), HEADERS)
             master = Upload(workbook_bytes([["0001", "new@example.com", None, "New street", None, None]], MASTER_HEADERS))
             app.run(timeout=20)
             self.assertEqual(app.session_state["sbc_insurance_result"]["result"].file.records[0]["email"], "new@example.com")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from io import BytesIO
@@ -418,28 +419,54 @@ def prepare_insurance(
     return InsuranceResult(source, selected, stats, file, contacts)
 
 
+def filtered_datagrid_data(
+    result: InsuranceResult, *, include_masterlist: bool = False,
+) -> tuple[list[str], set[int], Iterator[tuple[Any, ...]]]:
+    """Return the output headers, text-formatted columns and rows."""
+    headers = list(result.source.headers)
+    identifier_columns = set(result.source.identifier_columns)
+    contacts = result.contacts
+    if contacts is None:
+        return headers, identifier_columns, (row.values for row in result.rows)
+    if include_masterlist:
+        identifier_columns.add(len(headers) + 1)  # The appended masterlist MOBILE.
+        headers.extend(["Masterlist EMAIL", "Masterlist MOBILE", "Masterlist ADDRESS1", "Masterlist ADDRESS2", "Masterlist ADDRESS3"])
+        rows = (
+            (*row.values, contact.email, contact.phone, *contact.address)
+            if contact is not None else (*row.values, None, None, None, None, None)
+            for row, contact in zip(result.rows, contacts)
+        )
+        return headers, identifier_columns, rows
+
+    labels = [normalize_header(header) for header in headers]
+    for header in ("EMAIL", "MOBILE"):
+        if header.lower() not in labels:
+            headers.append(header)
+            labels.append(header.lower())
+    positions = [(index, label) for index, label in enumerate(labels) if label in ("email", "mobile")]
+    identifier_columns.update(index for index, label in positions if label == "mobile")
+    padding = (None,) * (len(headers) - len(result.source.headers))
+
+    def enriched_rows() -> Iterator[tuple[Any, ...]]:
+        for row, contact in zip(result.rows, contacts):
+            values = [*row.values, *padding]
+            if contact is not None:
+                matched = {"email": contact.email, "mobile": contact.phone}
+                for index, label in positions:
+                    if matched[label] is not None:
+                        values[index] = matched[label]
+            yield tuple(values)
+
+    return headers, identifier_columns, enriched_rows()
+
+
 def build_filtered_datagrid(result: InsuranceResult, *, include_masterlist: bool = False) -> bytes:
-    """Match the reference DataGrid layout; optionally append masterlist contacts."""
+    """Build the cleaned DataGrid or its detailed Contacts workbook."""
+    headers, identifier_columns, rows = filtered_datagrid_data(result, include_masterlist=include_masterlist)
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet(result.source.sheet_name)
     sheet.freeze_panes = "A2"
-    headers = list(result.source.headers)
-    identifier_columns = set(result.source.identifier_columns)
-    append_contacts = include_masterlist and result.contacts is not None
-    if append_contacts:
-        identifier_columns.add(len(headers) + 1)  # The appended masterlist MOBILE.
-        headers.extend(["Masterlist EMAIL", "Masterlist MOBILE", "Masterlist ADDRESS1", "Masterlist ADDRESS2", "Masterlist ADDRESS3"])
-
-    def export_rows():
-        for index, row in enumerate(result.rows):
-            values = row.values
-            if append_contacts:
-                contact = result.contacts[index]
-                values = (*values, contact.email if contact else None, contact.phone if contact else None,
-                          *(contact.address if contact else (None, None, None)))
-            yield values
-
-    for values in chain([headers], export_rows()):
+    for values in chain([headers], rows):
         cells = []
         for index, value in enumerate(values):
             cell = WriteOnlyCell(sheet)

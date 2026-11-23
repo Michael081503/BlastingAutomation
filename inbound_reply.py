@@ -6,13 +6,15 @@ import csv
 import re
 import unicodedata
 from collections import Counter, defaultdict
+from copy import copy
 from dataclasses import dataclass, field
 from io import BytesIO, StringIO
 from pathlib import Path
+from textwrap import TextWrapper
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 7
+VIBER_REPLY_VERSION = 8
 CUSTOMER_REPLY_POPULATION_VERSION = 1
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
 CAMPAIGN_COLUMN_ALIASES_VERSION = 1
@@ -22,9 +24,17 @@ VIBER_CAMPAIGN_REPLIED_VERSION = 1
 VIBER_AGENT_REPLIED_SOURCE = "campaign_replies"
 VIBER_PHONE_MATCHING_VERSION = 1
 VIBER_MATCH_MODE = "phone"
-VIBER_UNREPLIED_WORKBOOK_VERSION = 1
+VIBER_UNREPLIED_WORKBOOK_VERSION = 2
+INBOUND_MESSAGE_COLUMN_WIDTH = 96
+EXCEL_MAX_ROW_HEIGHT = 409
 SOURCE_NAMES = ("message_logs", "campaign_replies")
 MATCH_MODES = ("name", "phone")
+MINDANAO_CAMPAIGN = "SBC Mindanao"
+PL_RECOVERY_CAMPAIGN = "PL RECOVERY"
+MINDANAO_CAMPAIGN_ALIASES = frozenset({
+    "mindanao", "sbcmindanao", "sbcgeomindanao",
+    "region3", "r3", "sbcregion3", "sbcr3", "sbcgeoregion3", "sbcgeor3",
+})
 HEADER_ALIASES = {
     "name": {"clientname", "contactname", "fullname", "name"},
     "phone": {"phone", "phonenumber", "mobile", "mobilenumber"},
@@ -55,6 +65,16 @@ def normalized_name(value: str) -> str:
 
 def normalized_campaign(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def inbound_campaign_label(value: str) -> str:
+    """Normalize source labels for shared reporting campaigns."""
+    name = normalized_name(value)
+    if " pl recovery " in f" {name} ":
+        return PL_RECOVERY_CAMPAIGN
+    if name.replace(" ", "") in MINDANAO_CAMPAIGN_ALIASES:
+        return MINDANAO_CAMPAIGN
+    return value
 
 
 def excluded_inbound_campaign(value: str) -> bool:
@@ -181,7 +201,7 @@ def _read_rows(rows: Iterable, filename: str, sheet: str, *, require_campaign: b
             excluded += 1
             continue
         records.append(ReplyRecord(
-            values.get("name", ""), values["phone"], campaign,
+            values.get("name", ""), values["phone"], inbound_campaign_label(campaign),
             values.get("message_type", ""), tuple(row),
         ))
     return ReplySource(filename, tuple(records), excluded, sheet, headers)
@@ -360,6 +380,54 @@ def build_unreplied_workbook(report: ViberReplyReport) -> bytes:
     return build_reply_workbook(report.campaigns, source_headers, details, matched_header="Matched Phone")
 
 
+def fit_report_text(workbook) -> dict[str, list]:
+    """Wrap cell text, size its rows, and identify text that exceeds Excel's row height."""
+    from openpyxl.utils import column_index_from_string
+
+    overflow = {}
+    for sheet in workbook:
+        widths = dict.fromkeys(range(1, sheet.max_column + 1), sheet.sheet_format.defaultColWidth or 13)
+        for dimension in sheet.column_dimensions.values():
+            first_column = dimension.min or column_index_from_string(dimension.index)
+            for column in range(first_column, (dimension.max or first_column) + 1):
+                widths[column] = dimension.width
+        merged_widths = {
+            (area.min_row, area.min_col): sum(widths[col] for col in range(area.min_col, area.max_col + 1))
+            for area in sheet.merged_cells.ranges
+        }
+        wrappers = {}
+        for row in sheet.iter_rows():
+            needed_height = 0
+            for cell in row:
+                if cell.value is None:
+                    continue
+                if not cell.alignment.wrap_text:
+                    alignment = copy(cell.alignment)
+                    alignment.wrap_text = True
+                    cell.alignment = alignment
+                if cell.data_type != "s" or not cell.value:
+                    continue
+                width = merged_widths.get((cell.row, cell.column), widths[cell.column])
+                available = max(1, int(width) - 2)
+                if "\n" not in cell.value and "\r" not in cell.value and len(cell.value) <= available:
+                    continue
+                if available not in wrappers:
+                    wrappers[available] = TextWrapper(width=available)
+                paragraphs = cell.value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                lines = sum(max(1, len(wrappers[available].wrap(line))) for line in paragraphs)
+                if lines > 1:
+                    line_height = max(15, (cell.font.sz or 11) * 1.35)
+                    text_height = lines * line_height + 3
+                    needed_height = max(needed_height, text_height)
+                    if text_height > EXCEL_MAX_ROW_HEIGHT:
+                        overflow.setdefault(sheet.title, []).append(cell)
+            dimension = sheet.row_dimensions.get(row[0].row)
+            current_height = (dimension.height if dimension else None) or sheet.sheet_format.defaultRowHeight or 15
+            if needed_height > current_height:
+                sheet.row_dimensions[row[0].row].height = min(EXCEL_MAX_ROW_HEIGHT, needed_height)
+    return overflow
+
+
 def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_headers: tuple[str, ...],
                          details: list[tuple], *, matched_header: str) -> bytes:
     """Use the same summary/detail layout for each channel's unreplied accounts."""
@@ -389,7 +457,7 @@ def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_head
     for column, header in enumerate([*source_headers, matched_header, "Reply Status"], 1):
         key = "".join(char for char in header.casefold() if char.isalnum())
         sheet.column_dimensions[get_column_letter(column)].width = (
-            75 if key in {"messagecontent", "replycontent"} else
+            INBOUND_MESSAGE_COLUMN_WIDTH if "body" in key or "content" in key else
             32 if key in {"clientname", "contactname", "name", "createdby"} else
             26 if key in {"id", "messageid", "bankcampaign"} else 22
         )
@@ -412,6 +480,7 @@ def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_head
     for cell in summary[summary.max_row]:
         cell.font = Font(bold=True)
         cell.fill = PatternFill("solid", fgColor="E2EAFB")
+    fit_report_text(workbook)
     output = BytesIO()
     workbook.save(output)
     workbook.close()

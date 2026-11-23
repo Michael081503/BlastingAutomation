@@ -10,11 +10,11 @@ from pathlib import Path
 from email_validation import validated_email
 from inbound_reply import (
     CAMPAIGN_HEADER_ALIASES, CampaignReplyCounts, InboundReplyError, build_reply_workbook,
-    excluded_inbound_campaign, inbound_csv_delimiter, normalized_campaign,
+    excluded_inbound_campaign, inbound_campaign_label, inbound_csv_delimiter, normalized_campaign,
 )
 
 
-EMAIL_REPLY_VERSION = 4
+EMAIL_REPLY_VERSION = 5
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 
@@ -115,7 +115,7 @@ def _read_rows(rows, filename: str, kind: str, sheet: str, *, require_campaign: 
             excluded += 1
             continue
         records.append(EmailRecord(
-            email, campaign,
+            email, inbound_campaign_label(campaign),
             bool(str(values.get("sent") or "").strip()), str(values.get("agent") or "").strip(), tuple(row),
         ))
     return EmailSource(filename, headers, tuple(records), excluded, sheet)

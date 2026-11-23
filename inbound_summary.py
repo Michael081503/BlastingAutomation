@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from datetime import date
 from io import BytesIO
+import re
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
-from inbound_reply import InboundReplyError, normalized_campaign, normalized_phone, unreplied_records
+from inbound_reply import (
+    INBOUND_MESSAGE_COLUMN_WIDTH, MINDANAO_CAMPAIGN, InboundReplyError, fit_report_text,
+    inbound_campaign_label, normalized_campaign, normalized_phone, unreplied_records,
+)
 
 
-INBOUND_SUMMARY_VERSION = 4
+INBOUND_SUMMARY_VERSION = 7
 BLAST_PERCENTAGE_FORMULAS_VERSION = 1
 OVERALL_BLAST_COVERAGE_VERSION = 1
 OVERALL_BLAST_LABEL = "TOTAL — ALL CAMPAIGNS"
@@ -27,8 +33,9 @@ def campaign_groups(viber_report=None, email_report=None, sms_report=None, *, so
                 group = campaigns.setdefault(normalized_campaign(counts.campaign), {"label": counts.campaign})
                 group[channel] = counts
     for label in source_campaigns:
-        if label.strip():
-            campaigns.setdefault(normalized_campaign(label), {"label": label.strip()})
+        label = inbound_campaign_label(label.strip())
+        if label:
+            campaigns.setdefault(normalized_campaign(label), {"label": label})
     return sorted(campaigns.values(), key=lambda group: group["label"].casefold())
 
 
@@ -40,9 +47,27 @@ def nonnegative_count(value) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
+def merge_mindanao_totals(report_date: date, campaign_totals: dict | None) -> dict:
+    """Fold the previous Region 3 totals into Mindanao for this report date."""
+    totals = dict(campaign_totals or {})
+    region_totals = totals.pop(campaign_totals_key(report_date, "SBC Region 3"), None)
+    if not region_totals:
+        return totals
+    mindanao_key = campaign_totals_key(report_date, MINDANAO_CAMPAIGN)
+    mindanao_totals = totals.get(mindanao_key, {})
+    combined = {}
+    for field in mindanao_totals.keys() | region_totals.keys():
+        counts = [count for source in (mindanao_totals, region_totals)
+                  if (count := nonnegative_count(source.get(field))) is not None]
+        combined[field] = sum(counts) if counts else None
+    totals[mindanao_key] = combined
+    return totals
+
+
 def summary_rows(campaign: str, report_date: date, sent_to_ops: str, viber_report=None,
                   email_report=None, campaign_totals: dict | None = None, sms_report=None,
                   *, source_campaigns=()) -> list[list]:
+    campaign_totals = merge_mindanao_totals(report_date, campaign_totals)
     rows = []
     for group in campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns) or [None]:
         cells = [campaign.strip() or "—", *([None] * 10), sent_to_ops, *([None] * 6)]
@@ -55,7 +80,7 @@ def summary_rows(campaign: str, report_date: date, sent_to_ops: str, viber_repor
                     cells[reply_index] = counts.unique_people
                     cells[agent_index] = counts.agent_replied
                     cells[percent_index] = counts.agent_percent
-        totals = (campaign_totals or {}).get(campaign_totals_key(report_date, cells[0]), {})
+        totals = campaign_totals.get(campaign_totals_key(report_date, cells[0]), {})
         active = nonnegative_count(totals.get("active_ticket"))
         cells[1] = active
         for channel, index in (("email", 2), ("sms", 4), ("viber", 6)):
@@ -95,10 +120,28 @@ def overall_blast_formula(first_row: int, last_row: int, blast_column: str) -> s
             f'COUNT({blasted})=ROWS({blasted}),MIN({blasted})>=0),SUM({blasted})/SUM({active}),"")')
 
 
-def blast_percentage_formula(row: int, blast_column: str) -> str:
-    active, blasted = f"$B{row}", f"{blast_column}{row}"
-    return (f'=IF(AND(ISNUMBER({active}),{active}>0,ISNUMBER({blasted}),{blasted}>=0),'
-            f'{blasted}/{active},"")')
+def percentage_formula(numerator: str, denominator: str) -> str:
+    return (f'=IF(AND(ISNUMBER({denominator}),{denominator}>0,ISNUMBER({numerator}),{numerator}>=0),'
+            f'{numerator}/{denominator},"")')
+
+
+def _cache_summary_percentages(workbook: BytesIO, percentages: dict[str, float]) -> bytes:
+    """Keep calculated rates visible in workbook previews before Excel recalculates."""
+    if not percentages:
+        return workbook.getvalue()
+    output = BytesIO()
+    with ZipFile(workbook) as original, ZipFile(output, "w") as updated:
+        for member in original.infolist():
+            data = original.read(member)
+            if member.filename == "xl/worksheets/sheet1.xml":
+                summary = ElementTree.fromstring(data)
+                for cell in summary.iterfind("{*}sheetData/{*}row/{*}c"):
+                    rate = percentages.get(cell.get("r"))
+                    if rate is not None:
+                        cell.find("{*}v").text = str(rate)
+                data = ElementTree.tostring(summary, encoding="utf-8")
+            updated.writestr(member, data)
+    return output.getvalue()
 
 
 def _channel_details(channel: str, report):
@@ -137,6 +180,60 @@ def _channel_details(channel: str, report):
     headers = ["Channel", "Campaign", "Name", "Phone", "Email", "Reply Status",
                *(f"Source: {header}" + (f" ({occurrence + 1})" if occurrence else "") for header, occurrence in fields)]
     return headers, rows
+
+
+def _email_text_parts(text: str) -> list[tuple[str, int]]:
+    """Use short text segments to make room for wide characters and natural Excel wrapping."""
+    parts = []
+    start = 0
+    line_count = 0
+    for segment in re.finditer(r"[^\r\n]{1,70}(?:\r\n|\r|\n)?|\r\n|\r|\n", text):
+        line_count += 1
+        if line_count == 12:
+            parts.append((text[start:segment.end()], line_count))
+            start = segment.end()
+            line_count = 0
+    if start < len(text):
+        parts.append((text[start:], line_count))
+    return parts
+
+
+def add_email_text_continuations(sheet, overflow_cells) -> None:
+    """Link long text to wrapped continuation rows below the filtered account table."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.worksheet.hyperlink import Hyperlink
+
+    if not overflow_cells:
+        return
+    wrap = Alignment(vertical="top", wrap_text=True)
+    highlight = PatternFill("solid", fgColor="E2EAFB")
+    sheet.merge_cells("D1:G1")
+    sheet["D1"] = "Click a highlighted cell to read the full text below."
+    sheet["D1"].alignment = wrap
+    section_row = sheet.max_row + 2
+    sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=5)
+    title = sheet.cell(section_row, 1, "Full text for long email entries")
+    title.font = Font(bold=True)
+    title.fill = highlight
+    title.alignment = wrap
+    row = section_row + 1
+    for source_cell in overflow_cells:
+        parts = _email_text_parts(source_cell.value)
+        source_cell.fill = highlight
+        source_cell.hyperlink = Hyperlink(ref=source_cell.coordinate, location=f"'Email Unreplied'!A{row}",
+                                          tooltip="Read full text")
+        for index, (part, line_count) in enumerate(parts, start=1):
+            link = sheet.cell(row, 1, f"{source_cell.coordinate} ({index}/{len(parts)})")
+            link.style = "Hyperlink"
+            link.alignment = wrap
+            link.hyperlink = Hyperlink(ref=link.coordinate, location=f"'Email Unreplied'!{source_cell.coordinate}",
+                                       tooltip="Back to the account cell")
+            sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
+            message = sheet.cell(row, 2, part)
+            message.data_type = "s"
+            message.alignment = wrap
+            sheet.row_dimensions[row].height = line_count * 30 + 18
+            row += 1
 
 
 def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
@@ -178,17 +275,21 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
             f"Customers from {channel} REPLY who received a response from any agent in the same campaign. "
             "Repeated agent replies count once per phone number within each campaign.", "INBOUND REPLY")
         sheet[f"{percent_column}3"].comment = Comment(
-            f"Customers answered by agents divided by {channel} REPLY × 100.", "INBOUND REPLY")
+            f"Customers answered by agents divided by {channel} REPLY × 100. Recalculates when the counts change.",
+            "INBOUND REPLY")
     sheet["M3"].comment = Comment(
         "Customers from EMAIL REPLY who received a response from any agent. "
         "Repeated agent replies count once per customer email address within each campaign.", "INBOUND REPLY")
-    sheet["N3"].comment = Comment("Customers answered by agents divided by EMAIL REPLY × 100.", "INBOUND REPLY")
-    rows = summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
-                        source_campaigns=source_campaigns)
-    for row in rows:
+    sheet["N3"].comment = Comment(
+        "Customers answered by agents divided by EMAIL REPLY × 100. Recalculates when the counts change.",
+        "INBOUND REPLY")
+    campaign_rows = summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
+                                 source_campaigns=source_campaigns)
+    for row in campaign_rows:
         sheet.append(row)
     last_campaign_row = sheet.max_row
-    sheet.append(overall_blast_row(rows))
+    overall = overall_blast_row(campaign_rows)
+    sheet.append(overall)
     total_row = sheet.max_row
     edge = Side(style="thin", color="303744")
     for row in sheet:
@@ -216,8 +317,11 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
             "Accounts blasted divided by ACTIVE TICKET × 100. Recalculates when the counts change. "
             "Stays blank when ACTIVE TICKET is blank or zero, or the blast count is blank.", "INBOUND REPLY")
         for row in range(4, last_campaign_row + 1):
-            sheet[f"{percent_column}{row}"] = blast_percentage_formula(row, blast_column)
+            sheet[f"{percent_column}{row}"] = percentage_formula(f"{blast_column}{row}", f"$B{row}")
         sheet[f"{percent_column}{total_row}"] = overall_blast_formula(4, last_campaign_row, blast_column)
+    for reply_column, agent_column, percent_column in (("I", "M", "N"), ("J", "O", "P"), ("K", "Q", "R")):
+        for row in range(4, last_campaign_row + 1):
+            sheet[f"{percent_column}{row}"] = percentage_formula(f"{agent_column}{row}", f"{reply_column}{row}")
     for column in range(1, 19):
         sheet.column_dimensions[get_column_letter(column)].width = 36 if column == 1 else 18 if column == 12 else 12
     for row in range(1, sheet.max_row + 1):
@@ -253,10 +357,19 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
                     cell.fill = PatternFill("solid", fgColor="E2EAFB")
         details["A1"].font = details["A2"].font = Font(bold=True)
         for index, header in enumerate(headers, 1):
-            details.column_dimensions[get_column_letter(index)].width = 60 if "body" in header.casefold() or "content" in header.casefold() else 26
+            key = header.casefold()
+            details.column_dimensions[get_column_letter(index)].width = (
+                INBOUND_MESSAGE_COLUMN_WIDTH if "body" in key or "content" in key else 26)
         details.freeze_panes = "A4"
         details.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{details.max_row}"
+    overflow = fit_report_text(workbook)
+    add_email_text_continuations(workbook["Email Unreplied"], overflow.get("Email Unreplied", ()))
     output = BytesIO()
     workbook.save(output)
     workbook.close()
-    return output.getvalue()
+    rates = {}
+    for row_number, values in enumerate((*campaign_rows, overall), start=4):
+        for column in PERCENT_COLUMNS:
+            if values[column] is not None:
+                rates[f"{get_column_letter(column + 1)}{row_number}"] = values[column]
+    return _cache_summary_percentages(output, rates)

@@ -44,7 +44,7 @@ class CampaignCatalogTests(unittest.TestCase):
     def test_campaigns_come_from_account_rows_even_without_usable_contacts(self):
         uploads = catalog_uploads()
         lookup = build_email_campaign_lookup([(u.name, u.getvalue()) for u in uploads])
-        expected = ("SBC B2", "SBC B4", "SBC Level 1", "SBC Level 6", "SBC Mindanao", "SBC Region 3")
+        expected = ("SBC B2", "SBC B4", "SBC Level 1", "SBC Level 6", "SBC Mindanao")
         self.assertEqual(lookup.campaigns, expected)
         self.assertFalse(any("SBC Level 6" in labels for labels in lookup.campaigns_by_email.values()))
         self.assertFalse(any("SBC Level 6" in labels for labels in lookup.campaigns_by_phone.values()))
@@ -61,7 +61,7 @@ class CampaignEditorPageTests(unittest.TestCase):
         from streamlit.testing.v1 import AppTest
         from upload_state import render_clear_all_files
 
-        expected = ["SBC B2", "SBC B4", "SBC Level 1", "SBC Level 6", "SBC Mindanao", "SBC Region 3"]
+        expected = ["SBC B2", "SBC B4", "SBC Level 1", "SBC Level 6", "SBC Mindanao"]
         files = catalog_uploads()
         uploads = {}
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
@@ -90,7 +90,7 @@ class CampaignEditorPageTests(unittest.TestCase):
             self.assertEqual(len(app.number_input), 4 * len(expected))
             self.assertTrue(all(widget.value is None for widget in app.number_input))
             self.assertEqual(len(app.metric), 0)
-            self.assertTrue(any("6 campaigns detected" in caption.value for caption in app.caption))
+            self.assertTrue(any("5 campaigns detected" in caption.value for caption in app.caption))
             for field, value in (("active_ticket", 5000), ("dc_email", 4337), ("dc_sms", 3500), ("dc_viber", 2500)):
                 app.number_input(key=total_key("SBC Level 1", field)).set_value(value).run(timeout=20)
                 self.assertFalse(app.exception)
@@ -98,9 +98,16 @@ class CampaignEditorPageTests(unittest.TestCase):
             self.assertTrue(any("Email: 86.74% · SMS: 70.00% · Viber: 50.00%" in c.value for c in app.caption))
             app.number_input(key=total_key("SBC B4", "active_ticket")).set_value(3000).run(timeout=20)
             app.number_input(key=total_key("SBC Level 6", "active_ticket")).set_value(6000).run(timeout=20)
+            mindanao_active = total_key("SBC Mindanao", "active_ticket")
+            app.number_input(key=mindanao_active).set_value(400).run(timeout=20)
+            legacy_key = campaign_totals_key(REPORT_DATE, "SBC Region 3")
+            app.session_state["inbound_reply_campaign_totals"][legacy_key] = {"active_ticket": 300, "dc_email": 140}
             uploads["inbound_reply_email_lookup_uploads"] = list(reversed(files))
             app.run(timeout=20)
             self.assertEqual(editor_labels(), expected)
+            self.assertEqual(app.number_input(key=mindanao_active).value, 700)
+            self.assertEqual(summary()["SBC Mindanao"][1:4], ["700", "140", "20.00%"])
+            self.assertNotIn(legacy_key, app.session_state["inbound_reply_campaign_totals"])
             self.assertEqual(app.number_input(key=total_key("SBC Level 1", "active_ticket")).value, 5000)
             self.assertEqual(app.number_input(key=total_key("SBC B4", "active_ticket")).value, 3000)
             uploads["inbound_reply_email_lookup_uploads"] = [u for u in files if u.name != "B4.xlsx"]
@@ -135,6 +142,7 @@ class CampaignEditorPageTests(unittest.TestCase):
                 self.assertEqual(book["Summary"]["D6"].data_type, "f")
                 self.assertEqual(book["Summary"]["I6"].value, 1)
                 self.assertIsNone(book["Summary"]["I7"].value)
+                self.assertEqual([book["Summary"][cell].value for cell in ("B8", "C8")], [700, 140])
             finally:
                 book.close()
             app.button(key="clear_all_files").click().run(timeout=20)

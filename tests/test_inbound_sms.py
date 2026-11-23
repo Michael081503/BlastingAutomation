@@ -65,7 +65,8 @@ class SmsOutputTests(unittest.TestCase):
         accounts, replies = sms_files()
         sms = match_viber_sources(read_reply_source("accounts.csv", accounts), read_reply_source("replied.csv", replies),
                                   agent_replied_source="campaign_replies", match_mode="phone")
-        book = load_workbook(BytesIO(build_summary_workbook("", date(2026, 11, 18), "YES", viber, email, sms_report=sms)))
+        book = load_workbook(BytesIO(build_summary_workbook("", date(2026, 11, 18), "YES", viber, email, sms_report=sms)),
+                             data_only=True)
         try:
             self.assertEqual(book.sheetnames, OUTPUT_SHEETS)
             self.assertEqual(book["Summary"]["J4"].value, 2)

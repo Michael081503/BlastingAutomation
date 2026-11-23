@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -14,6 +15,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InboundStartupTests(unittest.TestCase):
+    def test_cached_recovery_lookup_policy_refreshes_page(self):
+        result = subprocess.run(
+            [sys.executable, "-c", "\n".join((
+                "import app_startup",
+                "app_startup.refresh_application_modules()",
+                "import inbound_reply_page",
+                "del inbound_reply_page.PL_RECOVERY_LOOKUP_VERSION",
+                "assert app_startup.refresh_application_modules() == {'inbound_reply_page'}",
+                "assert inbound_reply_page.PL_RECOVERY_LOOKUP_VERSION == 2",
+                "assert app_startup.refresh_application_modules() == set()",
+            ))], cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_app_navigation_accepts_cached_page_without_title_constant(self):
         import app_startup
 

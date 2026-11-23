@@ -128,12 +128,27 @@ class StartupTests(unittest.TestCase):
             assert inbound_reply_page.apply_phone_campaign_lookup is inbound_campaign_lookup.apply_phone_campaign_lookup
             data = b'email,LEVEL,phone_1\\nmatched@example.com,Level 1,09171234567\\n'
             lookup = inbound_reply_page.build_email_campaign_lookup([('Regular.csv', data)])
-            assert lookup.signature[0] == inbound_reply_page.EMAIL_CAMPAIGN_LOOKUP_VERSION == 7
+            assert lookup.signature[0] == inbound_reply_page.EMAIL_CAMPAIGN_LOOKUP_VERSION == 8
             source = inbound_reply_page.read_email_source('dc.csv', b'sender\\nunmatched@example.com\\n',
                                                          kind='dc', require_campaign=False)
             assert not inbound_reply_page.apply_email_campaign_lookup(source, lookup).records
             source = inbound_reply_page.read_reply_source('sms.csv', b'Phone\\n09181234567\\n', require_campaign=False)
             assert not inbound_reply_page.apply_phone_campaign_lookup(source, lookup).records
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
+    def test_cached_modules_refresh_for_merged_geo_campaigns(self):
+        self.run_isolated("""
+            import app_startup
+            app_startup.refresh_application_modules()
+            import inbound_reply, inbound_campaign_lookup, inbound_reply_page
+            del inbound_reply.inbound_campaign_label
+            refreshed = app_startup.refresh_application_modules()
+            assert {'inbound_reply', 'inbound_email', 'inbound_campaign_lookup', 'inbound_summary', 'inbound_reply_page'} <= refreshed
+            data = b'email,Area\\nshared@example.com,Region 3\\nshared@example.com,Mindanao\\n'
+            lookup = inbound_reply_page.build_email_campaign_lookup([('GEO.csv', data)])
+            assert lookup.signature[0] == inbound_campaign_lookup.EMAIL_CAMPAIGN_LOOKUP_VERSION
+            assert lookup.campaigns_by_email == {'shared@example.com': ('SBC Mindanao',)}
             assert app_startup.refresh_application_modules() == set()
         """)
 

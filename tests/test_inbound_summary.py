@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from inbound_email import match_email_sources, read_email_source
+from inbound_email import build_email_unreplied_workbook, match_email_sources, read_email_source
 from inbound_reply import CampaignReplyCounts, match_viber_sources, read_reply_source
 from inbound_summary import (
     OVERALL_BLAST_LABEL, build_summary_workbook, campaign_totals_key, display_cell,
@@ -201,6 +201,8 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(sheet["A1"].value, "NOVEMBER 12, 2026 DATA")
             self.assertEqual(sheet["L1"].value, "SENT TO OPS")
             self.assertEqual(sheet["M1"].value, "AGENT WORKED")
+            self.assertTrue(sheet["I3"].alignment.wrap_text)
+            self.assertGreaterEqual(sheet.row_dimensions[3].height, 30)
             self.assertEqual(sheet["B4"].value, 100)
             self.assertEqual(sheet["B4"].data_type, "n")
             self.assertEqual(sheet["C4"].value, 50)
@@ -210,7 +212,11 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(sheet["D4"].number_format, "0.00%")
             self.assertEqual(sheet["I4"].value, 2)
             self.assertEqual(sheet["M4"].value, 1)
-            self.assertEqual(sheet["N4"].value, .5)
+            for percentage, worked, replies in (("N4", "M4", "I4"), ("P4", "O4", "J4"), ("R4", "Q4", "K4")):
+                self.assertEqual(sheet[percentage].value,
+                                 f'=IF(AND(ISNUMBER({replies}),{replies}>0,ISNUMBER({worked}),{worked}>=0),'
+                                 f'{worked}/{replies},"")')
+                self.assertEqual(sheet[percentage].number_format, "0.00%")
             self.assertIsNone(sheet["J4"].value)
             self.assertIsNone(sheet["O4"].value)
             self.assertEqual(sheet.freeze_panes, "C4")
@@ -234,6 +240,61 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(detail_rows(book["SMS Unreplied"]), [])
         finally:
             book.close()
+
+    def test_unreplied_message_columns_wrap_and_fit_multiline_text_in_both_downloads(self):
+        from openpyxl import load_workbook
+
+        body = ("This sample message needs more than one line in the worksheet. " * 4).strip() + "\nSecond paragraph."
+        dc = read_email_source("DC.csv", csv_bytes(("sender", "Campaign", "body"), [
+            ("pending@example.com", "SBC B2", body),
+        ]), kind="dc")
+        history = read_email_source("History.csv", csv_bytes(("email", "sent"), []), kind="history")
+        report = match_email_sources(dc, history)
+        exports = (
+            (build_summary_workbook("", date(2026, 11, 19), "", email_report=report), "Email Unreplied", 3, "Source: body"),
+            (build_email_unreplied_workbook(report), "Unreplied Details", 1, "body"),
+        )
+        for data, title, header_row, header in exports:
+            with self.subTest(sheet=title):
+                workbook = load_workbook(BytesIO(data))
+                try:
+                    sheet = workbook[title]
+                    column = next(cell.column for cell in sheet[header_row] if cell.value == header)
+                    message = sheet.cell(header_row + 1, column)
+                    self.assertEqual(message.value, body)
+                    self.assertTrue(message.alignment.wrap_text)
+                    self.assertGreater(sheet.column_dimensions[message.column_letter].width, 75)
+                    self.assertGreater(sheet.row_dimensions[message.row].height, 30)
+                finally:
+                    workbook.close()
+
+    def test_email_unreplied_links_to_the_complete_text_of_overflowing_messages(self):
+        from openpyxl import load_workbook
+
+        body = "=Long message\n" + "A complete paragraph to display in the worksheet.\n" * 100
+        dc = read_email_source("DC.csv", csv_bytes(("sender", "Campaign", "body"), [
+            ("pending@example.com", "SBC B2", body),
+        ]), kind="dc")
+        history = read_email_source("History.csv", csv_bytes(("email", "sent"), []), kind="history")
+        report = match_email_sources(dc, history)
+        workbook = load_workbook(BytesIO(build_summary_workbook("", date(2026, 11, 19), "", email_report=report)))
+        try:
+            sheet = workbook["Email Unreplied"]
+            source = sheet["I4"]
+            self.assertEqual(sheet["B2"].value, 1)
+            self.assertEqual(sheet.auto_filter.ref, "A3:I4")
+            self.assertEqual(source.value, body)
+            self.assertEqual(source.hyperlink.location, "'Email Unreplied'!A7")
+            parts = [sheet.cell(row, 2) for row in range(7, sheet.max_row + 1)]
+            self.assertGreater(len(parts), 1)
+            self.assertEqual("".join(part.value for part in parts), body)
+            for part in parts:
+                self.assertTrue(part.alignment.wrap_text)
+                self.assertEqual(part.data_type, "s")
+                self.assertLessEqual(sheet.row_dimensions[part.row].height, 409)
+                self.assertEqual(sheet.cell(part.row, 1).hyperlink.location, "'Email Unreplied'!I4")
+        finally:
+            workbook.close()
 
     def test_manual_only_report_keeps_missing_channels_blank(self):
         from openpyxl import load_workbook

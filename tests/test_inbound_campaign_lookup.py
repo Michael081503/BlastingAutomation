@@ -101,7 +101,7 @@ class CampaignLookupTests(unittest.TestCase):
         files = [("first.xlsx", geo_file()), ("second.xlsx", regular_file("LEVEL 2"))]
         expected = {
             "client@example.com": ("SBC Level 1",),
-            "north@example.com": ("SBC Region 3",),
+            "north@example.com": ("SBC Mindanao",),
             "south@example.com": ("SBC Mindanao",),
         }
         self.assertEqual(build_email_campaign_lookup(files).campaigns_by_email, expected)
@@ -133,8 +133,30 @@ class CampaignLookupTests(unittest.TestCase):
             ("south@example.com", "mindanao", "Level 1"),
         ]))
         self.assertEqual(csv_source.campaigns_by_email, {
-            "north@example.com": ("SBC Region 3",), "south@example.com": ("SBC Mindanao",),
+            "north@example.com": ("SBC Mindanao",), "south@example.com": ("SBC Mindanao",),
         })
+
+    def test_direct_reply_uploads_merge_geo_aliases_and_match_across_areas(self):
+        dc = read_email_source("dc.csv", csv_bytes(("sender", "Campaign"), [
+            ("shared@example.com", "SBC Region 3"), ("SHARED@example.com", "SBC Mindanao"),
+            ("other@example.com", "R3"),
+        ]), kind="dc")
+        history = read_email_source("history.csv", csv_bytes(("email", "sent"), [
+            ("shared@example.com", "Agent response"),
+        ]), kind="history")
+        customers = read_reply_source("customers.csv", csv_bytes(("Phone", "Bank Campaign"), [
+            ("09171234567", "SBC Region 3"), ("+63 917 123 4567", "SBC Mindanao"),
+            ("09181234567", "SBC GEO R3"),
+        ]))
+        agents = read_reply_source("agents.csv", csv_bytes(("Phone", "Bank Campaign"), [
+            ("09181234567", "Mindanao"),
+        ]))
+        phone = match_viber_sources(customers, agents, agent_replied_source="campaign_replies", match_mode="phone")
+        email = match_email_sources(dc, history)
+        for report in (email, phone):
+            self.assertEqual([(c.campaign, c.unique_people, c.agent_replied) for c in report.campaigns],
+                             [("SBC Mindanao", 2, 1)])
+        self.assertEqual(customers.records[0].source_values[1], "SBC Region 3")
 
     def test_bad_lookup_is_rejected_instead_of_using_a_partial_index(self):
         for name, data in (("bad.xlsx", b"broken"), ("wrong.csv", b"email,Unrelated\nclient@example.com,test\n")):
@@ -241,7 +263,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
-            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 1", "SBC Mindanao", "SBC Region 3"])
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 1", "SBC Mindanao"])
             self.assertTrue(all(row[8] == "—" for row in rows(html)))
             uploads["inbound_reply_email_1_upload"] = Upload("history.csv", csv_bytes(("email", "sent"), [
                 ("client@example.com", "Agent reply"),
@@ -250,7 +272,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
             self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1"])
-            self.assertEqual([row[12] for row in rows(html)], ["1", "0", "—"])
+            self.assertEqual([row[12] for row in rows(html)], ["1", "0"])
             call = next(call for call in reversed(downloads.call_args_list)
                         if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
@@ -261,7 +283,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             uploads["inbound_reply_email_lookup_uploads"][0] = Upload("active.xlsx", regular_file("Level 7"))
             app.run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 7", "SBC Mindanao", "SBC Region 3"])
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 7", "SBC Mindanao"])
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("active.xlsx", regular_file("Level 7"))]
             app.run(timeout=20)
             self.assertFalse(app.exception)

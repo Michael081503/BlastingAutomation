@@ -4,6 +4,7 @@ import unittest
 from datetime import date
 from io import BytesIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from unittest.mock import patch
 
 from openpyxl import load_workbook
@@ -41,9 +42,10 @@ def all_channel_uploads(level="Level 1"):
     geo = workbook_bytes([("OVERALL", [
         ("email", "placement", "Phone 1", "Area"),
         ("fran@example.com", "Level 6", phones["fran"], "Region 3"),
-        ("gina@example.com", "Level 1", phones["gina"], "Region 3"),
+        ("gina@example.com", "Level 1", phones["gina"], "R3"),
         ("hugo@example.com", "Level 6", phones["hugo"], "Mindanao"),
         ("iris@example.com", "Level 1", phones["iris"], "Mindanao"),
+        (" HUGO@EXAMPLE.COM ", "Level 6", "+63" + phones["hugo"][1:], "Region 3"),
     ])])
     uploads = {"inbound_reply_email_lookup_uploads": [Upload("regular.xlsx", regular), Upload("geo.xlsx", geo)]}
     phone_headers = ("ID", "Client Name", "Phone", "Bank Campaign", "Message Content")
@@ -120,6 +122,59 @@ class PhonePopulationTests(unittest.TestCase):
 
 
 class AllChannelsPageTests(unittest.TestCase):
+    def test_saved_databases_are_reused_after_clear_and_in_a_new_session(self):
+        from streamlit.testing.v1 import AppTest
+        from inbound_campaign_lookup import read_saved_campaign_lookup_files
+        from upload_state import render_clear_all_files
+
+        with NamedTemporaryFile(suffix=".zip") as temporary:
+            saved_path = Path(temporary.name)
+        self.addCleanup(saved_path.unlink, missing_ok=True)
+        page = str(ROOT / "pages" / "INBOUND_REPLY.py")
+        lookup_key = "inbound_reply_email_lookup_uploads"
+        uploads = all_channel_uploads()
+        original_files = [(upload.name, upload.getvalue()) for upload in uploads[lookup_key]]
+
+        with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", saved_path), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])):
+            app = AppTest.from_file(page).run(timeout=20)
+            app.button(key="inbound_reply_save_lookup").click().run(timeout=20)
+            self.assertFalse(app.error)
+            self.assertEqual(read_saved_campaign_lookup_files(saved_path), original_files)
+
+            uploads.pop(lookup_key)
+            fresh = AppTest.from_file(page).run(timeout=20)
+            self.assertFalse(fresh.exception)
+            for channel in ("email", "sms", "viber"):
+                report = fresh.session_state[f"inbound_reply_{channel}_result"]["report"]
+                self.assertEqual([entry.campaign for entry in report.campaigns],
+                                 ["SBC Level 1", "SBC Level 6", "SBC Mindanao"])
+            fresh.button(key="clear_all_files").click().run(timeout=20)
+            self.assertNotIn("inbound_reply_email_result", fresh.session_state)
+            self.assertEqual(read_saved_campaign_lookup_files(saved_path), original_files)
+            self.assertTrue(any("Using saved campaign lookup files" in caption.value for caption in fresh.caption))
+
+            uploads[lookup_key] = [Upload("regular.xlsx", b"broken")]
+            app.run(timeout=20)
+            self.assertTrue(app.error)
+            self.assertFalse(any(button.key == "inbound_reply_save_lookup" for button in app.button))
+            self.assertEqual(read_saved_campaign_lookup_files(saved_path), original_files)
+
+            uploads[lookup_key] = all_channel_uploads("Level 7")[lookup_key]
+            app.run(timeout=20)
+            app.button(key="inbound_reply_save_lookup").click().run(timeout=20)
+            self.assertFalse(app.error)
+            uploads.pop(lookup_key)
+            fresh.run(timeout=20)
+            lookup = fresh.session_state["inbound_reply_email_lookup"]["lookup"]
+            self.assertEqual(lookup.campaigns, ("SBC Level 6", "SBC Level 7", "SBC Mindanao"))
+
+            fresh.button(key="inbound_reply_remove_saved_lookup").click().run(timeout=20)
+            self.assertFalse(fresh.exception)
+            self.assertFalse(saved_path.exists())
+            self.assertNotIn("inbound_reply_email_lookup", fresh.session_state)
+
     def test_phone_reply_files_can_omit_campaign_in_csv_and_excel_when_lookup_is_uploaded(self):
         from streamlit.testing.v1 import AppTest
 
@@ -149,7 +204,7 @@ class AllChannelsPageTests(unittest.TestCase):
         from upload_state import render_clear_all_files
 
         uploads = all_channel_uploads()
-        expected_labels = ["SBC Level 1", "SBC Level 6", "SBC Mindanao", "SBC Region 3"]
+        expected_labels = ["SBC Level 1", "SBC Level 6", "SBC Mindanao"]
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
                 patch("inbound_reply_page.inbound_report_date", return_value=REPORT_DATE), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
@@ -168,14 +223,17 @@ class AllChannelsPageTests(unittest.TestCase):
             self.assertEqual([row[0] for row in rows], expected_labels)
             self.assertEqual(rows[0][1:11], ["5,000", "4,337", "86.74%", "3,500", "70.00%", "2,500", "50.00%", "3", "3", "3"])
             self.assertEqual(rows[0][12:], ["2", "66.67%", "1", "33.33%", "2", "66.67%"])
-            self.assertEqual(rows[3][12:], ["0", "0.00%", "0", "0.00%", "0", "0.00%"])
+            self.assertEqual(rows[2][8:11], ["4", "4", "4"])
+            self.assertEqual(rows[2][12:], ["1", "25.00%"] * 3)
             call = next(call for call in reversed(downloads.call_args_list) if call.kwargs.get("key") == "inbound_reply_summary_download")
-            book = load_workbook(BytesIO(call.kwargs["data"]()))
+            book = load_workbook(BytesIO(call.kwargs["data"]()), data_only=True)
             try:
                 self.assertEqual([book["Summary"].cell(r, 1).value for r in range(4, 4 + len(expected_labels))], expected_labels)
                 self.assertEqual(book["Summary"].max_row, 4 + len(expected_labels))
                 for cell in ("I4", "J4", "K4"):
                     self.assertEqual(book["Summary"][cell].value, 3)
+                self.assertEqual([book["Summary"].cell(6, col).value for col in (9, 10, 11, 13, 15, 17)],
+                                 [4, 4, 4, 1, 1, 1])
                 for cell, expected in (("M4", 2), ("N4", 2 / 3), ("O4", 1), ("P4", 1 / 3), ("Q4", 2), ("R4", 2 / 3)):
                     self.assertAlmostEqual(book["Summary"][cell].value, expected)
                 for title, count in (("SMS Unreplied", 6), ("Viber Unreplied", 5), ("Email Unreplied", 5)):

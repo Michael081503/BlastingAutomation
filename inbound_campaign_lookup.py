@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import csv
+import os
 import re
 from dataclasses import dataclass, replace
 from collections import Counter
 from hashlib import sha256
 from io import BytesIO, StringIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from zipfile import BadZipFile, ZipFile
 
 from inbound_email import EmailSource, header_key, normalized_email
-from inbound_reply import InboundReplyError, ReplySource, inbound_csv_delimiter, normalized_campaign, normalized_phone
+from inbound_reply import (
+    PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplySource, inbound_campaign_label, inbound_csv_delimiter,
+    normalized_campaign, normalized_phone,
+)
 
 
-EMAIL_CAMPAIGN_LOOKUP_VERSION = 7
+EMAIL_CAMPAIGN_LOOKUP_VERSION = 8
 PHONE_CAMPAIGN_LOOKUP_VERSION = 1
 BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
 B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
@@ -22,6 +28,7 @@ LOOKUP_CAMPAIGN_LABELS_VERSION = 1
 REGULAR_LEVEL_GROUPING_VERSION = 1
 MATCHED_CAMPAIGNS_ONLY_VERSION = 1
 UNMATCHED_CAMPAIGN = "Unmatched campaign"
+SAVED_CAMPAIGN_LOOKUP_PATH = Path(__file__).resolve().parent / "uploads" / "inbound-campaign-databases.zip"
 
 
 @dataclass(frozen=True)
@@ -96,7 +103,7 @@ def _campaign(value: object, kind: str) -> str:
         return f"SBC Level {1 if level in (2, 3, 4, 5) else level}"
     match = re.fullmatch(r"region[\s_-]*(\d+)", text, re.IGNORECASE)
     area = f"Region {int(match[1])}" if match else ("NCR" if text.casefold() == "ncr" else text.title())
-    return f"SBC {area}"
+    return inbound_campaign_label(f"SBC {area}")
 
 
 def _read_rows(rows, index: dict, phone_index: dict, counts: Counter, *, fixed_campaign: str = "",
@@ -239,14 +246,46 @@ def build_email_campaign_lookup(files: list[tuple[str, bytes]]) -> EmailCampaign
                                _resolved_campaigns(index), _resolved_campaigns(phone_index))
 
 
+def read_saved_campaign_lookup_files(path: Path) -> list[tuple[str, bytes]]:
+    """Read the original filenames and contents of the saved lookup files."""
+    try:
+        with ZipFile(path) as archive:
+            files = [(entry.filename.split("/", 1)[-1], archive.read(entry))
+                     for entry in archive.infolist() if not entry.is_dir()]
+        if not files:
+            raise BadZipFile("No saved lookup files")
+        return files
+    except (BadZipFile, OSError, RuntimeError) as error:
+        raise InboundReplyError("Could not read the saved campaign databases. Upload the files again to replace them.") from error
+
+
+def save_campaign_lookup_files(path: Path, files: list[tuple[str, bytes]]) -> None:
+    """Replace the saved set only after all lookup files have been written."""
+    temporary = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(dir=path.parent, delete=False) as output:
+            temporary = Path(output.name)
+            with ZipFile(output, "w") as archive:
+                for index, (name, contents) in enumerate(files):
+                    archive.writestr(f"{index}/{name}", contents)
+        os.replace(temporary, path)
+    except OSError as error:
+        raise InboundReplyError("Could not save the campaign databases. Check write access to the app's uploads folder.") from error
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup) -> EmailSource:
-    """Keep matched campaign memberships; exclude addresses without a lookup match."""
+    """Resolve campaigns for non-PL RECOVERY email rows."""
     records, unmatched = [], set()
     header = "Lookup Campaign"
     while header in source.headers:
         header += " (lookup)"
     for row in source.records:
-        campaigns = lookup.campaigns_by_email.get(row.email)
+        campaigns = ((PL_RECOVERY_CAMPAIGN,) if row.campaign == PL_RECOVERY_CAMPAIGN
+                     else lookup.campaigns_by_email.get(row.email))
         if not campaigns:
             unmatched.add(row.email)
             continue
@@ -258,7 +297,7 @@ def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup
 
 
 def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup) -> ReplySource:
-    """Keep SMS/Viber accounts with a campaign match in the lookup phone columns."""
+    """Resolve campaigns for non-PL RECOVERY SMS and Viber rows."""
     records, unmatched = [], set()
     excluded = source.excluded_rows
     header = "Lookup Campaign"
@@ -269,7 +308,8 @@ def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup
         if not phone:
             excluded += 1
             continue
-        campaigns = lookup.campaigns_by_phone.get(phone)
+        campaigns = ((PL_RECOVERY_CAMPAIGN,) if row.campaign == PL_RECOVERY_CAMPAIGN
+                     else lookup.campaigns_by_phone.get(phone))
         if not campaigns:
             unmatched.add(phone)
             continue

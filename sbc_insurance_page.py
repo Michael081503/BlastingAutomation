@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from functools import partial
+from itertools import islice
 from pathlib import Path
 
 import pandas as pd
@@ -16,7 +17,7 @@ from automation import (
 from exports import EXCEL_SAFE_CSV_VERSION, build_export_csv, build_export_excel
 from sbc_insurance import (
     SBC_INSURANCE_VERSION, SBC_INSURANCE_MASTERLIST_VERSION, SBC_INSURANCE_AUTOMATIC_STATUS_VERSION,
-    SBC_INSURANCE_INCLUDED_STATUSES, build_filtered_datagrid,
+    SBC_INSURANCE_INCLUDED_STATUSES, build_filtered_datagrid, filtered_datagrid_data,
     inspect_insurance_masterlist, prepare_insurance, read_insurance_masterlist,
     read_insurance_source, status_label,
 )
@@ -123,9 +124,9 @@ def render_sbc_insurance() -> None:
                        "SBC INSURANCE Output.xlsx", mime=XLSX_MIME, type="primary",
                        on_click="ignore", key="sbc_insurance_filtered_download")
     if result.contacts is None:
-        st.caption("Uses the same 16-column campaign template as GEO, RECO, B2 and B4. Upload a masterlist to fill email and phone.")
+        st.caption("Upload the masterlist to look up EMAIL and MOBILE for the output and campaign files.")
     else:
-        st.caption("EMAIL fills email and MOBILE fills phone. ADDRESS1–ADDRESS3 are available in the Contacts workbook; the campaign keeps its 16 columns.")
+        st.caption("The DataGrid output includes EMAIL and MOBILE. These feed email and phone in the campaign file. The Contacts workbook also includes postal addresses.")
         st.caption("Account No. matches IS Ref No# first, then Financing/Card No. matches PN_Number when no reference is found. Repeated matches use the first valid contacts; differences are counted in Results.")
     if result.stats["Selected rows with blank Financing/Card No."]:
         st.info("Blank Financing/Card No. values form one duplicate group. The first eligible row is kept, as in the sample output.")
@@ -147,7 +148,8 @@ def render_sbc_insurance() -> None:
             for status in options
         ]), hide_index=True, width="stretch")
     st.subheader("Output preview")
-    st.dataframe(pd.DataFrame([row.values for row in result.rows[:100]], columns=result.source.headers)
+    output_headers, _, output_rows = filtered_datagrid_data(result)
+    st.dataframe(pd.DataFrame(islice(output_rows, 100), columns=output_headers)
                  .map(lambda value: "" if value is None else str(value)), hide_index=True, width="stretch")
     st.caption(f"{min(100, len(result.rows)):,} / {len(result.rows):,} accounts")
     positions = template_column_positions(file.headers)
