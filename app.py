@@ -15,7 +15,7 @@ import app_startup
 
 app_startup.refresh_application_modules()
 
-from branding import BANK_ICON, render_bank_branding
+from branding import BANK_ICON, workspace_page
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
     NEW_ENDO_OUTPUT_FILENAMES, OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
@@ -95,7 +95,6 @@ def show_preview(records: list[dict], count: int, headers: list[str]) -> None:
 
 
 def render_workbook_page() -> None:
-    render_bank_branding()
     st.title("GEO & RECO")
     if st.session_state.get("campaign_csv_default_version") != CSV_CAMPAIGN_DEFAULT_VERSION:
         st.session_state["campaign_output_format"] = "CSV (.csv)"
@@ -569,7 +568,8 @@ def main() -> None:
         st.Page("pages/SBC_INSURANCE.py", title="SBC INSURANCE", icon=":material/health_and_safety:", url_path="SBC_INSURANCE"),
         st.Page("pages/INBOUND_REPLY.py", title="INBOUND REPLY", icon=":material/inbox:", url_path="INBOUND_REPLY"),
     ])
-    page.run()
+    with workspace_page(page.url_path):
+        page.run()
 
 
 if __name__ == "__main__":

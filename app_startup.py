@@ -80,7 +80,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ("upload_state", ("CLEAR_UPLOADS_VERSION", "WORKSPACE_ACTIONS_VERSION", "B4_UPLOADS_VERSION", "B4_AUTOSTAT_UPLOADS_VERSION", "CAMPAIGN_FORMAT_SETTINGS_VERSION", "EXCEL_SAFE_CSV_SETTINGS_VERSION", "SBC_INSURANCE_UPLOADS_VERSION", "SBC_INSURANCE_MASTERLIST_UPLOADS_VERSION", "SBC_INSURANCE_AUTOMATIC_STATUS_SETTINGS_VERSION", "INBOUND_REPLY_UPLOADS_VERSION", "VIBER_REPLY_UPLOADS_VERSION", "EMAIL_REPLY_UPLOADS_VERSION", "INBOUND_MANUAL_TOTALS_VERSION", "SMS_REPLY_UPLOADS_VERSION", "SOURCE_CAMPAIGN_UPLOADS_VERSION", "EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION", "ENCRYPTED_SOURCE_UPLOADS_VERSION", "NEW_ENDO_OUTPUT_UPLOADS_VERSION", "upload_widget_key", "clear_all_files", "render_clear_all_files"), ()),
         ("branding", (
             "render_bank_branding", "BANK_ICON", "CHRISTMAS_THEME_VERSION", "SNOWFALL_VERSION", "CHRISTMAS_SPIDERMAN_VERSION",
-            "render_clear_all_files",
+            "render_clear_all_files", "workspace_page",
         ), ("upload_state",)),
         ("email_validation", ("EMAIL_VALIDATION_VERSION", "validated_email"), ()),
         ("phone_validation", ("PHONE_NORMALIZATION_VERSION", "validated_phone", "first_valid_phone"), ()),

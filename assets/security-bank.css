@@ -86,6 +86,18 @@
     padding-bottom: 3rem;
 }
 
+/* The page block changes with the route. The header and theme sit outside it. */
+@media (prefers-reduced-motion: no-preference) {
+    [data-testid="stVerticalBlock"][class*="st-key-sbc_page_"]:not(:empty) {
+        animation: sbc-page-enter 180ms ease-out;
+    }
+}
+
+@keyframes sbc-page-enter {
+    from { opacity: 0.72; }
+    to { opacity: 1; }
+}
+
 [data-testid="stHorizontalBlock"].st-key-sbc_workspace_header {
     position: relative;
     overflow: hidden;
