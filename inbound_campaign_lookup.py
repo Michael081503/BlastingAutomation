@@ -15,7 +15,7 @@ from zipfile import BadZipFile, ZipFile
 
 from inbound_email import EmailSource, header_key, normalized_email
 from inbound_reply import (
-    PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplyRecord, ReplySource, excluded_inbound_campaign,
+    PL_RECOVERY_CAMPAIGN, SBLEGAL_CAMPAIGN, InboundReplyError, ReplyRecord, ReplySource, excluded_inbound_campaign,
     inbound_campaign_label, inbound_csv_delimiter, client_account_key, normalized_campaign, normalized_phone,
 )
 
@@ -26,8 +26,6 @@ BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
 B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
 LOOKUP_CAMPAIGN_LABELS_VERSION = 1
 REGULAR_LEVEL_GROUPING_VERSION = 1
-MATCHED_CAMPAIGNS_ONLY_VERSION = 1
-UNMATCHED_CAMPAIGN = "Unmatched campaign"
 SAVED_CAMPAIGN_LOOKUP_PATH = Path(__file__).resolve().parent / "uploads" / "inbound-campaign-databases.zip"
 
 
@@ -291,8 +289,10 @@ def _workbook_email_placements(source: EmailSource) -> dict[str, tuple[str, ...]
             continue
         for value in str(values[campaign_col] or "").split(";"):
             campaign = inbound_campaign_label(value.strip())
-            if campaign and not excluded_inbound_campaign(campaign):
-                index.setdefault(row.email, {}).setdefault(normalized_campaign(campaign), campaign)
+            if campaign:
+                campaigns = index.setdefault(row.email, {})
+                if not excluded_inbound_campaign(campaign):
+                    campaigns.setdefault(normalized_campaign(campaign), campaign)
     return {email: tuple(campaigns.values()) for email, campaigns in index.items()}
 
 
@@ -310,9 +310,11 @@ def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup
             campaigns = (PL_RECOVERY_CAMPAIGN,)
         else:
             campaigns = campaigns_by_email.get(row.email)
+            if lookup is None and campaigns == ():
+                continue  # The workbook assigned only excluded campaigns.
         if not campaigns:
             unmatched.setdefault(row.email, row)
-            continue
+            campaigns = (SBLEGAL_CAMPAIGN,)
         values = row.source_values[:len(source.headers)] + (None,) * max(0, len(source.headers) - len(row.source_values))
         for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))
@@ -334,8 +336,7 @@ def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup
             row = _resolve_client_placement(row, phone, lookup)
             if row.placement_issue:
                 unmatched.setdefault(client_account_key(row), row)
-                continue
-            campaigns = (row.campaign,)
+            campaigns = (SBLEGAL_CAMPAIGN if row.placement_issue else row.campaign,)
         else:
             if not phone:
                 excluded += 1
@@ -344,7 +345,7 @@ def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup
                          else lookup.campaigns_by_phone.get(phone))
             if not campaigns:
                 unmatched.setdefault(phone, row)
-                continue
+                campaigns = (SBLEGAL_CAMPAIGN,)
         values = row.source_values[:len(source.headers)] + (None,) * max(0, len(source.headers) - len(row.source_values))
         for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))

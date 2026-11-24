@@ -9,12 +9,12 @@ from pathlib import Path
 
 from email_validation import validated_email
 from inbound_reply import (
-    CAMPAIGN_HEADER_ALIASES, CampaignReplyCounts, InboundReplyError, build_reply_workbook,
+    CAMPAIGN_HEADER_ALIASES, SBLEGAL_CAMPAIGN, CampaignReplyCounts, InboundReplyError, build_reply_workbook,
     excluded_inbound_campaign, inbound_campaign_label, inbound_csv_delimiter, normalized_campaign,
 )
 
 
-EMAIL_REPLY_VERSION = 7
+EMAIL_REPLY_VERSION = 8
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 
@@ -113,7 +113,7 @@ def _read_rows(rows, filename: str, kind: str, sheet: str, *, require_campaign: 
         if not any(value is not None and str(value).strip() for value in row):
             continue
         values = {field: row[index] if index < len(row) else None for field, index in positions.items()}
-        campaign = str(values.get("campaign") or "").strip() or "Unspecified campaign"
+        campaign = str(values.get("campaign") or "").strip() or SBLEGAL_CAMPAIGN
         if excluded_inbound_campaign(campaign):
             continue
         email = normalized_email(values["email"])

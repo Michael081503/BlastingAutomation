@@ -176,7 +176,7 @@ class RecoveryLookupPageTests(unittest.TestCase):
                 self.assertFalse(app.exception)
                 self.assertFalse(app.error)
                 email = app.session_state["inbound_reply_email_result"]["report"]
-                expected = [("PL RECOVERY", 1), ("SBC Level 6", 1)] if with_lookup else [
+                expected = [("PL RECOVERY", 1), ("SBC Level 6", 1), ("sblegal", 1)] if with_lookup else [
                     ("Original campaign", 2), ("PL RECOVERY", 1),
                 ]
                 self.assertEqual([(c.campaign, c.unique_people) for c in email.campaigns], expected)

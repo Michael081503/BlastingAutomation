@@ -14,7 +14,7 @@ from textwrap import TextWrapper
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 8
+VIBER_REPLY_VERSION = 9
 SMS_CLIENT_TOUCH_VERSION = 2
 CUSTOMER_REPLY_POPULATION_VERSION = 1
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
@@ -35,6 +35,7 @@ SOURCE_NAMES = ("message_logs", "campaign_replies")
 MATCH_MODES = ("name", "phone")
 MINDANAO_CAMPAIGN = "SBC Mindanao"
 PL_RECOVERY_CAMPAIGN = "PL RECOVERY"
+SBLEGAL_CAMPAIGN = "sblegal"
 MINDANAO_CAMPAIGN_ALIASES = frozenset({
     "mindanao", "sbcmindanao", "sbcgeomindanao",
     "region3", "r3", "sbcregion3", "sbcr3", "sbcgeoregion3", "sbcgeor3",
@@ -74,6 +75,8 @@ def normalized_campaign(value: str) -> str:
 def inbound_campaign_label(value: str) -> str:
     """Normalize source labels for shared reporting campaigns."""
     name = normalized_name(value)
+    if name in {SBLEGAL_CAMPAIGN, "unspecified campaign", "unmatched campaign"}:
+        return SBLEGAL_CAMPAIGN
     if " pl recovery " in f" {name} ":
         return PL_RECOVERY_CAMPAIGN
     if name.replace(" ", "") in MINDANAO_CAMPAIGN_ALIASES:
@@ -219,7 +222,7 @@ def _read_rows(rows: Iterable, filename: str, sheet: str, *, require_campaign: b
             continue
         values = {name: str(row[index]).strip() if index < len(row) and row[index] is not None else ""
                   for name, index in positions.items()}
-        campaign = values.get("campaign") or "Unspecified campaign"
+        campaign = values.get("campaign") or SBLEGAL_CAMPAIGN
         if excluded_inbound_campaign(campaign):
             continue
         if not values.get("account") and not normalized_name(values.get("name", "")) and not normalized_phone(values["phone"]):
@@ -265,9 +268,11 @@ def read_reply_source(filename: str, data: bytes, *, require_campaign: bool = Tr
                 for row in sheet.iter_rows(min_row=1, max_row=50, values_only=True):
                     header = _header_positions(row, require_campaign=require_campaign)
                     if header is not None:
-                        candidates.append((sheet, header[1]))
+                        positions, layout = header
+                        candidates.append((sheet, layout, "campaign" in positions))
                         break
-            candidates = [item for item in candidates if item[1]] or candidates
+            candidates = ([item for item in candidates if item[1]]
+                          or [item for item in candidates if item[2]] or candidates)
             if len(candidates) != 1:
                 expected = "Phone and Bank Campaign" if require_campaign else "Phone"
                 raise InboundReplyError(

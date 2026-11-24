@@ -200,6 +200,8 @@ def build_client_accounts_workbook(report) -> bytes:
             placement_source = PL_RECOVERY_CAMPAIGN
         elif row.placement_phone:
             placement_source = "Database phone"
+        elif row.placement_issue:
+            placement_source = row.placement_issue
         values = (row.source_values + (None,) * len(report.message_logs.headers))[:len(report.message_logs.headers)]
         rows.append((row.campaign, "Touched" if touched else "No touch", *values, placement_source, row.placement_phone))
     full_text = append_report_detail_rows(sheet, rows)

@@ -183,7 +183,7 @@ class CampaignLookupTests(unittest.TestCase):
         report = match_email_sources(apply_email_campaign_lookup(dc, lookup), history)
         self.assertEqual([(c.campaign, c.agent_replied) for c in report.campaigns], [("SBC Level 1", 1)])
 
-    def test_matching_and_both_downloads_exclude_unmatched_accounts_and_keep_original_fields(self):
+    def test_matching_and_both_downloads_group_unmatched_accounts_and_keep_original_fields(self):
         files = [
             ("regular.xlsx", regular_file()),
             ("extra.csv", csv_bytes(("email", "Area"), [("client@example.com", "Mindanao")])),
@@ -203,11 +203,11 @@ class CampaignLookupTests(unittest.TestCase):
         ]), kind="history")
         report = match_email_sources(resolved, history)
         self.assertEqual([(c.campaign, c.unique_people, c.agent_replied, c.awaiting_reply) for c in report.campaigns], [
-            ("SBC Level 1", 1, 0, 1), ("SBC Mindanao", 1, 0, 1),
+            ("SBC Level 1", 1, 0, 1), ("SBC Mindanao", 1, 0, 1), ("sblegal", 2, 1, 1),
         ])
-        self.assertEqual(report.totals.unique_people, 1)
-        self.assertEqual(report.totals.agent_replied, 0)
-        self.assertEqual({row.email for row in resolved.records}, {"client@example.com"})
+        self.assertEqual(report.totals.unique_people, 3)
+        self.assertEqual(report.totals.agent_replied, 1)
+        self.assertEqual({row.email for row in resolved.records}, {"client@example.com", "unknown@example.com", "sent@example.com"})
         self.assertEqual(resolved.unmatched_addresses, 2)
         self.assertEqual(len(dc.records), 5)
         self.assertEqual(dc.headers, ("ID", "sender", "Campaign", "Email"))
@@ -215,21 +215,22 @@ class CampaignLookupTests(unittest.TestCase):
         try:
             values = list(book["Unreplied Details"].values)
             self.assertEqual(values[0], (*dc.headers, "Lookup Campaign", "Matched Email", "Reply Status"))
-            self.assertEqual([row[4] for row in values[1:]], ["SBC Level 1", "SBC Mindanao"])
+            self.assertEqual([row[4] for row in values[1:]], ["SBC Level 1", "SBC Mindanao", "sblegal"])
             self.assertEqual(values[1][:4], ("001", " CLIENT@example.com ", "Generic campaign", "Respond Now"))
-            self.assertEqual(book["Summary"].cell(4, 2).value, 2)
+            self.assertEqual(values[-1][:4], ("003", "unknown@example.com", "Generic campaign", "Respond Now"))
+            self.assertEqual(book["Summary"].cell(5, 2).value, 3)
         finally:
             book.close()
         book = load_workbook(BytesIO(build_summary_workbook("", date(2026, 11, 18), "—", email_report=report)))
         try:
-            self.assertEqual([book["Summary"].cell(i, 1).value for i in (4, 5)],
-                             ["SBC Level 1", "SBC Mindanao"])
-            self.assertEqual(book["Summary"].max_row, 6)
+            self.assertEqual([book["Summary"].cell(i, 1).value for i in (4, 5, 6)],
+                             ["SBC Level 1", "SBC Mindanao", "sblegal"])
+            self.assertEqual(book["Summary"].max_row, 7)
             values = list(book["Email Unreplied"].values)
-            self.assertEqual(len(values[3:]), 2)
-            self.assertEqual(book["Email Unreplied"]["B2"].value, 2)
+            self.assertEqual(len(values[3:]), 3)
+            self.assertEqual(book["Email Unreplied"]["B2"].value, 3)
             self.assertIn("Source: Lookup Campaign", values[2])
-            self.assertEqual([row[1] for row in values[3:]], ["SBC Level 1", "SBC Mindanao"])
+            self.assertEqual([row[1] for row in values[3:]], ["SBC Level 1", "SBC Mindanao", "sblegal"])
         finally:
             book.close()
 
@@ -263,7 +264,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             report = app.session_state["inbound_reply_email_result"]["report"]
             self.assertTrue(report.dc.workbook_placements)
             self.assertEqual([(row.campaign, row.unique_people) for row in report.campaigns],
-                             [("PL RECOVERY", 1), ("SBC B2", 1), ("SBC Level 6", 1)])
+                             [("PL RECOVERY", 1), ("SBC B2", 1), ("SBC Level 6", 1), ("sblegal", 1)])
             self.assertEqual(report.dc.unmatched_addresses, 1)
             call = next(call for call in downloads.call_args_list
                         if call.kwargs.get("key") == "inbound_reply_unmatched_download")
@@ -281,7 +282,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             report = app.session_state["inbound_reply_email_result"]["report"]
             self.assertFalse(report.dc.workbook_placements)
             self.assertEqual([(row.campaign, row.unique_people) for row in report.campaigns],
-                             [("PL RECOVERY", 1), ("SBC Level 7", 1)])
+                             [("PL RECOVERY", 1), ("SBC Level 7", 1), ("sblegal", 1)])
 
     def test_preview_processing_same_name_replacement_errors_removal_and_clear_update_results(self):
         from streamlit.testing.v1 import AppTest
@@ -306,6 +307,7 @@ class CampaignLookupPageTests(unittest.TestCase):
             return table_cells(call.args[0])
 
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
                 patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
@@ -336,9 +338,10 @@ class CampaignLookupPageTests(unittest.TestCase):
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("active.xlsx", regular_file("Level 7"))]
             app.run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 7"])
-            self.assertEqual([metric.value for metric in app.metric], ["1", "1", "0"])
-            self.assertTrue(any("Excluded 1 email addresses without a campaign match" in caption.value for caption in app.caption))
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 7", "sblegal"])
+            self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1"])
+            self.assertTrue(any("1 email addresses without a campaign match are grouped under sblegal" in caption.value
+                                for caption in app.caption))
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("bad.xlsx", b"broken")]
             app.run(timeout=20)
             self.assertFalse(app.exception)
@@ -349,7 +352,9 @@ class CampaignLookupPageTests(unittest.TestCase):
             uploads["inbound_reply_email_lookup_uploads"] = []
             app.run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertTrue(app.error)  # Campaign is required again when no lookup files are present.
+            self.assertFalse(app.error)
+            self.assertEqual([row[0] for row in rows(html)], ["sblegal"])
+            self.assertEqual(rows(html)[0][8], "2")
             self.assertNotIn("inbound_reply_email_lookup", app.session_state)
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("active.xlsx", regular_file())]
             app.run(timeout=20)

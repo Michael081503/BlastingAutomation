@@ -145,6 +145,7 @@ class BucketLookupPageTests(unittest.TestCase):
                 ("BUCKET-2", "Customer", "09321234567", "Original Campaign", "Agent response"),
             ])
         with patch("branding.render_bank_branding"), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
                 patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
@@ -169,7 +170,7 @@ class BucketLookupPageTests(unittest.TestCase):
                 self.assertEqual(book["Summary"]["A4"].value, "SBC B2")
                 self.assertEqual(book["Summary"]["A5"].value, "SBC B4")
                 self.assertEqual(book["Summary"]["I4"].value, 3)
-                for title, count in (("Email Unreplied", 9), ("SMS Unreplied", 9), ("Viber Unreplied", 8)):
+                for title, count in (("Email Unreplied", 10), ("SMS Unreplied", 10), ("Viber Unreplied", 9)):
                     self.assertEqual(book[title]["B2"].value, count)
                     self.assertEqual(book[title].max_row - 3, count)
                     self.assertTrue(all(book[title].cell(row, 2).value in [row[0] for row in displayed()]

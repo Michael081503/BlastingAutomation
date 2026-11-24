@@ -117,7 +117,8 @@ class SmsOutputTests(unittest.TestCase):
         result = apply_phone_campaign_lookup(clients, lookup)
         self.assertEqual(result.duplicate_rows, 2)
         self.assertEqual([(row.account, row.campaign, row.placement_phone) for row in result.records], [
-            ("0001", "SBC Level 6", "09171234567"), ("0003", "PL RECOVERY", ""),
+            ("0001", "SBC Level 6", "09171234567"), ("0002", "sblegal", ""),
+            ("0003", "PL RECOVERY", ""), ("0004", "sblegal", ""),
         ])
         self.assertEqual(result.records[0].source_values[4:6], ("09161234567", "First message"))
 

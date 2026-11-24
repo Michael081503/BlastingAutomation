@@ -112,7 +112,7 @@ class PhonePopulationTests(unittest.TestCase):
         ]),
                                    require_campaign=False)
         resolved = apply_phone_campaign_lookup(source, lookup)
-        self.assertEqual([row.campaign for row in resolved.records], ["SBC Level 1", "SBC Level 6"])
+        self.assertEqual([row.campaign for row in resolved.records], ["SBC Level 1", "SBC Level 6", "sblegal", "sblegal"])
         self.assertEqual(resolved.unmatched_addresses, 1)
         self.assertEqual(len(source.records), 4)
         self.assertEqual(resolved.excluded_rows, 1)
@@ -122,6 +122,47 @@ class PhonePopulationTests(unittest.TestCase):
 
 
 class AllChannelsPageTests(unittest.TestCase):
+    def test_blank_campaigns_share_one_summary_row_without_lookup(self):
+        from streamlit.testing.v1 import AppTest
+
+        uploads = {
+            "inbound_reply_email_2_upload": Upload("email.csv", csv_bytes(("sender", "Campaign"), [
+                ("new@example.com", " "), ("NEW@example.com", "Unspecified campaign"),
+                ("assigned@example.com", "Assigned"), ("excluded@example.com", "SBF"),
+            ])),
+            "inbound_reply_sms_1_upload": Upload("sms_agents.csv", csv_bytes(("Phone",), [("+63 917 123 4567",)])),
+            "inbound_reply_sms_2_upload": Upload("sms.csv", csv_bytes(("Phone", "Bank Campaign"), [
+                ("09171234567", ""), ("+63 917 123 4567", "SBLEGAL"),
+            ])),
+            "inbound_reply_viber_2_upload": Upload("viber.csv", csv_bytes(("Phone",), [("09181234567",)])),
+        }
+        with patch("branding.render_bank_branding"), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
+                patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            call = next(call for call in html.call_args_list if 'aria-label="Inbound reply summary"' in call.args[0])
+            rows = table_cells(call.args[0])
+            self.assertEqual([row[0] for row in rows], ["Assigned", "sblegal"])
+            self.assertEqual(rows[1][8:11], ["1", "1", "—"])
+
+            uploads["inbound_reply_viber_1_upload"] = Upload("viber_agents.csv", csv_bytes(("Phone",), []))
+            app.run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            call = next(call for call in reversed(downloads.call_args_list)
+                        if call.kwargs.get("key") == "inbound_reply_summary_download")
+            book = load_workbook(BytesIO(call.kwargs["data"]()), data_only=True)
+            try:
+                summary = book["Summary"]
+                self.assertEqual([summary.cell(row, 1).value for row in (4, 5)], ["Assigned", "sblegal"])
+                self.assertEqual([summary.cell(5, col).value for col in (9, 10, 11, 13, 15, 17)], [1, 1, 1, None, 1, 0])
+                self.assertEqual(book["Viber Unreplied"]["B4"].value, "sblegal")
+            finally:
+                book.close()
+
     def test_saved_databases_are_reused_after_clear_and_in_a_new_session(self):
         from streamlit.testing.v1 import AppTest
         from inbound_campaign_lookup import read_saved_campaign_lookup_files
@@ -149,7 +190,7 @@ class AllChannelsPageTests(unittest.TestCase):
             for channel in ("email", "sms", "viber"):
                 report = fresh.session_state[f"inbound_reply_{channel}_result"]["report"]
                 self.assertEqual([entry.campaign for entry in report.campaigns],
-                                 ["SBC Level 1", "SBC Level 6", "SBC Mindanao"])
+                                 ["SBC Level 1", "SBC Level 6", "SBC Mindanao", "sblegal"])
             fresh.button(key="clear_all_files").click().run(timeout=20)
             self.assertNotIn("inbound_reply_email_result", fresh.session_state)
             self.assertEqual(read_saved_campaign_lookup_files(saved_path), original_files)
@@ -204,9 +245,10 @@ class AllChannelsPageTests(unittest.TestCase):
         from upload_state import render_clear_all_files
 
         uploads = all_channel_uploads()
-        expected_labels = ["SBC Level 1", "SBC Level 6", "SBC Mindanao"]
+        expected_labels = ["SBC Level 1", "SBC Level 6", "SBC Mindanao", "sblegal"]
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
                 patch("inbound_reply_page.inbound_report_date", return_value=REPORT_DATE), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
                 patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py"))
@@ -225,6 +267,7 @@ class AllChannelsPageTests(unittest.TestCase):
             self.assertEqual(rows[0][12:], ["2", "66.67%", "1", "33.33%", "2", "66.67%"])
             self.assertEqual(rows[2][8:11], ["4", "4", "4"])
             self.assertEqual(rows[2][12:], ["1", "25.00%"] * 3)
+            self.assertEqual(rows[3][8:11], ["1", "1", "1"])
             call = next(call for call in reversed(downloads.call_args_list) if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()), data_only=True)
             try:
@@ -236,16 +279,18 @@ class AllChannelsPageTests(unittest.TestCase):
                                  [4, 4, 4, 1, 1, 1])
                 for cell, expected in (("M4", 2), ("N4", 2 / 3), ("O4", 1), ("P4", 1 / 3), ("Q4", 2), ("R4", 2 / 3)):
                     self.assertAlmostEqual(book["Summary"][cell].value, expected)
-                for title, count in (("SMS Unreplied", 6), ("Viber Unreplied", 5), ("Email Unreplied", 5)):
+                self.assertEqual([book["Summary"].cell(7, col).value for col in (9, 10, 11)], [1, 1, 1])
+                for title, count in (("SMS Unreplied", 7), ("Viber Unreplied", 6), ("Email Unreplied", 6)):
                     sheet = book[title]
                     self.assertEqual(sheet["B1"].value, "Processed")
                     self.assertEqual(sheet["B2"].value, count)
                     self.assertEqual(sheet.max_row - 3, count)
                     self.assertIn("Source: Lookup Campaign", [cell.value for cell in sheet[3]])
                     self.assertTrue(all(sheet.cell(row, 2).value in expected_labels for row in range(4, sheet.max_row + 1)))
+                    self.assertEqual(sheet.cell(sheet.max_row, 2).value, "sblegal")
                 for channel in ("email", "sms", "viber"):
                     report = app.session_state[f"inbound_reply_{channel}_result"]["report"]
-                    self.assertEqual(report.totals.unique_people, 9)
+                    self.assertEqual(report.totals.unique_people, 10)
             finally:
                 book.close()
             call = next(call for call in reversed(downloads.call_args_list)
@@ -268,45 +313,47 @@ class AllChannelsPageTests(unittest.TestCase):
             self.assertTrue(all(row[1] == "—" for row in displayed()))
             uploads["inbound_reply_email_lookup_uploads"] = uploads["inbound_reply_email_lookup_uploads"][:1]
             app.run(timeout=20)
-            self.assertEqual([row[0] for row in displayed()], ["SBC Level 6", "SBC Level 7"])
+            self.assertEqual([row[0] for row in displayed()], ["SBC Level 6", "SBC Level 7", "sblegal"])
             for channel in ("email", "sms", "viber"):
                 report = app.session_state[f"inbound_reply_{channel}_result"]["report"]
                 source = report.dc if channel == "email" else report.message_logs
                 self.assertEqual(source.unmatched_addresses, 5)
-                self.assertEqual(report.totals.unique_people, 5)
-            # Replacing the lookup with no matching contacts must remove every
-            # previously prepared customer row from every channel and download.
+                self.assertEqual(report.totals.unique_people, 10)
+            # A replacement with no matching contacts moves all replies to sblegal.
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("other.csv", csv_bytes(
                 ("email", "LEVEL", "phone_1"), [("outside@example.com", "Level 1", "09981234567")],
             ))]
             app.run(timeout=20)
-            self.assertEqual([row[0] for row in displayed()], ["SBC Level 1"])
+            self.assertEqual([row[0] for row in displayed()], ["SBC Level 1", "sblegal"])
+            self.assertEqual(displayed()[1][8:11], ["10", "10", "10"])
             for channel in ("email", "sms", "viber"):
                 report = app.session_state[f"inbound_reply_{channel}_result"]["report"]
                 source = report.dc if channel == "email" else report.message_logs
-                self.assertEqual(source.records, ())
+                self.assertEqual({row.campaign for row in source.records}, {"sblegal"})
                 self.assertEqual(source.unmatched_addresses, 10)
-                self.assertEqual(report.totals.unique_people, 0)
-                self.assertEqual(report.totals.agent_replied, 0)
-                self.assertEqual(report.totals.awaiting_reply, 0)
+                answered = 3 if channel == "sms" else 4
+                self.assertEqual(report.totals.unique_people, 10)
+                self.assertEqual(report.totals.agent_replied, answered)
+                self.assertEqual(report.totals.awaiting_reply, 10 - answered)
                 data = (build_email_unreplied_workbook(report) if channel == "email" else
                         build_unreplied_workbook(report))
                 book = load_workbook(BytesIO(data))
                 try:
-                    self.assertEqual(book["Unreplied Details"].max_row, 1)
-                    self.assertEqual(book["Summary"].cell(2, 2).value, 0)
+                    self.assertEqual(book["Unreplied Details"].max_row, 11 - answered)
+                    self.assertEqual(book["Summary"].cell(2, 2).value, 10 - answered)
                 finally:
                     book.close()
             call = next(call for call in reversed(downloads.call_args_list)
                         if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
-                self.assertEqual(book["Summary"].max_row, 5)
+                self.assertEqual(book["Summary"].max_row, 6)
                 self.assertEqual(book["Summary"]["A4"].value, "SBC Level 1")
-                for title in ("SMS Unreplied", "Viber Unreplied", "Email Unreplied"):
+                self.assertEqual(book["Summary"]["A5"].value, "sblegal")
+                for title, count in (("SMS Unreplied", 7), ("Viber Unreplied", 6), ("Email Unreplied", 6)):
                     self.assertEqual(book[title]["B1"].value, "Processed")
-                    self.assertEqual(book[title]["B2"].value, 0)
-                    self.assertEqual(book[title].max_row, 3)
+                    self.assertEqual(book[title]["B2"].value, count)
+                    self.assertEqual(book[title].max_row, 3 + count)
             finally:
                 book.close()
             uploads["inbound_reply_email_lookup_uploads"] = [Upload("bad.xlsx", b"broken")]
@@ -344,12 +391,13 @@ class AllChannelsPageTests(unittest.TestCase):
             ])),
         }
         with patch("branding.render_bank_branding"), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
                 patch("streamlit.download_button") as downloads:
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
-            self.assertEqual([metric.value for metric in app.metric], ["2", "—", "—"])
+            self.assertEqual([metric.value for metric in app.metric], ["3", "—", "—"])
             call = next(call for call in downloads.call_args_list if call.kwargs.get("key") == download_key)
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
