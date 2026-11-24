@@ -9,7 +9,8 @@ from zipfile import ZipFile
 
 from inbound_email import EmailSource
 from inbound_reply import (
-    INBOUND_MESSAGE_COLUMN_WIDTH, MINDANAO_CAMPAIGN, InboundReplyError, ReplySource, append_report_detail_rows, fit_report_text,
+    INBOUND_MESSAGE_COLUMN_WIDTH, MINDANAO_CAMPAIGN, PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplySource,
+    append_report_detail_rows, fit_report_text,
     inbound_campaign_label, normalized_campaign, normalized_phone, unreplied_records,
 )
 
@@ -190,10 +191,17 @@ def build_client_accounts_workbook(report) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Client Accounts"
-    headers = ("Reported Campaign", "Agent Touch", *report.message_logs.headers)
+    headers = ("Reported Campaign", "Agent Touch", *report.message_logs.headers, "Placement Source", "Matched Database Phone")
     sheet.append(headers)
-    rows = ((row.campaign, "Touched" if touched else "No touch", *row.source_values)
-            for row, touched in report.client_touches)
+    rows = []
+    for row, touched in report.client_touches:
+        placement_source = "Client file (unverified)"
+        if row.campaign == PL_RECOVERY_CAMPAIGN:
+            placement_source = PL_RECOVERY_CAMPAIGN
+        elif row.placement_phone:
+            placement_source = "Database phone"
+        values = (row.source_values + (None,) * len(report.message_logs.headers))[:len(report.message_logs.headers)]
+        rows.append((row.campaign, "Touched" if touched else "No touch", *values, placement_source, row.placement_phone))
     full_text = append_report_detail_rows(sheet, rows)
     _format_detail_sheet(sheet, headers, header_row=1)
     fit_report_text(workbook, {sheet.title: full_text}, separate_text=True)
@@ -244,9 +252,17 @@ def build_unmatched_workbook(sources: dict[str, EmailSource | ReplySource]) -> b
             contacts = (normalized_phone(row.phone) for row in source.unmatched_records)
         sheet = workbook.create_sheet(title)
         headers = (contact_header, *original_headers)
+        client_records = isinstance(source, ReplySource) and source.layout == "client"
+        if client_records:
+            headers += ("Phones Checked", "Placement Issue")
         sheet.append(headers)
-        rows = ((contact, *row.source_values[:len(original_headers)])
-                for contact, row in zip(contacts, source.unmatched_records))
+        rows = []
+        for contact, row in zip(contacts, source.unmatched_records):
+            values = (row.source_values + (None,) * len(original_headers))[:len(original_headers)]
+            output_row = (contact, *values)
+            if client_records:
+                output_row += (", ".join(row.lookup_phones), row.placement_issue)
+            rows.append(output_row)
         detail_text[title] = append_report_detail_rows(sheet, rows)
         _format_detail_sheet(sheet, headers, header_row=1)
     if len(workbook.worksheets) > 1:

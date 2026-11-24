@@ -72,10 +72,11 @@ class SmsOutputTests(unittest.TestCase):
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
                 headers, *rows = book["Client Accounts"].values
-                self.assertEqual([(row[headers.index("Account No.")], row[1], row[-1]) for row in rows], [
+                self.assertEqual([(row[headers.index("Account No.")], row[1], row[headers.index("Message")]) for row in rows], [
                     ("0001", "Touched", first_message), ("0002", "No touch", "Shared phone"),
                     ("0003", "Touched", "Third account"),
                 ])
+                self.assertTrue(all(row[headers.index("Placement Source")] == "Client file (unverified)" for row in rows))
                 self.assertEqual(book["Client Accounts"]["H2"].hyperlink.location, "'Client Accounts Text'!A2")
             finally:
                 book.close()
@@ -92,6 +93,43 @@ class SmsOutputTests(unittest.TestCase):
                 ("0001", "SBC B2"), ("0002", "SBC Level 1"), ("0003", "SBC Level 1"),
             ])
             self.assertEqual((report.totals.unique_people, report.totals.agent_replied), (3, 2))
+            self.assertEqual([row.placement_phone for row, _ in report.client_touches],
+                             ["09171234567", "09171234567", "09191234567"])
+
+    def test_database_uses_alternate_client_phones_and_lists_unresolved_placements(self):
+        from openpyxl import load_workbook
+        from inbound_campaign_lookup import apply_phone_campaign_lookup, build_email_campaign_lookup
+        from inbound_summary import build_unmatched_workbook
+
+        headers = ("Received Date / Time", "Debtor Name", "Client", "Account No.", "Phone Number", "Message")
+        clients = read_reply_source("CLIENT.csv", csv_bytes(headers, [
+            ("11/24", "One", "Source label", "0001", "09161234567", "First message"),
+            ("11/24", "One", "Source label", "0001", "+63 917 123 4567", "Alternate phone"),
+            ("11/24", "Two", "Source label", "0002", "09181234567", "Two database memberships"),
+            ("11/24", "Three", "Source label", "0003", "09191234567", "First message"),
+            ("11/24", "Three", "PL RECOVERY", "0003", "09191234567", "Explicit PL RECOVERY"),
+            ("11/24", "Four", "SBC B2", "0004", "09201234567", "Phone absent from database"),
+        ]))
+        lookup = build_email_campaign_lookup([
+            ("Regular.csv", b"Phone,LEVEL\n09171234567,6\n09181234567,1\n09191234567,6\n"),
+            ("B2.csv", b"Phone\n09181234567\n"),
+        ])
+        result = apply_phone_campaign_lookup(clients, lookup)
+        self.assertEqual(result.duplicate_rows, 2)
+        self.assertEqual([(row.account, row.campaign, row.placement_phone) for row in result.records], [
+            ("0001", "SBC Level 6", "09171234567"), ("0003", "PL RECOVERY", ""),
+        ])
+        self.assertEqual(result.records[0].source_values[4:6], ("09161234567", "First message"))
+
+        book = load_workbook(BytesIO(build_unmatched_workbook({"SMS": result})))
+        try:
+            headers, *rows = book["SMS Unmatched"].values
+            self.assertEqual([row[headers.index("Account No.")] for row in rows], ["0002", "0004"])
+            self.assertEqual([row[headers.index("Phones Checked")] for row in rows], ["09181234567", "09201234567"])
+            self.assertIn("Conflicting database placements", rows[0][-1])
+            self.assertEqual(rows[1][-1], "Phone not found in placement databases")
+        finally:
+            book.close()
 
     def test_sms_only_upload_accepts_a_fully_replied_account_list(self):
         from openpyxl import load_workbook

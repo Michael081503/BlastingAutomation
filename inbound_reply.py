@@ -15,7 +15,7 @@ from typing import Iterable
 
 
 VIBER_REPLY_VERSION = 8
-SMS_CLIENT_TOUCH_VERSION = 1
+SMS_CLIENT_TOUCH_VERSION = 2
 CUSTOMER_REPLY_POPULATION_VERSION = 1
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
 CAMPAIGN_COLUMN_ALIASES_VERSION = 1
@@ -108,6 +108,9 @@ class ReplyRecord:
     message_type: str = ""
     source_values: tuple[object, ...] = ()
     account: str = ""
+    lookup_phones: tuple[str, ...] = ()
+    placement_phone: str = ""
+    placement_issue: str = ""
 
 
 @dataclass(frozen=True)
@@ -292,19 +295,30 @@ def client_account_key(row: ReplyRecord) -> tuple[str, str]:
 
 
 def deduplicate_client_accounts(source: ReplySource) -> ReplySource:
-    """Keep one client row per account, using the mobile when the account number is absent."""
+    """Keep the first client row and retain each account's phones for placement lookup."""
     identified_phones = {normalized_phone(row.phone) for row in source.records if row.account}
     unique = {}
+    phones = defaultdict(dict)
     skipped = duplicates = 0
     for row in source.records:
         key = client_account_key(row)
         if not key[1]:
             skipped += 1
-        elif key in unique or (key[0] == "phone" and key[1] in identified_phones):
+        elif key[0] == "phone" and key[1] in identified_phones:
             duplicates += 1
         else:
-            unique[key] = row
-    return replace(source, records=tuple(unique.values()), layout="client",
+            if key in unique:
+                duplicates += 1
+                first = unique[key]
+                if row.campaign == PL_RECOVERY_CAMPAIGN and first.campaign != PL_RECOVERY_CAMPAIGN:
+                    unique[key] = replace(first, campaign=PL_RECOVERY_CAMPAIGN)
+            else:
+                unique[key] = row
+            for phone in row.lookup_phones or (normalized_phone(row.phone),):
+                if phone:
+                    phones[key][phone] = None
+    records = tuple(replace(row, lookup_phones=tuple(phones[key])) for key, row in unique.items())
+    return replace(source, records=records, layout="client",
                    excluded_rows=source.excluded_rows + skipped, duplicate_rows=source.duplicate_rows + duplicates)
 
 

@@ -366,8 +366,12 @@ def render_sms_details(report: ViberReplyReport, report_date: date) -> None:
             column.metric(label, f"{count:,}")
         st.caption(f"Removed {report.message_logs.duplicate_rows:,} duplicate Client rows. "
                    "The SMS Agent Worked count uses the touched clients in the report.")
+        if report.message_logs.lookup_applied:
+            st.caption("Client placements are verified against database phone numbers. PL RECOVERY keeps its source campaign.")
+        else:
+            st.info("Upload or save campaign lookup files to verify placements by phone. The current labels come from the Client file.")
         if report.message_logs.unmatched_addresses:
-            st.caption(f"{report.message_logs.unmatched_addresses:,} client accounts had no campaign match. "
+            st.caption(f"{report.message_logs.unmatched_addresses:,} client accounts had no confirmed database placement. "
                        "They are available in the unmatched accounts download.")
         st.download_button(
             "Download unique client accounts (.xlsx)", data=partial(build_client_accounts_workbook, report),

@@ -15,13 +15,13 @@ from zipfile import BadZipFile, ZipFile
 
 from inbound_email import EmailSource, header_key, normalized_email
 from inbound_reply import (
-    PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplySource, inbound_campaign_label, inbound_csv_delimiter,
+    PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplyRecord, ReplySource, inbound_campaign_label, inbound_csv_delimiter,
     client_account_key, normalized_campaign, normalized_phone,
 )
 
 
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 9
-PHONE_CAMPAIGN_LOOKUP_VERSION = 1
+PHONE_CAMPAIGN_LOOKUP_VERSION = 2
 BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
 B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
 LOOKUP_CAMPAIGN_LABELS_VERSION = 1
@@ -306,22 +306,46 @@ def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup
     unique_clients = source.layout == "client"
     for row in source.records:
         phone = normalized_phone(row.phone)
-        if not phone and not unique_clients:
-            excluded += 1
-            continue
-        campaigns = ((PL_RECOVERY_CAMPAIGN,) if row.campaign == PL_RECOVERY_CAMPAIGN
-                     else lookup.campaigns_by_phone.get(phone))
-        if not campaigns:
-            unmatched.setdefault(client_account_key(row) if unique_clients else phone, row)
-            continue
-        if unique_clients and len(campaigns) > 1:
-            original = _client_campaign_key(row.campaign)
-            campaigns = (next((label for label in campaigns if _client_campaign_key(label) == original), campaigns[0]),)
+        if unique_clients:
+            row = _resolve_client_placement(row, phone, lookup)
+            if row.placement_issue:
+                unmatched.setdefault(client_account_key(row), row)
+                continue
+            campaigns = (row.campaign,)
+        else:
+            if not phone:
+                excluded += 1
+                continue
+            campaigns = ((PL_RECOVERY_CAMPAIGN,) if row.campaign == PL_RECOVERY_CAMPAIGN
+                         else lookup.campaigns_by_phone.get(phone))
+            if not campaigns:
+                unmatched.setdefault(phone, row)
+                continue
         values = row.source_values[:len(source.headers)] + (None,) * max(0, len(source.headers) - len(row.source_values))
         for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))
     return replace(source, headers=(*source.headers, header), records=tuple(records),
                    excluded_rows=excluded, lookup_applied=True, unmatched_records=tuple(unmatched.values()))
+
+
+def _resolve_client_placement(row: ReplyRecord, phone: str, lookup: EmailCampaignLookup) -> ReplyRecord:
+    if row.campaign == PL_RECOVERY_CAMPAIGN:
+        return row
+    matches = {}
+    for candidate in row.lookup_phones or (phone,):
+        for campaign in lookup.campaigns_by_phone.get(candidate, ()):
+            matches.setdefault(campaign, candidate)
+    if not matches:
+        reason = "Phone not found in placement databases" if row.lookup_phones or phone else "No usable phone number"
+        return replace(row, placement_issue=reason)
+    if len(matches) > 1:
+        original = _client_campaign_key(row.campaign)
+        confirmed = {label: number for label, number in matches.items() if _client_campaign_key(label) == original}
+        if len(confirmed) != 1:
+            return replace(row, placement_issue="Conflicting database placements — " + ", ".join(sorted(matches)))
+        matches = confirmed
+    campaign, matched_phone = next(iter(matches.items()))
+    return replace(row, campaign=campaign, placement_phone=matched_phone)
 
 
 def _client_campaign_key(label: str) -> str:
