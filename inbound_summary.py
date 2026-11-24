@@ -166,13 +166,14 @@ def _channel_details(channel: str, report):
         # Column position distinguishes repeated headers in an original workbook.
         fields.append((header or f"Column {index + 1}", sum(item == header for item in source_headers[:index])))
     rows = []
+    reply_status = "No agent touch" if channel == "SMS" and report is not None and report.client_touches is not None else "Not replied"
     for channel, campaign, name, phone, email, headers, values in sorted(
             records, key=lambda row: (normalized_campaign(row[1]), row[0], row[3] or row[4])):
         source_values = {}
         for index, header in enumerate(headers):
             field = (header or f"Column {index + 1}", sum(item == header for item in headers[:index]))
             source_values[field] = values[index] if index < len(values) else None
-        rows.append([channel, campaign, name, phone, email, "Not replied",
+        rows.append([channel, campaign, name, phone, email, reply_status,
                      *(source_values.get(field) for field in fields)])
     expected = sum(campaign.awaiting_reply for campaign in report.campaigns) if report is not None else 0
     if len(rows) != expected:
@@ -180,6 +181,26 @@ def _channel_details(channel: str, report):
     headers = ["Channel", "Campaign", "Name", "Phone", "Email", "Reply Status",
                *(f"Source: {header}" + (f" ({occurrence + 1})" if occurrence else "") for header, occurrence in fields)]
     return headers, rows
+
+
+def build_client_accounts_workbook(report) -> bytes:
+    """Export the full unique Client list and its agent touch status."""
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Client Accounts"
+    headers = ("Reported Campaign", "Agent Touch", *report.message_logs.headers)
+    sheet.append(headers)
+    rows = ((row.campaign, "Touched" if touched else "No touch", *row.source_values)
+            for row, touched in report.client_touches)
+    full_text = append_report_detail_rows(sheet, rows)
+    _format_detail_sheet(sheet, headers, header_row=1)
+    fit_report_text(workbook, {sheet.title: full_text}, separate_text=True)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
 
 
 def _format_detail_sheet(sheet, headers, *, header_row: int) -> None:
@@ -281,6 +302,9 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
         sheet[f"{percent_column}3"].comment = Comment(
             f"Customers answered by agents divided by {channel} REPLY × 100. Recalculates when the counts change.",
             "INBOUND REPLY")
+    if sms_report is not None and sms_report.client_touches is not None:
+        sheet["O3"].comment = Comment("Unique SMS clients with a matching Agent Touch record.", "INBOUND REPLY")
+        sheet["P3"].comment = Comment("Clients touched divided by unique SMS clients.", "INBOUND REPLY")
     sheet["M3"].comment = Comment(
         "Customers from EMAIL REPLY who received a response from any agent. "
         "Repeated agent replies count once per customer email address within each campaign.", "INBOUND REPLY")

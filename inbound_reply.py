@@ -7,7 +7,7 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 from copy import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from io import BytesIO, StringIO
 from pathlib import Path
 from textwrap import TextWrapper
@@ -15,6 +15,7 @@ from typing import Iterable
 
 
 VIBER_REPLY_VERSION = 8
+SMS_CLIENT_TOUCH_VERSION = 1
 CUSTOMER_REPLY_POPULATION_VERSION = 1
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
 CAMPAIGN_COLUMN_ALIASES_VERSION = 1
@@ -106,6 +107,7 @@ class ReplyRecord:
     campaign: str
     message_type: str = ""
     source_values: tuple[object, ...] = ()
+    account: str = ""
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,8 @@ class ReplySource:
     headers: tuple[str, ...] = ()
     lookup_applied: bool = False
     unmatched_records: tuple[ReplyRecord, ...] = ()
+    layout: str = ""
+    duplicate_rows: int = 0
 
     @property
     def unmatched_addresses(self) -> int:
@@ -161,38 +165,49 @@ class ViberReplyReport:
     message_logs: ReplySource
     campaign_replies: ReplySource
     excluded_phone_rows: int = 0
+    client_touches: tuple[tuple[ReplyRecord, bool], ...] | None = None
 
     @property
     def totals(self) -> CampaignReplyCounts:
         return _counts("All campaigns", self.people, self.agent_replied_source)
 
 
-def _header_positions(row: Iterable, *, require_campaign: bool = True) -> dict[str, int] | None:
+def _header_positions(row: Iterable, *, require_campaign: bool = True) -> tuple[dict[str, int], str] | None:
     keys = ["".join(char for char in str(cell or "").casefold() if char.isalnum()) for cell in row]
+    labels = set(keys)
+    layout = ""
+    aliases = HEADER_ALIASES
+    if {"receiveddatetime", "accountno", "client", "phonenumber"} <= labels:
+        layout = "client"
+        aliases = {"name": {"debtorname"}, "phone": {"phonenumber"}, "campaign": {"client"}, "account": {"accountno"}}
+    elif {"calltype", "account", "client", "contactnumber"} <= labels:
+        layout = "agent_touch"
+        aliases = {"name": {"customer"}, "phone": {"contactnumber"}, "campaign": {"client"}, "account": {"account"}}
     positions = {}
-    for field_name, aliases in HEADER_ALIASES.items():
-        matches = [index for index, key in enumerate(keys) if key in aliases]
+    for field_name, names in aliases.items():
+        matches = [index for index, key in enumerate(keys) if key in names]
         if len(matches) > 1:
             return None
         if matches:
             positions[field_name] = matches[0]
     required = {"phone", "campaign"} if require_campaign else {"phone"}
-    return positions if required <= positions.keys() else None
+    return (positions, layout) if required <= positions.keys() else None
 
 
 def _read_rows(rows: Iterable, filename: str, sheet: str, *, require_campaign: bool = True) -> ReplySource:
     rows = iter(rows)
-    positions = None
+    header = None
     for _ in range(50):
         row = next(rows, None)
         if row is None:
             break
-        positions = _header_positions(row, require_campaign=require_campaign)
-        if positions is not None:
+        header = _header_positions(row, require_campaign=require_campaign)
+        if header is not None:
             break
-    if positions is None:
+    if header is None:
         expected = "Phone and Bank Campaign" if require_campaign else "Phone"
         raise InboundReplyError(f"{filename}: expected {expected} headers. Client Name or Contact Name is optional.")
+    positions, layout = header
     headers = tuple(str(value) if value is not None else "" for value in row)
     records = []
     excluded = 0
@@ -204,14 +219,15 @@ def _read_rows(rows: Iterable, filename: str, sheet: str, *, require_campaign: b
         campaign = values.get("campaign") or "Unspecified campaign"
         if excluded_inbound_campaign(campaign):
             continue
-        if not normalized_name(values.get("name", "")) and not normalized_phone(values["phone"]):
+        if not values.get("account") and not normalized_name(values.get("name", "")) and not normalized_phone(values["phone"]):
             excluded += 1
             continue
         records.append(ReplyRecord(
             values.get("name", ""), values["phone"], inbound_campaign_label(campaign),
-            values.get("message_type", ""), tuple(row),
+            values.get("message_type", ""), tuple(row), values.get("account", ""),
         ))
-    return ReplySource(filename, tuple(records), excluded, sheet, headers)
+    source = ReplySource(filename, tuple(records), excluded, sheet, headers, layout=layout)
+    return deduplicate_client_accounts(source) if layout == "client" else source
 
 
 def read_reply_source(filename: str, data: bytes, *, require_campaign: bool = True) -> ReplySource:
@@ -244,16 +260,18 @@ def read_reply_source(filename: str, data: bytes, *, require_campaign: bool = Tr
             for sheet in workbook:
                 sheet.reset_dimensions()
                 for row in sheet.iter_rows(min_row=1, max_row=50, values_only=True):
-                    if _header_positions(row, require_campaign=require_campaign) is not None:
-                        candidates.append(sheet)
+                    header = _header_positions(row, require_campaign=require_campaign)
+                    if header is not None:
+                        candidates.append((sheet, header[1]))
                         break
+            candidates = [item for item in candidates if item[1]] or candidates
             if len(candidates) != 1:
                 expected = "Phone and Bank Campaign" if require_campaign else "Phone"
                 raise InboundReplyError(
                     f"{filename}: expected one sheet with {expected} columns. "
                     "Save the required worksheet as CSV and upload that file."
                 )
-            sheet = candidates[0]
+            sheet = candidates[0][0]
             return _read_rows(sheet.iter_rows(values_only=True), filename, sheet.title,
                               require_campaign=require_campaign)
         finally:
@@ -267,6 +285,51 @@ def _counts(label: str, people: Iterable[MatchedPerson], replied_source: str,
     replied = sum(person.source_rows(replied_source, campaign) > 0 for person in people)
     matched = sum(all(person.source_rows(source, campaign) > 0 for source in SOURCE_NAMES) for person in people)
     return CampaignReplyCounts(label, len(people), replied, len(people) - replied, matched)
+
+
+def client_account_key(row: ReplyRecord) -> tuple[str, str]:
+    return ("account", row.account.casefold()) if row.account else ("phone", normalized_phone(row.phone))
+
+
+def deduplicate_client_accounts(source: ReplySource) -> ReplySource:
+    """Keep one client row per account, using the mobile when the account number is absent."""
+    identified_phones = {normalized_phone(row.phone) for row in source.records if row.account}
+    unique = {}
+    skipped = duplicates = 0
+    for row in source.records:
+        key = client_account_key(row)
+        if not key[1]:
+            skipped += 1
+        elif key in unique or (key[0] == "phone" and key[1] in identified_phones):
+            duplicates += 1
+        else:
+            unique[key] = row
+    return replace(source, records=tuple(unique.values()), layout="client",
+                   excluded_rows=source.excluded_rows + skipped, duplicate_rows=source.duplicate_rows + duplicates)
+
+
+def match_client_touches(clients: ReplySource, touches: ReplySource) -> ViberReplyReport:
+    """Count agent touches only for customers in the deduplicated Client list."""
+    accounts = {row.account.casefold() for row in touches.records if row.account}
+    all_phones = {normalized_phone(row.phone) for row in touches.records}
+    phones_without_account = {normalized_phone(row.phone) for row in touches.records if not row.account}
+    client_phones = Counter(normalized_phone(row.phone) for row in clients.records)
+    people, outcomes, groups = [], [], defaultdict(list)
+    for row in clients.records:
+        phone = normalized_phone(row.phone)
+        found = row.account.casefold() in accounts or bool(phone and client_phones[phone] == 1 and phone in (
+            phones_without_account if row.account else all_phones))
+        key = normalized_campaign(row.campaign)
+        person = MatchedPerson(row.name or row.account or phone, {phone} if phone else set(), {
+            key: {"label": row.campaign, "message_logs": 1, "campaign_replies": int(found)},
+        })
+        people.append(person)
+        groups[key].append(person)
+        outcomes.append((row, found))
+    campaigns = tuple(_counts(group[0].campaigns[key]["label"], group, "campaign_replies", key)
+                      for key, group in sorted(groups.items()))
+    return ViberReplyReport(tuple(people), campaigns, "campaign_replies", "phone",
+                            clients, touches, client_touches=tuple(outcomes))
 
 
 def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource, *,
@@ -355,6 +418,8 @@ def build_people_csv(report: ViberReplyReport) -> bytes:
 
 def unreplied_records(report: ViberReplyReport) -> tuple[ReplyRecord, ...]:
     """Return the first source row per unreplied phone and campaign."""
+    if report.client_touches is not None:
+        return tuple(row for row, touched in report.client_touches if not touched)
     if report.match_mode != "phone":
         raise InboundReplyError("The unreplied report requires phone-number matching.")
     pending = {
@@ -421,17 +486,18 @@ def _report_text_parts(text: str) -> list[tuple[str, int]]:
     return parts
 
 
-def _add_report_text_continuations(sheet, full_text: dict[tuple[int, int], str]) -> None:
+def _add_report_text_continuations(sheet, text_sheet, full_text: dict[tuple[int, int], str]) -> None:
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils.cell import quote_sheetname
     from openpyxl.worksheet.hyperlink import Hyperlink
 
     wrap = Alignment(vertical="top", wrap_text=True)
     highlight = PatternFill("solid", fgColor="E2EAFB")
-    location = quote_sheetname(sheet.title)
-    section_row = sheet.max_row + 2
-    sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=5)
-    title = sheet.cell(section_row, 1, "Full text for long entries")
+    source_location = quote_sheetname(sheet.title)
+    text_location = quote_sheetname(text_sheet.title)
+    section_row = sheet.max_row + 2 if text_sheet is sheet else 1
+    text_sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=5)
+    title = text_sheet.cell(section_row, 1, "Full text for long entries")
     title.font = Font(bold=True)
     title.fill = highlight
     title.alignment = wrap
@@ -440,22 +506,22 @@ def _add_report_text_continuations(sheet, full_text: dict[tuple[int, int], str])
         source = sheet.cell(source_row, source_column)
         parts = _report_text_parts(text)
         source.fill = highlight
-        source.hyperlink = Hyperlink(ref=source.coordinate, location=f"{location}!A{row}", tooltip="Read full text")
+        source.hyperlink = Hyperlink(ref=source.coordinate, location=f"{text_location}!A{row}", tooltip="Read full text")
         for index, (part, line_count) in enumerate(parts, start=1):
-            link = sheet.cell(row, 1, f"{source.coordinate} ({index}/{len(parts)})")
+            link = text_sheet.cell(row, 1, f"{source.coordinate} ({index}/{len(parts)})")
             link.style = "Hyperlink"
             link.alignment = wrap
-            link.hyperlink = Hyperlink(ref=link.coordinate, location=f"{location}!{source.coordinate}",
+            link.hyperlink = Hyperlink(ref=link.coordinate, location=f"{source_location}!{source.coordinate}",
                                        tooltip="Back to the account cell")
-            sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
-            message = sheet.cell(row, 2, part)
+            text_sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
+            message = text_sheet.cell(row, 2, part)
             message.data_type = "s"
             message.alignment = wrap
-            sheet.row_dimensions[row].height = line_count * 30 + 18
+            text_sheet.row_dimensions[row].height = line_count * 30 + 18
             row += 1
 
 
-def fit_report_text(workbook, detail_text: dict[str, dict[tuple[int, int], str]]) -> None:
+def fit_report_text(workbook, detail_text: dict[str, dict[tuple[int, int], str]], *, separate_text: bool = False) -> None:
     """Wrap text and keep account rows compact, with links to longer entries."""
     from openpyxl.utils import column_index_from_string
 
@@ -503,7 +569,12 @@ def fit_report_text(workbook, detail_text: dict[str, dict[tuple[int, int], str]]
             if height != current_height:
                 sheet.row_dimensions[row[0].row].height = height
         if full_text:
-            _add_report_text_continuations(sheet, full_text)
+            text_sheet = sheet
+            if separate_text:
+                text_sheet = workbook.create_sheet(f"{sheet.title} Text")
+                for column in "ABCDE":
+                    text_sheet.column_dimensions[column].width = 26
+            _add_report_text_continuations(sheet, text_sheet, full_text)
 
 
 def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_headers: tuple[str, ...],

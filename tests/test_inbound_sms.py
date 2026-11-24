@@ -29,6 +29,70 @@ def sms_files():
 
 
 class SmsOutputTests(unittest.TestCase):
+    def test_client_and_agent_touch_workbooks_keep_one_client_row_per_account(self):
+        from openpyxl import load_workbook
+        from streamlit.testing.v1 import AppTest
+        from test_inbound_campaign_lookup import workbook_bytes
+
+        class Upload(BytesIO):
+            def __init__(self, name, data):
+                super().__init__(data)
+                self.name = name
+
+        client_headers = ("Received Date / Time", "Debtor Name", "Client", "Account No.", "Phone Number", "Message")
+        agent_headers = ("Call Type", "Customer", "Client", "Account", "Contact Number")
+        first_message = "First message\n" * 10
+        clients = Upload("CLIENT.xlsx", workbook_bytes([
+            ("Comparison", [("Client", "Account No.", "Phone Number"), ("Sample", "0999", "09991234567")]),
+            ("Incoming", [client_headers,
+                          ("11/24", "One", "SBC CARDS B2", "0001", "09171234567", first_message),
+                          ("11/24", "One", "SBC CARDS L1", "0001", "09181234567", "Repeated account"),
+                          ("11/24", "Two", "SBC CARDS L1", "0002", "+63 9171234567", "Shared phone"),
+                          ("11/24", "Three", "SBC CARDS L1", "0003", "09191234567", "Third account")]),
+        ]))
+        first = Upload("AGENT TOUCH RECO.xlsx", workbook_bytes([("Calls", [agent_headers,
+            ("Outgoing Call", "One", "SBC CARDS B2", "0001", "09341234567"),
+            ("Outgoing Call", "One", "SBC CARDS B2", "0001", "09341234567"),
+            ("Outgoing Call", "Outside", "SBC CARDS B2", "0004", "09991234567"),
+        ])]))
+        second = Upload("AGENT TOUCH INSURANCE.xlsx", workbook_bytes([("Calls", [agent_headers,
+            ("Outgoing Call", "Three", "SBC INSURANCE", "0003", "09191234567"),
+        ])]))
+        uploads = {"inbound_reply_sms_1_upload": [first, second], "inbound_reply_sms_2_upload": clients}
+        with patch("branding.render_bank_branding"), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
+                patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            self.assertEqual([metric.value for metric in app.metric], ["3", "2", "1", "3"])
+            self.assertTrue(any("Removed 1 duplicate Client" in caption.value for caption in app.caption))
+            call = next(call for call in downloads.call_args_list
+                        if call.kwargs.get("key") == "inbound_reply_client_accounts_download")
+            book = load_workbook(BytesIO(call.kwargs["data"]()))
+            try:
+                headers, *rows = book["Client Accounts"].values
+                self.assertEqual([(row[headers.index("Account No.")], row[1], row[-1]) for row in rows], [
+                    ("0001", "Touched", first_message), ("0002", "No touch", "Shared phone"),
+                    ("0003", "Touched", "Third account"),
+                ])
+                self.assertEqual(book["Client Accounts"]["H2"].hyperlink.location, "'Client Accounts Text'!A2")
+            finally:
+                book.close()
+
+            uploads["inbound_reply_email_lookup_uploads"] = [
+                Upload("Regular.csv", b"Phone,LEVEL\n09171234567,1\n09191234567,1\n"),
+                Upload("B2.csv", b"Phone\n09171234567\n"),
+            ]
+            app.run(timeout=20)
+            self.assertFalse(app.error)
+            report = app.session_state["inbound_reply_sms_result"]["report"]
+            self.assertEqual(report.message_logs.sheet, "Incoming")
+            self.assertEqual([(row.account, row.campaign) for row, _ in report.client_touches], [
+                ("0001", "SBC B2"), ("0002", "SBC Level 1"), ("0003", "SBC Level 1"),
+            ])
+            self.assertEqual((report.totals.unique_people, report.totals.agent_replied), (3, 2))
+
     def test_sms_only_upload_accepts_a_fully_replied_account_list(self):
         from openpyxl import load_workbook
         from streamlit.testing.v1 import AppTest
