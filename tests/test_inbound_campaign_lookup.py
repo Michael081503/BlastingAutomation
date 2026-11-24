@@ -235,6 +235,54 @@ class CampaignLookupTests(unittest.TestCase):
 
 
 class CampaignLookupPageTests(unittest.TestCase):
+    def test_dc_workbook_placements_are_used_until_a_database_is_loaded(self):
+        from streamlit.testing.v1 import AppTest
+
+        class Upload(BytesIO):
+            def __init__(self, name, data):
+                super().__init__(data)
+                self.name = name
+
+        lookup_key = "inbound_reply_email_lookup_uploads"
+        uploads = {"inbound_reply_email_2_upload": Upload("DC Checking.xlsx", workbook_bytes([
+            ("Email Placements", [("Sender Email", "Reporting Campaign", "Lookup Status")]),
+            ("mc4_emails", [("sender", "Campaign", "Reporting Campaign", "Lookup Status"),
+                            ("client@example.com", "MC4 BANK EMAILS", "SBC B2; SBC Level 6", "Multiple placements"),
+                            ("CLIENT@example.com", "MC4 BANK EMAILS", "SBC B2", "Matched"),
+                            ("unknown@example.com", "MC4 BANK EMAILS", None, "No database match"),
+                            ("loan@example.com", "PL RECOVERY", None, "No database match")]),
+            ("Database Matches", [("Sender Email", "Database Source")]),
+        ]))}
+        with patch("branding.render_bank_branding"), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
+                patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            report = app.session_state["inbound_reply_email_result"]["report"]
+            self.assertTrue(report.dc.workbook_placements)
+            self.assertEqual([(row.campaign, row.unique_people) for row in report.campaigns],
+                             [("PL RECOVERY", 1), ("SBC B2", 1), ("SBC Level 6", 1)])
+            self.assertEqual(report.dc.unmatched_addresses, 1)
+            call = next(call for call in downloads.call_args_list
+                        if call.kwargs.get("key") == "inbound_reply_unmatched_download")
+            with BytesIO(call.kwargs["data"]()) as data:
+                book = load_workbook(data, read_only=True)
+                try:
+                    self.assertEqual(book["Email Unmatched"]["A2"].value, "unknown@example.com")
+                finally:
+                    book.close()
+
+            uploads[lookup_key] = [Upload("Regular.xlsx", regular_file("Level 7"))]
+            app.run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            report = app.session_state["inbound_reply_email_result"]["report"]
+            self.assertFalse(report.dc.workbook_placements)
+            self.assertEqual([(row.campaign, row.unique_people) for row in report.campaigns],
+                             [("PL RECOVERY", 1), ("SBC Level 7", 1)])
+
     def test_preview_processing_same_name_replacement_errors_removal_and_clear_update_results(self):
         from streamlit.testing.v1 import AppTest
         from upload_state import render_clear_all_files

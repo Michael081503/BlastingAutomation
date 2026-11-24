@@ -14,7 +14,7 @@ from inbound_reply import (
 )
 
 
-EMAIL_REPLY_VERSION = 6
+EMAIL_REPLY_VERSION = 7
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 
@@ -45,6 +45,7 @@ class EmailSource:
     sheet: str
     lookup_applied: bool = False
     unmatched_records: tuple[EmailRecord, ...] = ()
+    workbook_placements: bool = False
 
     @property
     def unmatched_addresses(self) -> int:

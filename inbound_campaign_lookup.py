@@ -15,8 +15,8 @@ from zipfile import BadZipFile, ZipFile
 
 from inbound_email import EmailSource, header_key, normalized_email
 from inbound_reply import (
-    PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplyRecord, ReplySource, inbound_campaign_label, inbound_csv_delimiter,
-    client_account_key, normalized_campaign, normalized_phone,
+    PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplyRecord, ReplySource, excluded_inbound_campaign,
+    inbound_campaign_label, inbound_csv_delimiter, client_account_key, normalized_campaign, normalized_phone,
 )
 
 
@@ -277,15 +277,39 @@ def save_campaign_lookup_files(path: Path, files: list[tuple[str, bytes]]) -> No
             temporary.unlink(missing_ok=True)
 
 
-def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup) -> EmailSource:
-    """Resolve campaigns for non-PL RECOVERY email rows."""
+def _workbook_email_placements(source: EmailSource) -> dict[str, tuple[str, ...]] | None:
+    headers = tuple(header_key(header) for header in source.headers)
+    if headers.count("reportingcampaign") != 1 or headers.count("lookupstatus") != 1:
+        return None
+    campaign_col, status_col = (headers.index(key) for key in ("reportingcampaign", "lookupstatus"))
+    index: dict[str, dict[str, str]] = {}
+    for row in source.records:
+        values = row.source_values
+        if max(campaign_col, status_col) >= len(values):
+            continue
+        if normalized_campaign(str(values[status_col] or "")) not in {"matched", "multiple placements"}:
+            continue
+        for value in str(values[campaign_col] or "").split(";"):
+            campaign = inbound_campaign_label(value.strip())
+            if campaign and not excluded_inbound_campaign(campaign):
+                index.setdefault(row.email, {}).setdefault(normalized_campaign(campaign), campaign)
+    return {email: tuple(campaigns.values()) for email, campaigns in index.items()}
+
+
+def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup | None) -> EmailSource:
+    """Resolve email campaigns from the live lookup or placements carried in the workbook."""
+    campaigns_by_email = (_workbook_email_placements(source) if lookup is None else lookup.campaigns_by_email)
+    if campaigns_by_email is None:
+        return source
     records, unmatched = [], {}
     header = "Lookup Campaign"
     while header in source.headers:
         header += " (lookup)"
     for row in source.records:
-        campaigns = ((PL_RECOVERY_CAMPAIGN,) if row.campaign == PL_RECOVERY_CAMPAIGN
-                     else lookup.campaigns_by_email.get(row.email))
+        if row.campaign == PL_RECOVERY_CAMPAIGN:
+            campaigns = (PL_RECOVERY_CAMPAIGN,)
+        else:
+            campaigns = campaigns_by_email.get(row.email)
         if not campaigns:
             unmatched.setdefault(row.email, row)
             continue
@@ -293,7 +317,7 @@ def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup
         for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))
     return replace(source, headers=(*source.headers, header), records=tuple(records),
-                   lookup_applied=True, unmatched_records=tuple(unmatched.values()))
+                   lookup_applied=True, unmatched_records=tuple(unmatched.values()), workbook_placements=lookup is None)
 
 
 def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup) -> ReplySource:

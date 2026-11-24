@@ -231,8 +231,7 @@ def prepare_email_report(history_upload, dc_upload, lookup: EmailCampaignLookup 
         cached = {"signature": signature}
         try:
             dc = read_email_source(dc_upload.name, dc_bytes, kind="dc", require_campaign=lookup is None)
-            if lookup is not None:
-                dc = apply_email_campaign_lookup(dc, lookup)
+            dc = apply_email_campaign_lookup(dc, lookup)
         except InboundReplyError as error:
             cached["error"] = str(error)
         else:
@@ -311,10 +310,9 @@ def prepare_campaign_inputs(channels, email_lookup: EmailCampaignLookup | None =
     sources, unmatched = [], {}
     for channel, (_, upload), report in channels:
         if report is not None:
-            if email_lookup is not None:
-                source = report.dc if channel == "EMAIL" else report.message_logs
-                if source.unmatched_records:
-                    unmatched[channel] = source
+            source = report.dc if channel == "EMAIL" else report.message_logs
+            if source.unmatched_records:
+                unmatched[channel] = source
         elif upload is not None:
             sources.append((channel, upload.name, upload.getvalue()))
     if not sources:
@@ -332,8 +330,7 @@ def prepare_campaign_inputs(channels, email_lookup: EmailCampaignLookup | None =
             try:
                 if channel == "EMAIL":
                     source = read_email_source(name, data, kind="dc", require_campaign=email_lookup is None)
-                    if email_lookup is not None:
-                        source = apply_email_campaign_lookup(source, email_lookup)
+                    source = apply_email_campaign_lookup(source, email_lookup)
                 else:
                     source = read_reply_source(name, data, require_campaign=email_lookup is None)
                     if channel == "SMS" and source.layout == "agent_touch":
@@ -414,9 +411,14 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
                                     ("Customer email replies", "Email replied by agents", "Email awaiting agent reply"),
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply)):
         column.metric(label, display_cell(value, 8))
+    if report.dc.workbook_placements:
+        placement_source = "Campaign placements come from the lookup results included in DC Checking. "
+    elif report.dc.lookup_applied:
+        placement_source = "DC Checking supplies customer emails and PL RECOVERY labels. Lookup files supply the other campaigns. "
+    else:
+        placement_source = "DC Checking supplies incoming customer emails and campaigns. "
     st.caption(
-        ("DC Checking supplies customer emails and PL RECOVERY labels. Lookup files supply the other campaigns. " if report.dc.lookup_applied
-         else "DC Checking supplies incoming customer emails and campaigns. ") +
+        placement_source +
         "UNIQUE RESULT — EMAIL REPLY counts customer accounts that replied by email, regardless of receiving mailbox "
         "or assigned agent. Repeated replies count once per customer email address within each campaign. "
         "AGENT WORKED — EMAIL counts those customers with a matching Email History row containing a nonblank sent value "
@@ -624,6 +626,12 @@ def render_inbound_reply() -> None:
     with output_area:
         st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
                                   source_campaigns=source_campaigns))
+        if email_report is not None and email_lookup is None:
+            if email_report.dc.workbook_placements:
+                st.caption("Email placements use the lookup results included in DC Checking.")
+            else:
+                st.info("Email uses the source campaign labels. Save account databases under Campaign lookup files "
+                        "to look up placements automatically on this app.")
         st.caption(
             "Enter ACTIVE TICKET and DC WORKED counts in the downloaded Excel report to calculate blast percentages."
         )
