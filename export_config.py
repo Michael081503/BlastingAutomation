@@ -83,6 +83,14 @@ NEW_ENDO_OUTPUT_FILENAMES = {
     "cards_review": "NEW ENDO CARDS REVIEW",
 }
 
+# Convert the names on source-tagged endorsements to their CMS agent codes.
+NEW_ENDO_AGENT_CODES = {
+    "CALIMQUIM, JULIUS SANCHEZ": "JSCALIMQUIM",
+    "BARUA, JEHAN A.": "JBARUA",
+    "DELA CRUZ, ERIKA MAE C.": "EMCDELACRUZ",
+    "BULATAO, JOSHUA BORJA": "JBBULATAO",
+}
+
 # Default destination for "Save files to folder". Relative paths start here in the project.
 # You can also change this folder in the app before saving.
 OUTPUT_FOLDER = "output"

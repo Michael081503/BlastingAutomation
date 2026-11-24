@@ -13,6 +13,7 @@ from time import sleep
 if "_REFRESH_LOCK" not in globals():
     _REFRESH_LOCK = RLock()
 STARTUP_RECOVERY_VERSION = 1
+STARTUP_INTERFACE_VERSION = 1
 _MAX_REFRESH_ATTEMPTS = 3
 
 
@@ -92,7 +93,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "GEO_RECO_AGENTS", "GEO_RECO_CYCLE_START",
             "GEO_AGENTS", "GEO_AGENT_ROSTER_VERSION",
             "RECO_DOCLASS_BY_FILENAME",
-            "NEW_ENDO_OUTPUT_FILENAMES",
+            "NEW_ENDO_OUTPUT_FILENAMES", "NEW_ENDO_AGENT_CODES",
             "GEO_OUTPUT_FILENAMES.mindanao_qualified_cards", "GEO_OUTPUT_FILENAMES.r3_qualified_cards",
         ), ()),
         ("automation", (

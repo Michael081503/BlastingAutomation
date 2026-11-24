@@ -217,7 +217,7 @@ class StartupTests(unittest.TestCase):
             refreshed = app_startup.refresh_application_modules()
             assert {'inbound_reply', 'inbound_email', 'inbound_campaign_lookup', 'inbound_summary', 'inbound_reply_page'} <= refreshed
             assert inbound_reply_page.apply_phone_campaign_lookup is inbound_campaign_lookup.apply_phone_campaign_lookup
-            assert inbound_reply_page.PHONE_CAMPAIGN_LOOKUP_VERSION == 1
+            assert inbound_reply_page.PHONE_CAMPAIGN_LOOKUP_VERSION == inbound_campaign_lookup.PHONE_CAMPAIGN_LOOKUP_VERSION == 2
             assert app_startup.refresh_application_modules() == set()
         """)
 
@@ -398,6 +398,29 @@ class StartupTests(unittest.TestCase):
                     results = list(pool.map(lambda _: open_session(), range(4)))
             assert maximum == 1
             assert sum(bool(result) for result in results) == 1
+            assert app_startup.refresh_application_modules() == set()
+        """)
+
+    def test_app_refreshes_cached_startup_helper_before_importing_new_endo_config(self):
+        self.run_isolated("""
+            from unittest.mock import Mock
+            import app_startup
+            app_startup.refresh_application_modules()
+            import export_config, exports
+            del export_config.NEW_ENDO_OUTPUT_FILENAMES
+            del export_config.NEW_ENDO_AGENT_CODES
+            app_startup.__dict__.pop('STARTUP_INTERFACE_VERSION', None)
+            legacy_refresh = Mock(return_value=set())
+            app_startup.refresh_application_modules = legacy_refresh
+
+            import app
+
+            legacy_refresh.assert_not_called()
+            assert app_startup.STARTUP_INTERFACE_VERSION == 1
+            assert app.NEW_ENDO_OUTPUT_FILENAMES is export_config.NEW_ENDO_OUTPUT_FILENAMES
+            assert exports.NEW_ENDO_OUTPUT_FILENAMES is export_config.NEW_ENDO_OUTPUT_FILENAMES
+            assert app.NEW_ENDO_AGENT_CODES is export_config.NEW_ENDO_AGENT_CODES
+            assert app.NEW_ENDO_OUTPUT_FILENAMES['cards_level_6'] == 'NEW ENDO L6'
             assert app_startup.refresh_application_modules() == set()
         """)
 

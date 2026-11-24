@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
@@ -13,12 +14,14 @@ from openpyxl.utils import get_column_letter
 
 import app_startup
 
+if getattr(app_startup, "STARTUP_INTERFACE_VERSION", None) != 1:
+    app_startup = importlib.reload(app_startup)
 app_startup.refresh_application_modules()
 
 from branding import BANK_ICON, workspace_page
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
-    NEW_ENDO_OUTPUT_FILENAMES, OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
+    NEW_ENDO_AGENT_CODES, NEW_ENDO_OUTPUT_FILENAMES, OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from exports import (
     GEO_FILENAME_CONFIG_VERSION, GEO_GROUP_LABELS, GEO_REVIEW_GROUP_KEYS, GROUP_LABELS, REVIEW_GROUP_KEYS,
@@ -26,7 +29,7 @@ from exports import (
     EXCEL_EXPORT_VERSION, CAMPAIGN_OUTPUT_FORMAT_VERSION, CSV_CAMPAIGN_DEFAULT_VERSION,
     EXCEL_SAFE_CSV_VERSION, build_export_csv, build_csv_zip,
     RECO_DOCLASS_VERSION, GEO_FIXED_AGENTS_VERSION, GEO_AGENT_AVAILABILITY_VERSION,
-    SOURCE_MEMBERSHIP_VERSION, source_account_counts, validate_source_exports,
+    SOURCE_CMS_TAGGING_VERSION, SOURCE_MEMBERSHIP_VERSION, source_account_counts, validate_source_exports,
     NEW_ENDO_COMBINED_OUTPUT_VERSION, NEW_ENDO_GROUP_LABELS, build_new_endo_exports,
     build_excel_zip, build_export_excel,
     build_geo_exports, build_negative_exports, build_sheet_exports,
@@ -321,7 +324,10 @@ def render_workbook_page() -> None:
             st.session_state.pop("new_endo_source_cache", None)
         assignment_date, agents = None, None
         if source_tagged:
-            assignment_panel.caption("CHCode uses the source TAG TO / CMS TAGGING / TAGGING values. TAG TO takes priority.")
+            assignment_panel.caption(
+                "CHCode uses TAG TO first, then CMS TAGGING or TAGGING when TAG TO is absent. "
+                "Saved agent names are converted to their CMS codes."
+            )
         elif geo:
             availability_date = manila_today()
             with assignment_panel:
@@ -388,6 +394,7 @@ def render_workbook_page() -> None:
         (RECO_DOCLASS_VERSION, tuple(RECO_DOCLASS_BY_FILENAME.items())) if not geo else None,
         tuple(source_columns.items()) if source_columns is not None else None,
         NEW_ENDO_COMBINED_OUTPUT_VERSION, new_endo, tuple(NEW_ENDO_OUTPUT_FILENAMES.items()),
+        (SOURCE_CMS_TAGGING_VERSION, tuple(NEW_ENDO_AGENT_CODES.items())) if source_tagged else None,
     )
     previous_result = st.session_state.get("result")
     if previous_result is not None and previous_result.get("signature") != signature:

@@ -34,7 +34,7 @@ from automation import (
 )
 from export_config import (
     CHANNEL_SUFFIXES, GEO_AGENTS, GEO_OUTPUT_FILENAMES, GEO_ZIP_FILENAME,
-    NEW_ENDO_OUTPUT_FILENAMES, OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
+    NEW_ENDO_AGENT_CODES, NEW_ENDO_OUTPUT_FILENAMES, OUTPUT_FILENAMES, RECO_DOCLASS_BY_FILENAME, ZIP_FILENAME,
 )
 from email_validation import validated_email
 from phone_validation import first_valid_phone
@@ -72,7 +72,7 @@ GEO_FIXED_AGENTS_VERSION = 1
 GEO_AGENT_AVAILABILITY_VERSION = 1
 RECO_DOCLASS_VERSION = 1
 SOURCE_MEMBERSHIP_VERSION = 1
-SOURCE_CMS_TAGGING_VERSION = 1
+SOURCE_CMS_TAGGING_VERSION = 2
 NEW_ENDO_COMBINED_OUTPUT_VERSION = 1
 NEW_ENDO_GROUP_LABELS = {
     "cards_level_1": "NEW ENDO / CARDS / Level 1",
@@ -336,6 +336,23 @@ def reco_doclass(filename: str) -> str:
     return next((value for label, value in RECO_DOCLASS_BY_FILENAME.items() if label.casefold() in labels), "")
 
 
+def _source_agent_tags() -> dict[str, str]:
+    tags = {}
+    for name, code in NEW_ENDO_AGENT_CODES.items():
+        surname, _, given_names = name.partition(",")
+        given_first = f"{given_names.strip()} {surname}"
+        for tag in (name, given_first, code, f"{name} {code}", f"{given_first} {code}"):
+            tags[normalize_header(tag)] = code
+    return tags
+
+
+_SOURCE_AGENT_TAGS = _source_agent_tags()
+
+
+def _source_agent_code(value: Any) -> Any:
+    return _SOURCE_AGENT_TAGS.get(normalize_header(value), value)
+
+
 def _build_channel_files(
     template: bytes,
     records: list[dict[str, Any]],
@@ -354,7 +371,7 @@ def _build_channel_files(
     source_tagged = len(automatic_records) != len(records)
     assigned = iter(assign_agents_to_accounts(automatic_records, agents)) if agents is not None and automatic_records else None
     records = [
-        {**record, "Terms": record["cms_tagging"], "Monthly": None} if "cms_tagging" in record
+        {**record, "Terms": _source_agent_code(record["cms_tagging"]), "Monthly": None} if "cms_tagging" in record
         else next(assigned) if assigned is not None else record
         for record in records
     ]
@@ -492,7 +509,8 @@ def build_new_endo_exports(
             key = "bel" if normalize_header(product) == "bel" else "other_products"
         groups[key].append({
             **record, "product": product, "email": validated_email(record.get("email")),
-            "phone": first_valid_phone(record.get("phone")), "Terms": record.get("cms_tagging"), "Monthly": None,
+            "phone": first_valid_phone(record.get("phone")),
+            "Terms": _source_agent_code(record.get("cms_tagging")), "Monthly": None,
         })
     files = []
     for key, records_in_group in groups.items():

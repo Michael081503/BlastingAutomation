@@ -182,6 +182,53 @@ class NewEndoMappingTests(unittest.TestCase):
 
 
 class CombinedNewEndoTests(unittest.TestCase):
+    def test_saved_agent_names_supply_chcode_in_new_endo_and_geo_downloads(self):
+        tags = [
+            ("CALIMQUIM, JULIUS SANCHEZ", "JSCALIMQUIM"),
+            ("  barua, jehan a  ", "JBARUA"),
+            ("Erika Mae C. Dela Cruz", "EMCDELACRUZ"),
+            ("BULATAO, JOSHUA BORJA - JBBULATAO", "JBBULATAO"),
+            ("jb arua", "JBARUA"),
+            ("SOURCE-AGENT", "SOURCE-AGENT"),
+            (None, ""),
+        ]
+        expected = {f"{index:04}": code for index, (_, code) in enumerate(tags, 1)}
+
+        def tagged_source(area=None):
+            workbook = Workbook()
+            workbook.active.title = "SPM List"
+            workbook.active.append(["Product", "Card Number/ Short PN", "Account Code", "TAG TO", "Assignment Scheme",
+                                    "Customer Name", "PHONE 1", "EMAIL ADD", "Region"])
+            for index, (tag, _) in enumerate(tags, 1):
+                workbook.active.append(["MC", f"{index:08}", f"{index:04}", tag, "Recovery (L6 Unsecured)",
+                                        "Sample customer", "09171234567", f"sample{index}@example.com", area])
+            output = BytesIO()
+            workbook.save(output)
+            workbook.close()
+            return Upload(output.getvalue())
+
+        uploads = {"source_upload": tagged_source()}
+        with patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])):
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=20)
+            for area in (None, "Mindanao"):
+                if area is not None:
+                    uploads["source_upload"] = tagged_source(area)
+                    app.run(timeout=20)
+                self.assertFalse(app.exception)
+                self.assertFalse(app.error)
+                result = app.session_state["result"]
+                self.assertEqual(result["new_endo"], area is None)
+                self.assertEqual(result["geo"], area is not None)
+                for file in result["files"]:
+                    self.assertEqual({row["primary_key"]: row["CHCode"] for row in csv_rows(file)}, expected)
+                    workbook = load_workbook(BytesIO(build_export_excel(file)))
+                    try:
+                        headers, *rows = workbook.active.values
+                        self.assertEqual({row[headers.index("primary_key")]: row[headers.index("CHCode")] or "" for row in rows},
+                                         expected)
+                    finally:
+                        workbook.close()
+
     def test_reference_layout_keeps_both_contacts_codes_dates_and_account_protection(self):
         records = read_source(blank_region_endo(), "Sheet1", 1, allow_missing=True).records
         bundle = build_new_endo_exports(create_default_csv_template(), records, "", 1, ".csv")
