@@ -11,11 +11,11 @@ import streamlit as st
 
 from inbound_reply import (
     VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, INBOUND_CSV_DELIMITER_VERSION,
-    InboundReplyError, ViberReplyReport,
+    InboundReplyError, ReplySource, ViberReplyReport,
     build_people_csv, build_unreplied_workbook, match_viber_sources, people_rows, read_reply_source,
 )
 from inbound_email import (
-    EMAIL_REPLY_VERSION, EmailReplyReport, build_email_unreplied_workbook,
+    EMAIL_REPLY_VERSION, EmailReplyReport, EmailSource, build_email_unreplied_workbook,
     match_email_sources, read_email_source,
 )
 from inbound_campaign_lookup import (
@@ -25,16 +25,15 @@ from inbound_campaign_lookup import (
 )
 from upload_state import upload_widget_key
 from inbound_summary import (
-    BLAST_PERCENTAGE_FORMULAS_VERSION, build_summary_workbook, campaign_groups, campaign_totals_key,
-    display_cell, merge_mindanao_totals, nonnegative_count as _count, overall_blast_row, summary_rows,
+    BLAST_PERCENTAGE_FORMULAS_VERSION, build_summary_workbook, build_unmatched_workbook,
+    display_cell, overall_blast_row, summary_rows,
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 27
+INBOUND_REPLY_PAGE_VERSION = 28
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
-MANUAL_CAMPAIGN_TOTALS_VERSION = 1
 GROUPED_SUMMARY_OUTPUT_VERSION = 1
 VISIBLE_WORKSPACE_SECTIONS_VERSION = 1
 SMS_MATCHING_PAGE_VERSION = 1
@@ -43,58 +42,6 @@ READABLE_SUMMARY_HEADERS_VERSION = 1
 REPORT_SETTINGS_REMOVED_VERSION = 1
 PL_RECOVERY_LOOKUP_VERSION = 2
 CHANNELS = ("SMS", "EMAIL", "VIBER")
-
-
-def render_campaign_totals(report_date: date, campaign: str, viber_report=None,
-                           email_report=None, *, include_worked: bool = False, sms_report=None, source_campaigns=()) -> dict:
-    """Keep manual totals with their campaign/date when uploads or visible rows change."""
-    previous = st.session_state.get("inbound_reply_campaign_totals", {})
-    saved = merge_mindanao_totals(report_date, previous)
-    groups = campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns)
-    with st.container(border=True, key="inbound_campaign_totals"):
-        st.subheader("Edit campaign totals")
-        st.caption(
-            "Enter ACTIVE TICKET manually. DC WORKED Email, SMS and Viber are the accounts blasted through each channel. "
-            "Each DC WORKED percentage is accounts blasted divided by ACTIVE TICKET × 100. "
-            "Values are saved separately for each campaign and report date."
-        )
-        if not groups:
-            st.info("Upload campaign lookup files or customer-reply files to show campaign names and enter totals.")
-            return saved
-        st.caption(f"{len(groups):,} campaigns detected from uploaded files.")
-        for group in groups:
-            label = group["label"]
-            identity = campaign_totals_key(report_date, label)
-            values = dict(saved.get(identity, {}))
-            widget_prefix = "inbound_reply_total_" + sha256(identity.encode("utf-8")).hexdigest()[:16]
-            with st.container(border=True, key=f"{widget_prefix}_campaign"):
-                st.markdown(f"**{escape(label)}**")
-                fields = [("active_ticket", "ACTIVE TICKET")]
-                if include_worked:
-                    fields.extend((f"dc_{channel}", f"DC WORKED — {channel.upper()}") for channel in ("email", "sms", "viber"))
-                for column, (field, field_label) in zip(st.columns(len(fields)), fields):
-                    widget_key = f"{widget_prefix}_{field}"
-                    if values.get(field) != previous.get(identity, {}).get(field):
-                        st.session_state.pop(widget_key, None)
-                    values[field] = column.number_input(
-                        field_label, min_value=0, value=_count(values.get(field)), step=1,
-                        placeholder="Enter total", key=widget_key,
-                        help=("Enter the total active accounts for this campaign."
-                              if field == "active_ticket" else
-                              f"Enter the accounts blasted through {field.removeprefix('dc_').upper()} for this campaign. "
-                              "The percentage uses this count divided by ACTIVE TICKET."),
-                    )
-                if include_worked:
-                    active = _count(values.get("active_ticket"))
-                    coverage = []
-                    for channel in ("email", "sms", "viber"):
-                        blasted = _count(values.get(f"dc_{channel}"))
-                        percent = blasted / active if blasted is not None and active else None
-                        coverage.append(f"{channel.title() if channel != 'sms' else 'SMS'}: {display_cell(percent, 3)}")
-                    st.caption("Blast coverage — " + " · ".join(coverage))
-            saved[identity] = values
-    st.session_state["inbound_reply_campaign_totals"] = saved
-    return saved
 
 
 def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
@@ -328,32 +275,33 @@ def prepare_sms_report(replied_upload, account_upload, lookup: EmailCampaignLook
     return cached["report"]
 
 
-def prepare_campaign_labels(channels, email_lookup: EmailCampaignLookup | None = None,
-                            *, lookup_failed: bool = False) -> tuple[str, ...]:
-    """Show lookup campaigns immediately, adding labels from pending customer files."""
+def prepare_campaign_inputs(channels, email_lookup: EmailCampaignLookup | None = None,
+                            *, lookup_failed: bool = False) -> tuple[tuple[str, ...], dict[str, EmailSource | ReplySource]]:
+    """Collect campaign labels and unmatched customer rows, including from pending uploads."""
     if lookup_failed:
         st.session_state.pop("inbound_reply_campaign_labels", None)
-        return ()
+        return (), {}
     lookup_labels = email_lookup.campaigns if email_lookup is not None else ()
-    sources = []
-    for channel, uploads, report in channels:
+    sources, unmatched = [], {}
+    for channel, (_, upload), report in channels:
         if report is not None:
-            continue
-        for index, upload in enumerate(uploads):
-            # Campaign rows represent customers who contacted us, from file 2.
-            if upload is not None and index == 1:
-                data = upload.getvalue()
-                sources.append((channel, index, upload.name, data))
+            if email_lookup is not None:
+                source = report.dc if channel == "EMAIL" else report.message_logs
+                if source.unmatched_records:
+                    unmatched[channel] = source
+        elif upload is not None:
+            sources.append((channel, upload.name, upload.getvalue()))
     if not sources:
         st.session_state.pop("inbound_reply_campaign_labels", None)
-        return lookup_labels
-    signature = (PL_RECOVERY_LOOKUP_VERSION, VIBER_REPLY_VERSION, EMAIL_REPLY_VERSION,
+        return lookup_labels, unmatched
+    signature = (PL_RECOVERY_LOOKUP_VERSION, VIBER_REPLY_VERSION, EMAIL_REPLY_VERSION, EMAIL_CAMPAIGN_LOOKUP_VERSION,
                  email_lookup.signature if email_lookup is not None else None,
-                 tuple((channel, index, name, sha256(data).hexdigest()) for channel, index, name, data in sources))
+                 tuple((channel, name, sha256(data).hexdigest()) for channel, name, data in sources))
     cached = st.session_state.get("inbound_reply_campaign_labels")
     if cached is None or cached["signature"] != signature:
         labels = list(lookup_labels)
-        for channel, _, name, data in sources:
+        pending_unmatched = {}
+        for channel, name, data in sources:
             try:
                 if channel == "EMAIL":
                     source = read_email_source(name, data, kind="dc", require_campaign=email_lookup is None)
@@ -366,9 +314,11 @@ def prepare_campaign_labels(channels, email_lookup: EmailCampaignLookup | None =
             except InboundReplyError:
                 continue  # Full-pair preparation displays input errors.
             labels.extend(record.campaign for record in source.records)
-        cached = {"signature": signature, "labels": tuple(dict.fromkeys(labels))}
+            if source.unmatched_records:
+                pending_unmatched[channel] = source
+        cached = {"signature": signature, "labels": tuple(dict.fromkeys(labels)), "unmatched": pending_unmatched}
         st.session_state["inbound_reply_campaign_labels"] = cached
-    return cached["labels"]
+    return cached["labels"], unmatched | cached["unmatched"]
 
 
 def channel_source_status(uploads, report) -> str:
@@ -402,7 +352,7 @@ def render_sms_details(report: ViberReplyReport) -> None:
         st.warning(f"Skipped {excluded:,} SMS rows without a usable phone number.")
     if report.message_logs.unmatched_addresses:
         st.caption(f"Excluded {report.message_logs.unmatched_addresses:,} SMS customer phone numbers without a campaign "
-                   "match from the report and downloads.")
+                   "match from the campaign report.")
 
 
 def render_email_details(report: EmailReplyReport, report_date: date) -> None:
@@ -421,7 +371,7 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
     )
     if report.dc.unmatched_addresses:
         st.caption(f"Excluded {report.dc.unmatched_addresses:,} email addresses without a campaign match "
-                   "from the report and downloads.")
+                   "from the campaign report.")
     st.subheader("Email unreplied accounts by campaign")
     rows = "".join(f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
                    for campaign in report.campaigns)
@@ -473,7 +423,7 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
     )
     if report.message_logs.unmatched_addresses:
         st.caption(f"Excluded {report.message_logs.unmatched_addresses:,} Viber customer phone numbers without a campaign "
-                   "match from the report and downloads.")
+                   "match from the campaign report.")
     st.subheader("Unreplied accounts by campaign")
     summary_rows = "".join(
         f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
@@ -606,28 +556,21 @@ def render_inbound_reply() -> None:
     email_report = prepare_email_report(*email_uploads, email_lookup, lookup_failed=lookup_failed)
     sms_report = prepare_sms_report(*sms_uploads, email_lookup, lookup_failed=lookup_failed)
     channels = (("SMS", sms_uploads, sms_report), ("VIBER", viber_uploads, viber_report), ("EMAIL", email_uploads, email_report))
-    source_campaigns = prepare_campaign_labels(channels, email_lookup, lookup_failed=lookup_failed)
-    manual_totals = render_campaign_totals(report_date, campaign, viber_report, email_report,
-                                           include_worked=True, sms_report=sms_report, source_campaigns=source_campaigns)
+    source_campaigns, unmatched_sources = prepare_campaign_inputs(channels, email_lookup, lookup_failed=lookup_failed)
+    manual_totals = st.session_state.get("inbound_reply_campaign_totals")
     statuses = {channel: channel_source_status(uploads, report) for channel, uploads, report in channels}
     with output_area:
         st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
                                   source_campaigns=source_campaigns))
         st.caption(
-            "TOTAL — ALL CAMPAIGNS shows each channel's total DC WORKED divided by total ACTIVE TICKET. "
-            "Enter ACTIVE TICKET and that channel's blast count for every campaign to show its overall percentage; "
-            "enter 0 when there were no blasts."
+            "Enter ACTIVE TICKET and DC WORKED counts in the downloaded Excel report to calculate blast percentages."
         )
         st.caption(
             "For Email, SMS and Viber, UNIQUE RESULT counts customer accounts that replied, regardless of receiving inbox "
             "or assigned agent. AGENT WORKED counts those accounts answered by any agent. Repeated customer or agent "
             "replies count once per account within each channel and campaign."
         )
-        has_manual_counts = any(value is not None for row in summary_rows(
-            campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
-            source_campaigns=source_campaigns)
-            for value in row[1:11])
-        if viber_report is not None or email_report is not None or sms_report is not None or has_manual_counts:
+        if source_campaigns or any(report is not None for _, _, report in channels):
             st.download_button(
                 "Download report (.xlsx)",
                 data=partial(build_summary_workbook, campaign, report_date, sent_to_ops, viber_report, email_report,
@@ -636,7 +579,15 @@ def render_inbound_reply() -> None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="inbound_reply_summary_download", on_click="ignore", type="primary",
             )
-            st.caption("Includes Summary, SMS Unreplied, Viber Unreplied and Email Unreplied worksheets.")
+            st.caption("Includes Summary and unreplied sheets for SMS, Viber and Email. Click a highlighted cell to read the full text.")
+        if unmatched_sources:
+            st.download_button(
+                "Download unmatched accounts (.xlsx)",
+                data=partial(build_unmatched_workbook, unmatched_sources),
+                file_name=f"INBOUND_REPLY_UNMATCHED_{report_date.isoformat()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="inbound_reply_unmatched_download", on_click="ignore",
+            )
     if sms_report is not None:
         with st.container(border=True, key="inbound_sms_details"):
             st.subheader("SMS account details")

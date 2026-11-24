@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
-from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 from inbound_email import build_email_unreplied_workbook, match_email_sources, read_email_source
 from inbound_reply import build_people_csv, build_unreplied_workbook, match_viber_sources, read_reply_source
-from inbound_summary import build_summary_workbook, campaign_totals_key, summary_rows
+from inbound_summary import build_summary_workbook, summary_rows
 from test_inbound_display import table_cells
 from test_inbound_email import csv_bytes
 from test_inbound_summary import reports
@@ -155,16 +154,13 @@ class CampaignColumnTests(unittest.TestCase):
             rows = displayed_rows()
             self.assertEqual([row[0] for row in rows], ["Email Campaign", "SMS Campaign", "Viber Campaign"])
             self.assertTrue(all(row[8:11] == ["—", "—", "—"] for row in rows))
-            identity = campaign_totals_key(date(2026, 11, 18), "SMS Campaign")
-            active_key = "inbound_reply_total_" + sha256(identity.encode("utf-8")).hexdigest()[:16] + "_active_ticket"
-            app.number_input(key=active_key).set_value(100).run(timeout=20)
             call = next(call for call in reversed(downloads.call_args_list)
                         if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
                 self.assertEqual([book["Summary"].cell(row, 1).value for row in range(4, 7)],
                                  ["Email Campaign", "SMS Campaign", "Viber Campaign"])
-                self.assertEqual(book["Summary"]["B5"].value, 100)
+                self.assertIsNone(book["Summary"]["B5"].value)
                 self.assertIsNone(book["Summary"]["J5"].value)
                 self.assertIn("Incomplete", book["SMS Unreplied"]["B1"].value)
                 self.assertIsNone(book["SMS Unreplied"]["B2"].value)
@@ -176,7 +172,7 @@ class CampaignColumnTests(unittest.TestCase):
             app.run(timeout=20)
             rows = displayed_rows()
             sms_row = next(row for row in rows if row[0] == "SMS Campaign")
-            self.assertEqual(sms_row[1], "100")
+            self.assertEqual(sms_row[1], "—")
             self.assertEqual(sms_row[9], "2")
             self.assertEqual(sms_row[14:16], ["1", "50.00%"])
             uploads["inbound_reply_email_2_upload"] = Upload("dc.csv", csv_bytes(("sender", "Campaign Name"), [

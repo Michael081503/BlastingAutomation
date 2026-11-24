@@ -24,9 +24,12 @@ VIBER_CAMPAIGN_REPLIED_VERSION = 1
 VIBER_AGENT_REPLIED_SOURCE = "campaign_replies"
 VIBER_PHONE_MATCHING_VERSION = 1
 VIBER_MATCH_MODE = "phone"
-VIBER_UNREPLIED_WORKBOOK_VERSION = 2
+VIBER_UNREPLIED_WORKBOOK_VERSION = 3
 INBOUND_MESSAGE_COLUMN_WIDTH = 96
 EXCEL_MAX_ROW_HEIGHT = 409
+INBOUND_ACCOUNT_ROW_HEIGHT = 63
+EXCEL_CELL_TEXT_LIMIT = 32767
+EXCEL_CELL_LINE_FEED_LIMIT = 253
 SOURCE_NAMES = ("message_logs", "campaign_replies")
 MATCH_MODES = ("name", "phone")
 MINDANAO_CAMPAIGN = "SBC Mindanao"
@@ -113,7 +116,11 @@ class ReplySource:
     sheet: str = "CSV"
     headers: tuple[str, ...] = ()
     lookup_applied: bool = False
-    unmatched_addresses: int = 0
+    unmatched_records: tuple[ReplyRecord, ...] = ()
+
+    @property
+    def unmatched_addresses(self) -> int:
+        return len(self.unmatched_records)
 
     @property
     def message_types(self) -> dict[str, int]:
@@ -380,12 +387,81 @@ def build_unreplied_workbook(report: ViberReplyReport) -> bytes:
     return build_reply_workbook(report.campaigns, source_headers, details, matched_header="Matched Phone")
 
 
-def fit_report_text(workbook) -> dict[str, list]:
-    """Wrap cell text, size its rows, and identify text that exceeds Excel's row height."""
+def append_report_detail_rows(sheet, rows) -> dict[tuple[int, int], str]:
+    """Write source rows and save text that exceeds Excel's per-cell limits."""
+    full_text = {}
+    for row_number, values in enumerate(rows, start=sheet.max_row + 1):
+        display = []
+        for column, value in enumerate(values, 1):
+            if isinstance(value, str) and (
+                value.count("\n") + value.count("\r") - value.count("\r\n") > EXCEL_CELL_LINE_FEED_LIMIT
+                or (len(value) > EXCEL_CELL_TEXT_LIMIT // 2
+                    and len(value.encode("utf-16-le")) // 2 > EXCEL_CELL_TEXT_LIMIT)
+            ):
+                full_text[row_number, column] = value
+                value = value[:240] + " …"
+            display.append(value)
+        sheet.append(display)
+    return full_text
+
+
+def _report_text_parts(text: str) -> list[tuple[str, int]]:
+    """Split text into short blocks that fit the wrapped continuation rows."""
+    parts = []
+    start = 0
+    line_count = 0
+    for segment in re.finditer(r"[^\r\n]{1,70}(?:\r\n|\r|\n)?|\r\n|\r|\n", text):
+        line_count += 1
+        if line_count == 12:
+            parts.append((text[start:segment.end()], line_count))
+            start = segment.end()
+            line_count = 0
+    if start < len(text):
+        parts.append((text[start:], line_count))
+    return parts
+
+
+def _add_report_text_continuations(sheet, full_text: dict[tuple[int, int], str]) -> None:
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils.cell import quote_sheetname
+    from openpyxl.worksheet.hyperlink import Hyperlink
+
+    wrap = Alignment(vertical="top", wrap_text=True)
+    highlight = PatternFill("solid", fgColor="E2EAFB")
+    location = quote_sheetname(sheet.title)
+    section_row = sheet.max_row + 2
+    sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=5)
+    title = sheet.cell(section_row, 1, "Full text for long entries")
+    title.font = Font(bold=True)
+    title.fill = highlight
+    title.alignment = wrap
+    row = section_row + 1
+    for (source_row, source_column), text in sorted(full_text.items()):
+        source = sheet.cell(source_row, source_column)
+        parts = _report_text_parts(text)
+        source.fill = highlight
+        source.hyperlink = Hyperlink(ref=source.coordinate, location=f"{location}!A{row}", tooltip="Read full text")
+        for index, (part, line_count) in enumerate(parts, start=1):
+            link = sheet.cell(row, 1, f"{source.coordinate} ({index}/{len(parts)})")
+            link.style = "Hyperlink"
+            link.alignment = wrap
+            link.hyperlink = Hyperlink(ref=link.coordinate, location=f"{location}!{source.coordinate}",
+                                       tooltip="Back to the account cell")
+            sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
+            message = sheet.cell(row, 2, part)
+            message.data_type = "s"
+            message.alignment = wrap
+            sheet.row_dimensions[row].height = line_count * 30 + 18
+            row += 1
+
+
+def fit_report_text(workbook, detail_text: dict[str, dict[tuple[int, int], str]]) -> None:
+    """Wrap text and keep account rows compact, with links to longer entries."""
     from openpyxl.utils import column_index_from_string
 
-    overflow = {}
     for sheet in workbook:
+        full_text = detail_text.get(sheet.title)
+        height_limit = INBOUND_ACCOUNT_ROW_HEIGHT if full_text is not None else EXCEL_MAX_ROW_HEIGHT
         widths = dict.fromkeys(range(1, sheet.max_column + 1), sheet.sheet_format.defaultColWidth or 13)
         for dimension in sheet.column_dimensions.values():
             first_column = dimension.min or column_index_from_string(dimension.index)
@@ -419,13 +495,15 @@ def fit_report_text(workbook) -> dict[str, list]:
                     line_height = max(15, (cell.font.sz or 11) * 1.35)
                     text_height = lines * line_height + 3
                     needed_height = max(needed_height, text_height)
-                    if text_height > EXCEL_MAX_ROW_HEIGHT:
-                        overflow.setdefault(sheet.title, []).append(cell)
+                    if full_text is not None and text_height > height_limit:
+                        full_text.setdefault((cell.row, cell.column), cell.value)
             dimension = sheet.row_dimensions.get(row[0].row)
             current_height = (dimension.height if dimension else None) or sheet.sheet_format.defaultRowHeight or 15
-            if needed_height > current_height:
-                sheet.row_dimensions[row[0].row].height = min(EXCEL_MAX_ROW_HEIGHT, needed_height)
-    return overflow
+            height = min(height_limit, max(current_height, needed_height))
+            if height != current_height:
+                sheet.row_dimensions[row[0].row].height = height
+        if full_text:
+            _add_report_text_continuations(sheet, full_text)
 
 
 def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_headers: tuple[str, ...],
@@ -451,8 +529,7 @@ def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_head
 
     sheet = workbook.create_sheet("Unreplied Details")
     sheet.append([*source_headers, matched_header, "Reply Status"])
-    for row in details:
-        sheet.append(row)
+    full_text = append_report_detail_rows(sheet, details)
     sheet.auto_filter.ref = sheet.dimensions
     for column, header in enumerate([*source_headers, matched_header, "Reply Status"], 1):
         key = "".join(char for char in header.casefold() if char.isalnum())
@@ -480,7 +557,7 @@ def build_reply_workbook(campaigns: tuple[CampaignReplyCounts, ...], source_head
     for cell in summary[summary.max_row]:
         cell.font = Font(bold=True)
         cell.fill = PatternFill("solid", fgColor="E2EAFB")
-    fit_report_text(workbook)
+    fit_report_text(workbook, {sheet.title: full_text})
     output = BytesIO()
     workbook.save(output)
     workbook.close()

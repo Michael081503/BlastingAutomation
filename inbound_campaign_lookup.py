@@ -20,7 +20,7 @@ from inbound_reply import (
 )
 
 
-EMAIL_CAMPAIGN_LOOKUP_VERSION = 8
+EMAIL_CAMPAIGN_LOOKUP_VERSION = 9
 PHONE_CAMPAIGN_LOOKUP_VERSION = 1
 BUCKET_CAMPAIGN_LOOKUP_VERSION = 1
 B4_PRIMARY_EMAIL_LOOKUP_VERSION = 1
@@ -279,7 +279,7 @@ def save_campaign_lookup_files(path: Path, files: list[tuple[str, bytes]]) -> No
 
 def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup) -> EmailSource:
     """Resolve campaigns for non-PL RECOVERY email rows."""
-    records, unmatched = [], set()
+    records, unmatched = [], {}
     header = "Lookup Campaign"
     while header in source.headers:
         header += " (lookup)"
@@ -287,18 +287,18 @@ def apply_email_campaign_lookup(source: EmailSource, lookup: EmailCampaignLookup
         campaigns = ((PL_RECOVERY_CAMPAIGN,) if row.campaign == PL_RECOVERY_CAMPAIGN
                      else lookup.campaigns_by_email.get(row.email))
         if not campaigns:
-            unmatched.add(row.email)
+            unmatched.setdefault(row.email, row)
             continue
         values = row.source_values[:len(source.headers)] + (None,) * max(0, len(source.headers) - len(row.source_values))
         for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))
     return replace(source, headers=(*source.headers, header), records=tuple(records),
-                   lookup_applied=True, unmatched_addresses=len(unmatched))
+                   lookup_applied=True, unmatched_records=tuple(unmatched.values()))
 
 
 def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup) -> ReplySource:
     """Resolve campaigns for non-PL RECOVERY SMS and Viber rows."""
-    records, unmatched = [], set()
+    records, unmatched = [], {}
     excluded = source.excluded_rows
     header = "Lookup Campaign"
     while header in source.headers:
@@ -311,10 +311,10 @@ def apply_phone_campaign_lookup(source: ReplySource, lookup: EmailCampaignLookup
         campaigns = ((PL_RECOVERY_CAMPAIGN,) if row.campaign == PL_RECOVERY_CAMPAIGN
                      else lookup.campaigns_by_phone.get(phone))
         if not campaigns:
-            unmatched.add(phone)
+            unmatched.setdefault(phone, row)
             continue
         values = row.source_values[:len(source.headers)] + (None,) * max(0, len(source.headers) - len(row.source_values))
         for campaign in campaigns:
             records.append(replace(row, campaign=campaign, source_values=(*values, campaign)))
     return replace(source, headers=(*source.headers, header), records=tuple(records),
-                   excluded_rows=excluded, lookup_applied=True, unmatched_addresses=len(unmatched))
+                   excluded_rows=excluded, lookup_applied=True, unmatched_records=tuple(unmatched.values()))

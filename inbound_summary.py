@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from datetime import date
 from io import BytesIO
-import re
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
+from inbound_email import EmailSource
 from inbound_reply import (
-    INBOUND_MESSAGE_COLUMN_WIDTH, MINDANAO_CAMPAIGN, InboundReplyError, fit_report_text,
+    INBOUND_MESSAGE_COLUMN_WIDTH, MINDANAO_CAMPAIGN, InboundReplyError, ReplySource, append_report_detail_rows, fit_report_text,
     inbound_campaign_label, normalized_campaign, normalized_phone, unreplied_records,
 )
 
 
-INBOUND_SUMMARY_VERSION = 7
+INBOUND_SUMMARY_VERSION = 8
 BLAST_PERCENTAGE_FORMULAS_VERSION = 1
 OVERALL_BLAST_COVERAGE_VERSION = 1
 OVERALL_BLAST_LABEL = "TOTAL — ALL CAMPAIGNS"
@@ -182,58 +182,62 @@ def _channel_details(channel: str, report):
     return headers, rows
 
 
-def _email_text_parts(text: str) -> list[tuple[str, int]]:
-    """Use short text segments to make room for wide characters and natural Excel wrapping."""
-    parts = []
-    start = 0
-    line_count = 0
-    for segment in re.finditer(r"[^\r\n]{1,70}(?:\r\n|\r|\n)?|\r\n|\r|\n", text):
-        line_count += 1
-        if line_count == 12:
-            parts.append((text[start:segment.end()], line_count))
-            start = segment.end()
-            line_count = 0
-    if start < len(text):
-        parts.append((text[start:], line_count))
-    return parts
-
-
-def add_email_text_continuations(sheet, overflow_cells) -> None:
-    """Link long text to wrapped continuation rows below the filtered account table."""
+def _format_detail_sheet(sheet, headers, *, header_row: int) -> None:
     from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.worksheet.hyperlink import Hyperlink
+    from openpyxl.utils import get_column_letter
 
-    if not overflow_cells:
-        return
-    wrap = Alignment(vertical="top", wrap_text=True)
-    highlight = PatternFill("solid", fgColor="E2EAFB")
-    sheet.merge_cells("D1:G1")
-    sheet["D1"] = "Click a highlighted cell to read the full text below."
-    sheet["D1"].alignment = wrap
-    section_row = sheet.max_row + 2
-    sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=5)
-    title = sheet.cell(section_row, 1, "Full text for long email entries")
-    title.font = Font(bold=True)
-    title.fill = highlight
-    title.alignment = wrap
-    row = section_row + 1
-    for source_cell in overflow_cells:
-        parts = _email_text_parts(source_cell.value)
-        source_cell.fill = highlight
-        source_cell.hyperlink = Hyperlink(ref=source_cell.coordinate, location=f"'Email Unreplied'!A{row}",
-                                          tooltip="Read full text")
-        for index, (part, line_count) in enumerate(parts, start=1):
-            link = sheet.cell(row, 1, f"{source_cell.coordinate} ({index}/{len(parts)})")
-            link.style = "Hyperlink"
-            link.alignment = wrap
-            link.hyperlink = Hyperlink(ref=link.coordinate, location=f"'Email Unreplied'!{source_cell.coordinate}",
-                                       tooltip="Back to the account cell")
-            sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
-            message = sheet.cell(row, 2, part)
-            message.data_type = "s"
-            message.alignment = wrap
-            sheet.row_dimensions[row].height = line_count * 30 + 18
-            row += 1
+    for row in sheet:
+        for cell in row:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+                cell.number_format = "@"
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if cell.row == header_row:
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill("solid", fgColor="E2EAFB")
+    for index, header in enumerate(headers, 1):
+        key = header.casefold()
+        sheet.column_dimensions[get_column_letter(index)].width = (
+            INBOUND_MESSAGE_COLUMN_WIDTH if "body" in key or "content" in key else 26)
+    sheet.freeze_panes = f"A{header_row + 1}"
+    sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{sheet.max_row}"
+
+
+def build_unmatched_workbook(sources: dict[str, EmailSource | ReplySource]) -> bytes:
+    """Export the first original row per customer contact without a lookup match."""
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    default = workbook.active
+    detail_text = {}
+    for channel, title in (("SMS", "SMS Unmatched"), ("VIBER", "Viber Unmatched"), ("EMAIL", "Email Unmatched")):
+        source = sources.get(channel)
+        if source is None or not source.unmatched_records:
+            continue
+        original_headers = source.headers[:-1]  # The final header was added by the lookup.
+        if isinstance(source, EmailSource):
+            contact_header = "Normalized Email"
+            contacts = (row.email for row in source.unmatched_records)
+        else:
+            contact_header = "Normalized Phone"
+            contacts = (normalized_phone(row.phone) for row in source.unmatched_records)
+        sheet = workbook.create_sheet(title)
+        headers = (contact_header, *original_headers)
+        sheet.append(headers)
+        rows = ((contact, *row.source_values[:len(original_headers)])
+                for contact, row in zip(contacts, source.unmatched_records))
+        detail_text[title] = append_report_detail_rows(sheet, rows)
+        _format_detail_sheet(sheet, headers, header_row=1)
+    if len(workbook.worksheets) > 1:
+        workbook.remove(default)
+    else:
+        default.title = "Unmatched accounts"
+        default.append(("No unmatched accounts",))
+    fit_report_text(workbook, detail_text)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
 
 
 def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
@@ -335,6 +339,7 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     sheet.print_title_rows = "1:3"
     sheet.print_area = f"A1:R{sheet.max_row}"
 
+    detail_text = {}
     for channel, title, report in (("SMS", "SMS Unreplied", sms_report),
                                     ("VIBER", "Viber Unreplied", viber_report),
                                     ("EMAIL", "Email Unreplied", email_report)):
@@ -344,26 +349,10 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
         details.append(["Source status", status])
         details.append(["Unreplied accounts", len(rows) if report is not None else None])
         details.append(headers)
-        for row in rows:
-            details.append(row)
-        for row in details:
-            for cell in row:
-                if isinstance(cell.value, str):
-                    cell.data_type = "s"
-                    cell.number_format = "@"
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-                if cell.row == 3:
-                    cell.font = Font(bold=True)
-                    cell.fill = PatternFill("solid", fgColor="E2EAFB")
+        detail_text[title] = append_report_detail_rows(details, rows)
+        _format_detail_sheet(details, headers, header_row=3)
         details["A1"].font = details["A2"].font = Font(bold=True)
-        for index, header in enumerate(headers, 1):
-            key = header.casefold()
-            details.column_dimensions[get_column_letter(index)].width = (
-                INBOUND_MESSAGE_COLUMN_WIDTH if "body" in key or "content" in key else 26)
-        details.freeze_panes = "A4"
-        details.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{details.max_row}"
-    overflow = fit_report_text(workbook)
-    add_email_text_continuations(workbook["Email Unreplied"], overflow.get("Email Unreplied", ()))
+    fit_report_text(workbook, detail_text)
     output = BytesIO()
     workbook.save(output)
     workbook.close()

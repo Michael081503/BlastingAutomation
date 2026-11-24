@@ -128,7 +128,7 @@ class StartupTests(unittest.TestCase):
             assert inbound_reply_page.apply_phone_campaign_lookup is inbound_campaign_lookup.apply_phone_campaign_lookup
             data = b'email,LEVEL,phone_1\\nmatched@example.com,Level 1,09171234567\\n'
             lookup = inbound_reply_page.build_email_campaign_lookup([('Regular.csv', data)])
-            assert lookup.signature[0] == inbound_reply_page.EMAIL_CAMPAIGN_LOOKUP_VERSION == 8
+            assert lookup.signature[0] == inbound_reply_page.EMAIL_CAMPAIGN_LOOKUP_VERSION == 9
             source = inbound_reply_page.read_email_source('dc.csv', b'sender\\nunmatched@example.com\\n',
                                                          kind='dc', require_campaign=False)
             assert not inbound_reply_page.apply_email_campaign_lookup(source, lookup).records

@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from inbound_reply import CampaignReplyCounts
-from inbound_reply_page import build_report_html, campaign_totals_key
+from inbound_reply_page import build_report_html
+from inbound_summary import campaign_totals_key
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,50 +65,29 @@ class ManualCampaignTotalsTests(unittest.TestCase):
 
 
 class ManualTotalsPageTests(unittest.TestCase):
-    def test_manual_entries_survive_clear_and_follow_automatic_date_and_source_campaigns(self):
+    def test_page_uses_saved_totals_without_showing_input_controls(self):
         from streamlit.testing.v1 import AppTest
         from upload_state import render_clear_all_files
 
-        def number(app, label):
-            return next(widget for widget in app.number_input if widget.label == label)
-
-        def current_cells(html):
-            call = next(call for call in reversed(html.call_args_list)
-                        if 'aria-label="Inbound reply summary"' in call.args[0])
-            return table_cells(call.args[0])[0]
-
+        report_date = date(2026, 11, 18)
+        totals = {campaign_totals_key(report_date, "Sample Campaign"): {
+            "active_ticket": 100, "dc_email": 25,
+        }}
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), \
                 patch("streamlit.file_uploader", return_value=None), patch("streamlit.html") as html, \
-                patch("inbound_reply_page.inbound_report_date", return_value=date(2026, 11, 18)) as report_date, \
-                patch("inbound_reply_page.prepare_campaign_labels", return_value=("Sample Campaign",)) as labels:
-            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+                patch("inbound_reply_page.inbound_report_date", return_value=report_date), \
+                patch("inbound_reply_page.prepare_campaign_inputs", return_value=(("Sample Campaign",), {})):
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py"))
+            app.session_state["inbound_reply_campaign_totals"] = totals
+            app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertEqual(len(app.text_input), 0)
             self.assertEqual(len(app.date_input), 0)
-            for label, value in (("ACTIVE TICKET", 58431), ("DC WORKED — EMAIL", 46104),
-                                  ("DC WORKED — SMS", 58412), ("DC WORKED — VIBER", 1000)):
-                number(app, label).set_value(value).run(timeout=20)
-                self.assertFalse(app.exception)
-            self.assertEqual(current_cells(html)[1:8], ["58,431", "46,104", "78.90%", "58,412", "99.97%", "1,000", "1.71%"])
-            original_date = report_date.return_value
-            report_date.return_value = original_date + timedelta(days=1)
-            app.run(timeout=20)
-            self.assertFalse(app.exception)
-            self.assertIsNone(number(app, "ACTIVE TICKET").value)
-            self.assertEqual(current_cells(html)[1], "—")
-            report_date.return_value = original_date
-            app.run(timeout=20)
-            self.assertEqual(number(app, "ACTIVE TICKET").value, 58431)
+            self.assertEqual(len(app.number_input), 0)
+            self.assertEqual(table_cells(html.call_args.args[0])[0][1:4], ["100", "25", "25.00%"])
             app.button(key="clear_all_files").click().run(timeout=20)
-            self.assertFalse(app.exception)
-            self.assertEqual(number(app, "ACTIVE TICKET").value, 58431)
-            self.assertEqual(current_cells(html)[3], "78.90%")
-            labels.return_value = ("Other campaign",)
-            app.run(timeout=20)
-            self.assertIsNone(number(app, "ACTIVE TICKET").value)
-            labels.return_value = ("Sample Campaign",)
-            app.run(timeout=20)
-            self.assertEqual(number(app, "ACTIVE TICKET").value, 58431)
+            self.assertEqual(table_cells(html.call_args.args[0])[0][1:4], ["100", "25", "25.00%"])
+            self.assertEqual(len(app.number_input), 0)
 
 
 if __name__ == "__main__":

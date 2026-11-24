@@ -8,7 +8,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from inbound_email import build_email_unreplied_workbook, match_email_sources, read_email_source
-from inbound_reply import CampaignReplyCounts, match_viber_sources, read_reply_source
+from inbound_reply import (
+    INBOUND_ACCOUNT_ROW_HEIGHT, CampaignReplyCounts, build_unreplied_workbook, match_viber_sources, read_reply_source,
+)
 from inbound_summary import (
     OVERALL_BLAST_LABEL, build_summary_workbook, campaign_totals_key, display_cell,
     overall_blast_row, summary_rows,
@@ -128,37 +130,28 @@ class OverallBlastCoverageTests(unittest.TestCase):
         finally:
             book.close()
 
-    def test_page_edits_refresh_overall_percentages_and_downloaded_counts(self):
-        from hashlib import sha256
+    def test_page_download_includes_excel_formulas_without_on_page_inputs(self):
         from openpyxl import load_workbook
         from streamlit.testing.v1 import AppTest
 
         with patch("branding.render_bank_branding"), patch("streamlit.file_uploader", return_value=None), \
                 patch("inbound_reply_page.inbound_report_date", return_value=self.report_date), \
-                patch("inbound_reply_page.prepare_campaign_labels", return_value=("Small", "Large")), \
-                patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
-            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py"))
-            app.session_state["inbound_reply_campaign_totals"] = self.totals()
-            app.run(timeout=20)
-
-            def footer():
-                self.assertFalse(app.exception)
-                call = next(call for call in reversed(html.call_args_list)
-                            if 'aria-label="Inbound reply summary"' in call.args[0])
-                return call.args[0].split('<tfoot aria-label="Overall blast coverage">')[1].split('</tfoot>')[0]
-
-            self.assertIn("14.00%", footer())
-            prefix = "inbound_reply_total_" + sha256(campaign_totals_key(self.report_date, "Large").encode()).hexdigest()[:16]
-            app.number_input(key=prefix + "_dc_email").set_value(450).run(timeout=20)
-            self.assertNotIn("14.00%", footer())
-            self.assertIn("50.00%", footer())
+                patch("inbound_reply_page.prepare_campaign_inputs", return_value=(("Small", "Large"), {})), \
+                patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertEqual(len(app.number_input), 0)
             call = next(call for call in reversed(downloads.call_args_list)
                         if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:
-                self.assertEqual(book["Summary"]["C4"].value, 450)
-                self.assertEqual(book["Summary"]["A6"].value, OVERALL_BLAST_LABEL)
-                self.assertEqual(book["Summary"]["D6"].data_type, "f")
+                sheet = book["Summary"]
+                self.assertIsNone(sheet["B4"].value)
+                self.assertIsNone(sheet["C4"].value)
+                self.assertIn("C4/$B4", sheet["D4"].value)
+                self.assertEqual(sheet["A6"].value, OVERALL_BLAST_LABEL)
+                self.assertEqual(sheet["D6"].data_type, "f")
+                self.assertEqual(book.calculation.calcMode, "auto")
             finally:
                 book.close()
 
@@ -284,6 +277,7 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(sheet["B2"].value, 1)
             self.assertEqual(sheet.auto_filter.ref, "A3:I4")
             self.assertEqual(source.value, body)
+            self.assertLessEqual(sheet.row_dimensions[4].height, INBOUND_ACCOUNT_ROW_HEIGHT)
             self.assertEqual(source.hyperlink.location, "'Email Unreplied'!A7")
             parts = [sheet.cell(row, 2) for row in range(7, sheet.max_row + 1)]
             self.assertGreater(len(parts), 1)
@@ -295,6 +289,58 @@ class GroupedSummaryTests(unittest.TestCase):
                 self.assertEqual(sheet.cell(part.row, 1).hyperlink.location, "'Email Unreplied'!I4")
         finally:
             workbook.close()
+
+    def test_viber_keeps_account_rows_compact_and_links_to_full_wrapped_messages(self):
+        from openpyxl import load_workbook
+
+        message = "\n".join(f"Paragraph {line} of the original message." for line in range(15))
+        headers = ("Phone", "Bank Campaign", "Message Content")
+        customers = read_reply_source("customers.csv", csv_bytes(headers, [("09181234567", "Sample", message)]))
+        agents = read_reply_source("agents.csv", csv_bytes(headers, []))
+        report = match_viber_sources(customers, agents, agent_replied_source="campaign_replies", match_mode="phone")
+        exports = (
+            (build_summary_workbook("", date(2026, 11, 24), "", viber_report=report), "Viber Unreplied", 4, 9),
+            (build_unreplied_workbook(report), "Unreplied Details", 2, 3),
+        )
+        for data, title, account_row, message_column in exports:
+            with self.subTest(sheet=title):
+                book = load_workbook(BytesIO(data))
+                try:
+                    sheet = book[title]
+                    source = sheet.cell(account_row, message_column)
+                    self.assertTrue(source.alignment.wrap_text)
+                    self.assertEqual(sheet.row_dimensions[account_row].height, INBOUND_ACCOUNT_ROW_HEIGHT)
+                    self.assertEqual(source.value, message)
+                    self.assertEqual(source.hyperlink.location, f"'{title}'!A{account_row + 3}")
+                    self.assertEqual("".join(sheet.cell(row, 2).value for row in range(account_row + 3, sheet.max_row + 1)),
+                                     message)
+                finally:
+                    book.close()
+
+    def test_excel_cell_limits_preserve_full_unicode_text_and_line_breaks_in_linked_sections(self):
+        from openpyxl import load_workbook
+
+        for body in ("= " + "a" * 32761 + "\U0001f642" * 4, "line\n" * 254):
+            with self.subTest(characters=len(body)):
+                dc = read_email_source("dc.csv", csv_bytes(("sender", "Campaign", "body"), [
+                    ("pending@example.com", "Sample", body),
+                ]), kind="dc")
+                history = read_email_source("history.csv", csv_bytes(("email", "sent"), []), kind="history")
+                report = match_email_sources(dc, history)
+                book = load_workbook(BytesIO(build_summary_workbook("", date(2026, 11, 24), "", email_report=report)))
+                try:
+                    sheet = book["Email Unreplied"]
+                    source = sheet["I4"]
+                    self.assertEqual(source.data_type, "s")
+                    self.assertTrue(source.value.startswith(body[:240]))
+                    self.assertEqual(source.hyperlink.location, "'Email Unreplied'!A7")
+                    self.assertEqual("".join(sheet.cell(row, 2).value for row in range(7, sheet.max_row + 1)), body)
+                    self.assertTrue(all(
+                        len(cell.value.encode("utf-16-le")) // 2 <= 32767 and cell.value.count("\n") <= 253
+                        for row in sheet for cell in row if isinstance(cell.value, str)
+                    ))
+                finally:
+                    book.close()
 
     def test_manual_only_report_keeps_missing_channels_blank(self):
         from openpyxl import load_workbook
@@ -362,8 +408,9 @@ class GroupedSummaryTests(unittest.TestCase):
             finally:
                 book.close()
             headings = {heading.value for heading in app.subheader}
-            for label in ("Upload files", "Edit campaign totals", "Email account details", "Viber account details"):
+            for label in ("Upload files", "Email account details", "Viber account details"):
                 self.assertIn(label, headings)
+            self.assertNotIn("Edit campaign totals", headings)
             self.assertNotIn("Report settings", headings)
             self.assertEqual(len(app.text_input), 0)
             self.assertEqual(len(app.date_input), 0)

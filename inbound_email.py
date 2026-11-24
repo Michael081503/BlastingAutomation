@@ -44,7 +44,11 @@ class EmailSource:
     excluded_rows: int
     sheet: str
     lookup_applied: bool = False
-    unmatched_addresses: int = 0
+    unmatched_records: tuple[EmailRecord, ...] = ()
+
+    @property
+    def unmatched_addresses(self) -> int:
+        return len(self.unmatched_records)
 
 
 @dataclass(frozen=True)

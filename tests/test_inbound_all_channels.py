@@ -248,6 +248,20 @@ class AllChannelsPageTests(unittest.TestCase):
                     self.assertEqual(report.totals.unique_people, 9)
             finally:
                 book.close()
+            call = next(call for call in reversed(downloads.call_args_list)
+                        if call.kwargs.get("key") == "inbound_reply_unmatched_download")
+            book = load_workbook(BytesIO(call.kwargs["data"]()))
+            try:
+                self.assertEqual(book.sheetnames, ["SMS Unmatched", "Viber Unmatched", "Email Unmatched"])
+                for title in book.sheetnames:
+                    headers, *unmatched_rows = book[title].values
+                    self.assertEqual(len(unmatched_rows), 1)
+                    self.assertEqual(unmatched_rows[0][headers.index("ID")], "EMAIL-010" if title == "Email Unmatched" else "EXAMPLE-010")
+                self.assertEqual(book["Email Unmatched"]["A2"].value, "unknown@example.com")
+                self.assertEqual(book["SMS Unmatched"]["A2"].value, "09261234567")
+                self.assertEqual(book["SMS Unmatched"]["A2"].number_format, "@")
+            finally:
+                book.close()
             uploads["inbound_reply_email_lookup_uploads"] = all_channel_uploads("Level 7")["inbound_reply_email_lookup_uploads"]
             app.run(timeout=20)
             self.assertEqual([row[0] for row in displayed()], ["SBC Level 6", "SBC Level 7", *expected_labels[2:]])
@@ -311,6 +325,57 @@ class AllChannelsPageTests(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertEqual(len(app.metric), 0)
             self.assertEqual([row[0] for row in displayed()], ["—"])
+
+    def test_unmatched_download_uses_pending_customer_rows_and_refreshes_with_lookup(self):
+        from streamlit.testing.v1 import AppTest
+
+        lookup_key = "inbound_reply_email_lookup_uploads"
+        download_key = "inbound_reply_unmatched_download"
+        lookup_data = csv_bytes(("Email", "LEVEL"), [("known@example.com", 6)])
+        uploads = {
+            lookup_key: [Upload("regular.csv", lookup_data)],
+            "inbound_reply_email_2_upload": Upload("dc.csv", csv_bytes(("ID", "sender", "Campaign", "body"), [
+                ("0001", " NEW@example.com ", "Original Campaign", "=Original message"),
+                ("0002", "new@example.com", "Original Campaign", "Duplicate"),
+                ("0003", "loan@example.com", "PL RECOVERY", "PL Recovery"),
+                ("0004", "ignore@example.com", "SBF", "SBF exclusion"),
+                ("0005", "invalid address", "Original Campaign", "Invalid email"),
+                ("0006", "known@example.com", "Original Campaign", "Matched"),
+            ])),
+        }
+        with patch("branding.render_bank_branding"), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
+                patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            self.assertEqual(len(app.metric), 0)
+            call = next(call for call in downloads.call_args_list if call.kwargs.get("key") == download_key)
+            book = load_workbook(BytesIO(call.kwargs["data"]()))
+            try:
+                self.assertEqual(book.sheetnames, ["Email Unmatched"])
+                sheet = book.active
+                self.assertEqual(list(sheet.values), [
+                    ("Normalized Email", "ID", "sender", "Campaign", "body"),
+                    ("new@example.com", "0001", " NEW@example.com ", "Original Campaign", "=Original message"),
+                ])
+                self.assertEqual(sheet["E2"].data_type, "s")
+            finally:
+                book.close()
+
+            uploads[lookup_key] = [Upload("regular.csv", csv_bytes(("Email", "LEVEL"), [
+                ("known@example.com", 6), ("new@example.com", 6),
+            ]))]
+            downloads.reset_mock()
+            app.run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(any(call.kwargs.get("key") == download_key for call in downloads.call_args_list))
+
+            uploads[lookup_key] = [Upload("invalid.xlsx", b"invalid")]
+            downloads.reset_mock()
+            app.run(timeout=20)
+            self.assertTrue(app.error)
+            self.assertFalse(any(call.kwargs.get("key") == download_key for call in downloads.call_args_list))
 
     def test_viber_accepts_identical_fully_replied_files(self):
         from streamlit.testing.v1 import AppTest
