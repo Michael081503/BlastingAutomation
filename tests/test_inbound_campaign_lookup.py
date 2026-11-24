@@ -264,7 +264,8 @@ class CampaignLookupPageTests(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
             self.assertEqual([row[0] for row in rows(html)], ["SBC Level 1", "SBC Mindanao"])
-            self.assertTrue(all(row[8] == "—" for row in rows(html)))
+            self.assertEqual([row[8] for row in rows(html)], ["1", "1"])
+            self.assertTrue(all(row[12] == "—" for row in rows(html)))
             uploads["inbound_reply_email_1_upload"] = Upload("history.csv", csv_bytes(("email", "sent"), [
                 ("client@example.com", "Agent reply"),
             ]))

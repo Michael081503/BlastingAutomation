@@ -150,13 +150,13 @@ class MatchedPerson:
 class CampaignReplyCounts:
     campaign: str
     unique_people: int
-    agent_replied: int
-    awaiting_reply: int
-    matched_both_files: int
+    agent_replied: int | None
+    awaiting_reply: int | None
+    matched_both_files: int | None
 
     @property
     def agent_percent(self) -> float | None:
-        return self.agent_replied / self.unique_people if self.unique_people else None
+        return self.agent_replied / self.unique_people if self.unique_people and self.agent_replied is not None else None
 
 
 @dataclass(frozen=True)

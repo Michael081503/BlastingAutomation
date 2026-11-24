@@ -14,7 +14,7 @@ from inbound_reply import (
 )
 
 
-EMAIL_REPLY_VERSION = 5
+EMAIL_REPLY_VERSION = 6
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 
@@ -54,7 +54,7 @@ class EmailSource:
 @dataclass(frozen=True)
 class EmailReplyReport:
     dc: EmailSource
-    history: EmailSource
+    history: EmailSource | None
     accounts: tuple[EmailRecord, ...]
     replied_emails: frozenset[str]
     campaigns: tuple[CampaignReplyCounts, ...]
@@ -62,12 +62,13 @@ class EmailReplyReport:
     @property
     def totals(self) -> CampaignReplyCounts:
         addresses = {row.email for row in self.accounts}
-        replied = len(addresses & self.replied_emails)
-        found = len(addresses & {row.email for row in self.history.records})
-        return CampaignReplyCounts("All campaigns", len(addresses), replied, len(addresses) - replied, found)
+        history_emails = {row.email for row in self.history.records} if self.history is not None else None
+        return _reply_counts("All campaigns", addresses, self.replied_emails, history_emails)
 
     @property
-    def history_only_addresses(self) -> int:
+    def history_only_addresses(self) -> int | None:
+        if self.history is None:
+            return None
         return len({row.email for row in self.history.records} - {row.email for row in self.accounts})
 
 
@@ -154,12 +155,19 @@ def read_email_source(filename: str, data: bytes, *, kind: str, require_campaign
     except Exception as error:
         raise InboundReplyError(f"{filename}: the Excel workbook could not be opened.") from error
     try:
-        candidates = []
+        candidates, with_campaign = [], []
         for sheet in workbook:
             sheet.reset_dimensions()
-            if any(_positions(row, kind, require_campaign=require_campaign) is not None
-                   for row in sheet.iter_rows(min_row=1, max_row=50, values_only=True)):
-                candidates.append(sheet)
+            for row in sheet.iter_rows(min_row=1, max_row=50, values_only=True):
+                positions = _positions(row, kind, require_campaign=require_campaign)
+                if positions is not None:
+                    candidates.append(sheet)
+                    if "campaign" in positions:
+                        with_campaign.append(sheet)
+                    break
+        # Sender-only review sheets can accompany a complete DC Checking table.
+        if kind == "dc" and not require_campaign and with_campaign:
+            candidates = with_campaign
         if len(candidates) != 1:
             raise InboundReplyError(f"{filename}: expected one matching data worksheet for this Email upload.")
         sheet = candidates[0]
@@ -169,10 +177,20 @@ def read_email_source(filename: str, data: bytes, *, kind: str, require_campaign
         workbook.close()
 
 
-def match_email_sources(dc: EmailSource, history: EmailSource) -> EmailReplyReport:
+def _reply_counts(label: str, addresses: set[str], replied_emails: frozenset[str],
+                  history_emails: set[str] | None) -> CampaignReplyCounts:
+    if history_emails is None:
+        return CampaignReplyCounts(label, len(addresses), None, None, None)
+    replied = len(addresses & replied_emails)
+    return CampaignReplyCounts(label, len(addresses), replied, len(addresses) - replied,
+                               len(addresses & history_emails))
+
+
+def match_email_sources(dc: EmailSource, history: EmailSource | None) -> EmailReplyReport:
     """DC contains incoming customer emails; sent history entries identify agent responses."""
-    replied_emails = frozenset(row.email for row in history.records if row.sent)
-    history_emails = {row.email for row in history.records}
+    history_rows = history.records if history is not None else ()
+    replied_emails = frozenset(row.email for row in history_rows if row.sent)
+    history_emails = {row.email for row in history_rows} if history is not None else None
     accounts = {}
     labels = {}
     for row in dc.records:
@@ -182,14 +200,14 @@ def match_email_sources(dc: EmailSource, history: EmailSource) -> EmailReplyRepo
     campaigns = []
     for key, label in sorted(labels.items(), key=lambda item: item[1].casefold()):
         addresses = {email for campaign, email in accounts if campaign == key}
-        replied = len(addresses & replied_emails)
-        campaigns.append(CampaignReplyCounts(label, len(addresses), replied,
-                                            len(addresses) - replied, len(addresses & history_emails)))
+        campaigns.append(_reply_counts(label, addresses, replied_emails, history_emails))
     return EmailReplyReport(dc, history, tuple(accounts.values()), replied_emails, tuple(campaigns))
 
 
 def build_email_unreplied_workbook(report: EmailReplyReport) -> bytes:
     """Retain every source DC field for each unreplied address within a campaign."""
+    if report.history is None:
+        raise InboundReplyError("Upload Email History to prepare the Email unreplied report.")
     details = []
     headers = report.dc.headers
     for row in sorted(report.accounts, key=lambda row: (normalized_campaign(row.campaign), row.email)):

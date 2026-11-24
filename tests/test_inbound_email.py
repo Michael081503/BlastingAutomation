@@ -126,6 +126,31 @@ class EmailReaderAndWorkbookTests(unittest.TestCase):
         self.assertEqual(len(result.records), 2)
         self.assertEqual(result.sheet, "mc4_emails")
 
+    def test_dc_lookup_prefers_the_table_with_campaign_over_sender_only_review_sheets(self):
+        from openpyxl import Workbook
+
+        book = Workbook()
+        book.active.title = "Email Placements"
+        book.active.append(("Sender Email", "Database Placement", "Reporting Campaign"))
+        book.active.append(("review@example.com", "SBC B4", "SBC B4"))
+        dc = book.create_sheet("mc4_emails")
+        dc.append(DC_HEADERS)
+        dc.append(("1", "customer@example.com", "Respond Now", "SBC B2"))
+        book.create_sheet("Database Matches").append(("Sender Email", "Database Source"))
+        data = BytesIO()
+        book.save(data)
+        source = read_email_source("DC.xlsx", data.getvalue(), kind="dc", require_campaign=False)
+        self.assertEqual(source.sheet, "mc4_emails")
+        self.assertEqual([(record.email, record.campaign) for record in source.records],
+                         [("customer@example.com", "SBC B2")])
+
+        book.create_sheet("Second DC export").append(DC_HEADERS)
+        data = BytesIO()
+        book.save(data)
+        book.close()
+        with self.assertRaisesRegex(InboundReplyError, "expected one matching data worksheet"):
+            read_email_source("DC.xlsx", data.getvalue(), kind="dc", require_campaign=False)
+
     def test_unreplied_workbook_preserves_dc_fields_and_matches_campaign_counts(self):
         from openpyxl import load_workbook
 
@@ -217,11 +242,13 @@ class EmailPageTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertTrue(app.error)
-            self.assertNotIn("report", app.session_state["inbound_reply_email_result"])
-            self.assertEqual(len(app.metric), 0)
+            self.assertEqual([metric.value for metric in app.metric], ["2", "—", "—"])
+            self.assertIsNone(app.session_state["inbound_reply_email_result"]["report"].history)
             del uploads["inbound_reply_email_1_upload"]
             app.run(timeout=20)
-            self.assertNotIn("inbound_reply_email_result", app.session_state)
+            self.assertFalse(app.error)
+            self.assertEqual([metric.value for metric in app.metric], ["2", "—", "—"])
+            self.assertTrue(any("Upload a valid Email History" in message.value for message in app.info))
             uploads["inbound_reply_email_1_upload"] = Upload("history.csv", csv_bytes(HISTORY_HEADERS, []))
             app.run(timeout=20)
             self.assertIn("report", app.session_state["inbound_reply_email_result"])

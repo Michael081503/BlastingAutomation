@@ -349,7 +349,7 @@ class AllChannelsPageTests(unittest.TestCase):
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
-            self.assertEqual(len(app.metric), 0)
+            self.assertEqual([metric.value for metric in app.metric], ["2", "—", "—"])
             call = next(call for call in downloads.call_args_list if call.kwargs.get("key") == download_key)
             book = load_workbook(BytesIO(call.kwargs["data"]()))
             try:

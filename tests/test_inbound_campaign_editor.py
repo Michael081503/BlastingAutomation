@@ -110,7 +110,8 @@ class CampaignCatalogPageTests(unittest.TestCase):
             uploads["inbound_reply_email_2_upload"] = Upload("dc.csv", csv_bytes(("sender",), [("level1@example.com",)]))
             app.run(timeout=20)
             self.assertEqual(list(summary()), expected)
-            self.assertEqual(summary()["SBC Level 1"][8], "\u2014")
+            self.assertEqual(summary()["SBC Level 1"][8], "1")
+            self.assertEqual(summary()["SBC Level 1"][12], "\u2014")
             uploads["inbound_reply_email_1_upload"] = Upload("history.csv", csv_bytes(("email", "sent"), [
                 ("level1@example.com", "Agent reply"),
             ]))

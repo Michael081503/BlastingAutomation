@@ -155,7 +155,8 @@ class BucketLookupPageTests(unittest.TestCase):
                 return table_cells(call.args[0])
 
             self.assertEqual([row[0] for row in displayed()][:2], ["SBC B2", "SBC B4"])
-            self.assertEqual(displayed()[0][8:11], ["—", "2", "2"])
+            self.assertEqual(displayed()[0][8:11], ["3", "2", "2"])
+            self.assertEqual(displayed()[0][12:14], ["—", "—"])
             uploads["inbound_reply_email_1_upload"] = history
             app.run(timeout=20)
             self.assertFalse(app.error)

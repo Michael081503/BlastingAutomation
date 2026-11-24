@@ -153,7 +153,8 @@ class CampaignColumnTests(unittest.TestCase):
 
             rows = displayed_rows()
             self.assertEqual([row[0] for row in rows], ["Email Campaign", "SMS Campaign", "Viber Campaign"])
-            self.assertTrue(all(row[8:11] == ["—", "—", "—"] for row in rows))
+            self.assertEqual([row[8:11] for row in rows], [["1", "—", "—"], ["—", "—", "—"], ["—", "—", "—"]])
+            self.assertEqual(rows[0][12:14], ["—", "—"])
             call = next(call for call in reversed(downloads.call_args_list)
                         if call.kwargs.get("key") == "inbound_reply_summary_download")
             book = load_workbook(BytesIO(call.kwargs["data"]()))
@@ -162,6 +163,11 @@ class CampaignColumnTests(unittest.TestCase):
                                  ["Email Campaign", "SMS Campaign", "Viber Campaign"])
                 self.assertIsNone(book["Summary"]["B5"].value)
                 self.assertIsNone(book["Summary"]["J5"].value)
+                self.assertEqual(book["Summary"]["I4"].value, 1)
+                self.assertIsNone(book["Summary"]["M4"].value)
+                self.assertIn("upload Email History", book["Email Unreplied"]["B1"].value)
+                self.assertIsNone(book["Email Unreplied"]["B2"].value)
+                self.assertEqual(book["Email Unreplied"].max_row, 3)
                 self.assertIn("Incomplete", book["SMS Unreplied"]["B1"].value)
                 self.assertIsNone(book["SMS Unreplied"]["B2"].value)
             finally:

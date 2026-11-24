@@ -384,8 +384,11 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
                                     ("VIBER", "Viber Unreplied", viber_report),
                                     ("EMAIL", "Email Unreplied", email_report)):
         details = workbook.create_sheet(title)
-        headers, rows = _channel_details(channel, report)
         status = "Processed" if report is not None else (channel_statuses or {}).get(channel, "Not uploaded")
+        if channel == "EMAIL" and report is not None and report.history is None:
+            status = "Incomplete: upload Email History in EMAIL file 1"
+            report = None
+        headers, rows = _channel_details(channel, report)
         details.append(["Source status", status])
         details.append(["Unreplied accounts", len(rows) if report is not None else None])
         details.append(headers)

@@ -218,30 +218,37 @@ def render_campaign_lookup(uploads) -> tuple[EmailCampaignLookup | None, bool]:
 
 def prepare_email_report(history_upload, dc_upload, lookup: EmailCampaignLookup | None = None,
                          *, lookup_failed: bool = False) -> EmailReplyReport | None:
-    if history_upload is None or dc_upload is None or lookup_failed:
+    if dc_upload is None or lookup_failed:
         st.session_state.pop("inbound_reply_email_result", None)
         return None
-    history_bytes, dc_bytes = history_upload.getvalue(), dc_upload.getvalue()
-    signature = (PL_RECOVERY_LOOKUP_VERSION, EMAIL_REPLY_VERSION, sha256(history_bytes).hexdigest(), sha256(dc_bytes).hexdigest(),
-                 history_upload.name, dc_upload.name, lookup.signature if lookup is not None else None)
+    dc_bytes = dc_upload.getvalue()
+    history_bytes = history_upload.getvalue() if history_upload is not None else None
+    history_signature = (history_upload.name, sha256(history_bytes).hexdigest()) if history_bytes is not None else None
+    signature = (PL_RECOVERY_LOOKUP_VERSION, EMAIL_REPLY_VERSION, history_signature, sha256(dc_bytes).hexdigest(),
+                 dc_upload.name, lookup.signature if lookup is not None else None)
     cached = st.session_state.get("inbound_reply_email_result")
     if cached is None or cached["signature"] != signature:
-        st.session_state.pop("inbound_reply_email_result", None)
+        cached = {"signature": signature}
         try:
-            if history_bytes == dc_bytes:
-                raise InboundReplyError("The two Email uploads are identical. Upload Email History and DC Checking separately.")
-            history = read_email_source(history_upload.name, history_bytes, kind="history")
             dc = read_email_source(dc_upload.name, dc_bytes, kind="dc", require_campaign=lookup is None)
             if lookup is not None:
                 dc = apply_email_campaign_lookup(dc, lookup)
-            cached = {"signature": signature, "report": match_email_sources(dc, history)}
         except InboundReplyError as error:
-            cached = {"signature": signature, "error": str(error)}
+            cached["error"] = str(error)
+        else:
+            history = None
+            if history_bytes is not None:
+                try:
+                    if history_bytes == dc_bytes:
+                        raise InboundReplyError("The two Email uploads are identical. Upload Email History and DC Checking separately.")
+                    history = read_email_source(history_upload.name, history_bytes, kind="history")
+                except InboundReplyError as error:
+                    cached["error"] = str(error)
+            cached["report"] = match_email_sources(dc, history)
         st.session_state["inbound_reply_email_result"] = cached
     if "error" in cached:
         st.error(cached["error"])
-        return None
-    return cached["report"]
+    return cached.get("report")
 
 
 def prepare_sms_report(replied_upload, account_upload, lookup: EmailCampaignLookup | None = None,
@@ -406,7 +413,7 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
     for column, label, value in zip(st.columns(3),
                                     ("Customer email replies", "Email replied by agents", "Email awaiting agent reply"),
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply)):
-        column.metric(label, f"{value:,}")
+        column.metric(label, display_cell(value, 8))
     st.caption(
         ("DC Checking supplies customer emails and PL RECOVERY labels. Lookup files supply the other campaigns. " if report.dc.lookup_applied
          else "DC Checking supplies incoming customer emails and campaigns. ") +
@@ -418,6 +425,11 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
     if report.dc.unmatched_addresses:
         st.caption(f"Excluded {report.dc.unmatched_addresses:,} email addresses without a campaign match "
                    "from the campaign report.")
+    if report.history is None:
+        st.info("Upload a valid Email History file in EMAIL file 1 to see Agent Worked and unreplied accounts.")
+        if report.dc.excluded_rows:
+            st.warning(f"Skipped {report.dc.excluded_rows:,} rows with blank or invalid email addresses.")
+        return
     st.subheader("Email unreplied accounts by campaign")
     rows = "".join(f"<tr><td>{escape(campaign.campaign)}</td><td>{campaign.awaiting_reply:,}</td></tr>"
                    for campaign in report.campaigns)
@@ -555,7 +567,7 @@ def render_inbound_reply() -> None:
                     help_text = None
                     if channel == "EMAIL":
                         help_text = ("Email History with sent agent replies." if number == 1 else
-                                     "DC Checking containing customer replies from any receiving mailbox or assigned agent, matched by sender.")
+                                     "DC Checking supplies Email Reply counts from all receiving mailboxes, matched by sender.")
                     elif channel == "VIBER":
                         help_text = ("Message logs export containing Agent Reply rows." if number == 1 else
                                      "Campaign replies export containing Inbound Reply rows from customers.")
