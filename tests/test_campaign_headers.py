@@ -108,13 +108,19 @@ class CampaignHeaderTests(unittest.TestCase):
                     ZipFile(BytesIO(build_excel_zip(bundle.files))) as excel_zip:
                 for file in bundle.files:
                     rows = list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
-                    self.assertEqual(file.headers, EXPECTED_HEADERS)
+                    expected = EXPECTED_HEADERS.copy()
+                    if file.channel == "email":
+                        expected[2] = "index_one_id"
+                    self.assertEqual(file.headers, expected)
                     protected = build_export_csv(file)
                     self.assertEqual(csv_zip.read(file.filename), protected)
                     workbook = load_workbook(BytesIO(build_export_excel(file)))
-                    self.assertEqual([cell.value for cell in workbook.active[1]], EXPECTED_HEADERS)
+                    self.assertEqual([cell.value for cell in workbook.active[1]], expected)
                     self.assertEqual(excel_zip.read(file.filename.replace(".csv", ".xlsx"))[:2], b"PK")
                     if file.channel == "email":
+                        self.assertEqual(rows[0]["index_one_id"], record["indexoneuid"])
+                        self.assertEqual((workbook.active["C2"].value, workbook.active["C2"].number_format),
+                                         (record["indexoneuid"], "@"))
                         self.assertEqual(rows[0]["Terms"], record["cardnumber"])
                         self.assertEqual(rows[0]["CHCode"], file.records[0]["Terms"])
                         self.assertEqual(rows[0]["Promo"], "CARDS")
@@ -157,13 +163,14 @@ class CampaignHeaderTests(unittest.TestCase):
                 [["000001", "00001234567890123456", bucket, "MC", "one@example.com", "09171234567"]],
             ))
             grid = selection("list.xlsx", excel_data(
-                ["Account No.", "Financing/Card No."], [["000001", "00001234567890123456"]],
+                ["Account No.", "Financing/Card No.", "Old I.C."], [["000001", "00001234567890123456", "000019"]],
             ))
             bundle = builder(database, grid).bundle
             for file in bundle.files:
-                self.assertEqual(list(file.headers), EXPECTED_HEADERS)
+                self.assertEqual(list(file.headers), [*EXPECTED_HEADERS[:2], "index_one_id", *EXPECTED_HEADERS[3:]])
                 if file.count:
                     row = next(csv.DictReader(StringIO(file.data.decode("cp1252"))))
+                    self.assertEqual(row["index_one_id"], "000019")
                     self.assertEqual(row["Terms"], "00001234567890123456")
                     self.assertEqual(row["CHCode"], "AMRANCELI")
                     self.assertEqual(row["Promo"], "CARDS")

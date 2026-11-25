@@ -16,7 +16,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
 from automation import (
-    AutomationError, _encode_csv, _identifier, normalize_header, ob_sort_key,
+    AutomationError, SOURCE_ID_HEADERS, _encode_csv, _identifier, normalize_header, ob_sort_key,
     source_column_positions, uses_campaign_headers, write_text_csv_sheet,
 )
 from email_validation import validated_email
@@ -345,11 +345,15 @@ def _add_contact_row(
     result.phone_ob_values.extend(ob for _ in phones)
 
 
+def _source_id_column(headers: tuple[str, ...]) -> int | None:
+    labels = [normalize_header(header) for header in headers]
+    identity_labels = (normalize_header(header) for header in (*SOURCE_ID_HEADERS, "Old I.C."))
+    return next((labels.index(alias) for alias in identity_labels if labels.count(alias) == 1), None)
+
+
 def extract_contacts(source: SourceSelection) -> ContactRows:
     """Keep source order and one log row per distinct valid contact in each row."""
-    labels = [normalize_header(header) for header in source.sheet.headers]
-    identity_column = next((labels.index(alias) for alias in ("indexoneuid", "oldic")
-                            if labels.count(alias) == 1), None)
+    identity_column = _source_id_column(source.sheet.headers)
     ob_column = source_column_positions(source.sheet.headers).get("OB")
     extra_columns = tuple(column for column in (identity_column, ob_column) if column is not None)
     result = ContactRows()
@@ -369,7 +373,7 @@ def unique_account_contacts(
 ) -> ContactRows:
     """Keep one contact per account and source identity in each channel.
 
-    Distinct indexoneuid values must survive repeated or rounded card numbers.
+    Distinct source IDs must survive repeated or rounded card numbers.
     Sources without an identity retain account-number-only deduplication.
     """
     if seen is None:

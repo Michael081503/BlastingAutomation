@@ -39,8 +39,11 @@ FIELD_MAPPING = {
     "Christmas Amnesty": "ChristmasAmnesty",
 }
 OPTIONAL_FIELD_MAPPING = {"Area": "AREA", "CMS TAGGING": "cms_tagging"}
+CAMPAIGN_SOURCE_ID_HEADER = "index_one_id"
+SOURCE_ID_HEADERS = ("indexoneuid", "indexonuid", CAMPAIGN_SOURCE_ID_HEADER)
 SOURCE_ALIASES = {
     "debtor_email": ("email", "email address", "e-mail address", "email 1", "debtor email address", "email id", "EMAIL ADD"),
+    "OLD I.C": SOURCE_ID_HEADERS,
     "Account no.": ("account", "account number", "acct no", "acct number", "Account Code", "ACCOUNT NUMBER / LONG PN #"),
     "financing/Card no.": ("card_no", "cardbnumber", "Card Number/ Short PN"),
     "Name": ("Customer Name",),
@@ -137,6 +140,8 @@ def _template_aliases(target: str, *, renamed: bool) -> set[str]:
         return {"chcode"} if renamed else {"terms"}
     if target == "product":
         return {"product", "promo"}
+    if target == "indexoneuid":
+        return {normalize_header(label) for label in SOURCE_ID_HEADERS}
     return {normalize_header(target)}
 
 

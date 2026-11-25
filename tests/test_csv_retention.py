@@ -70,8 +70,8 @@ class ProtectedCsvTests(unittest.TestCase):
                                 self.assertEqual(protected.startswith(b'\xef\xbb\xbf'), encoding == 'utf-8-sig')
                                 row = next(csv.DictReader(StringIO(protected.decode(encoding))))
                                 key, card, reference = identifiers[index]
-                                for header, expected in (('primary_key', key), ('Terms', card), ('indexoneuid', reference)):
-                                    self.assertEqual(row[header], expected if header == 'indexoneuid' else '\t' + expected)
+                                for header, expected in (('primary_key', key), ('Terms', card), ('index_one_id', reference)):
+                                    self.assertEqual(row[header], expected if header == 'index_one_id' else '\t' + expected)
                                     self.assertEqual(file.preview[0][header], expected)
                                 self.assertEqual(row['phone'], '\t9171234567')
                                 self.assertEqual(row['OB'], '1234.5')
@@ -118,13 +118,14 @@ class ProtectedCsvTests(unittest.TestCase):
                     with ZipFile(BytesIO(build_csv_zip(bundle.files, protect_identifiers=True))) as archive:
                         for file in bundle.files:
                             protected = archive.read(file.filename)
+                            id_header = 'index_one_id' if file.channel == 'email' else 'indexoneuid'
                             self.assertEqual(protected, build_export_csv(file, protect_identifiers=True))
                             self.assertEqual(protected.startswith(b'\xef\xbb\xbf'), encoding == 'utf-8-sig')
                             rows = list(csv.DictReader(StringIO(protected.decode(encoding), newline='')))
                             for row, record in zip(rows, file.records, strict=True):
                                 for header in ('primary_key', 'Terms'):
                                     self.assertEqual(row[header], '\t' + record['cardnumber' if header == 'Terms' else header])
-                                self.assertEqual(row['indexoneuid'], record['indexoneuid'])
+                                self.assertEqual(row[id_header], record['indexoneuid'])
                                 self.assertEqual(row['phone'], '\t9171234567' if file.channel == 'viber' else '')
                                 self.assertEqual(row['OB'], '1234.5')
                                 self.assertEqual(row['Level'], '1')
@@ -158,9 +159,10 @@ class ProtectedCsvTests(unittest.TestCase):
                         self.assertEqual(archive.read(file.filename), data)
                         self.assertEqual(saved[file.filename], data)
                         row = list(csv.DictReader(StringIO(data.decode('cp1252'))))[0]
+                        id_header = 'index_one_id' if file.channel == 'email' else 'indexoneuid'
                         self.assertEqual(row['primary_key'], '\t00001234567890123456')
                         self.assertEqual(row['Terms'], '\t5156041234567897')
-                        self.assertEqual(row['indexoneuid'], '000019')
+                        self.assertEqual(row[id_header], '000019')
 
     def test_empty_channels_keep_only_the_unmodified_csv_headers(self):
         bundle = build_negative_exports(create_default_csv_template(),

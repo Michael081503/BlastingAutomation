@@ -8,7 +8,7 @@ from datetime import datetime
 from automation import AutomationError, normalize_header, ob_sort_key, source_column_positions
 from autostat import (
     AUTOSTAT_REMARK_BY, AutostatBundle, ContactRows, ContactSheet, SourceSelection,
-    _add_contact_row, _bundle, _contact_summary, _log_file, _read_rows,
+    _add_contact_row, _bundle, _contact_summary, _log_file, _read_rows, _source_id_column,
     account_number_text, unique_account_contacts,
 )
 
@@ -78,9 +78,7 @@ def build_b2_autostat_exports(
         if bucket == 4 and {"accountkey", "contractnumber", "bucketcode"} <= headers and "primarykey" not in headers:
             raise AutomationError("Upload the B4 CARDS/BEL output files containing primary_key, not the full endorsement database.")
         source = replace(selection.source, sheet=b2_account_sheet(selection.source.sheet))
-        labels = [normalize_header(header) for header in source.sheet.headers]
-        identity_column = next((labels.index(alias) for alias in ("indexoneuid", "oldic")
-                                if labels.count(alias) == 1), None)
+        identity_column = _source_id_column(source.sheet.headers)
         ob_column = source_column_positions(source.sheet.headers).get("OB")
         extra_columns = tuple(dict.fromkeys(column for column in (
             selection.name_column, selection.collector_column, identity_column, ob_column,

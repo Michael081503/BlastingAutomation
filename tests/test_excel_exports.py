@@ -35,6 +35,7 @@ class ExcelExportTests(unittest.TestCase):
                 with ZipFile(BytesIO(build_excel_zip(bundle.files))) as archive:
                     self.assertEqual(archive.namelist(), ["Accounts_Email.xlsx", "Accounts_Viber.xlsx"])
                     for file in bundle.files:
+                        id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
                         excel_data = archive.read(Path(file.filename).with_suffix(".xlsx").name)
                         workbook = load_workbook(BytesIO(excel_data))
                         sheet = workbook.active
@@ -46,7 +47,7 @@ class ExcelExportTests(unittest.TestCase):
                         self.assertEqual(list(sheet.values), expected)
                         self.assertEqual(sheet.max_row, len(accounts) + 1)
                         for row in sheet.iter_rows(min_row=2):
-                            for column in ("primary_key", "Terms", "indexoneuid"):
+                            for column in ("primary_key", "Terms", id_header):
                                 cell = row[file.headers.index(column)]
                                 self.assertEqual(cell.data_type, "s")
                                 self.assertEqual(cell.number_format, "@")
@@ -80,14 +81,16 @@ class ExcelExportTests(unittest.TestCase):
                 original_csvs = [file.data for file in bundle.files]
                 with ZipFile(BytesIO(build_excel_zip(bundle.files))) as archive:
                     for file in bundle.files:
+                        id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
+                        expected_headers = [id_header if header == "indexoneuid" else header for header in headers]
                         workbook = load_workbook(BytesIO(archive.read(Path(file.filename).with_suffix(".xlsx").name)))
                         sheet = workbook.active
-                        self.assertEqual([cell.value for cell in sheet[1]], headers)
+                        self.assertEqual([cell.value for cell in sheet[1]], expected_headers)
                         self.assertTrue(all(cell.number_format == "General" for cell in sheet[1]))
-                        first = dict(zip(headers, sheet[2]))
-                        second = dict(zip(headers, sheet[3]))
-                        for header in ("primary_key", "Terms", "indexoneuid"):
-                            self.assertEqual(first[header].value, records[0]["cardnumber" if header == "Terms" else header])
+                        first = dict(zip(expected_headers, sheet[2]))
+                        second = dict(zip(expected_headers, sheet[3]))
+                        for header, field in (("primary_key", "primary_key"), ("Terms", "cardnumber"), (id_header, "indexoneuid")):
+                            self.assertEqual(first[header].value, records[0][field])
                             self.assertEqual((first[header].data_type, first[header].number_format), ("s", "@"))
                         self.assertEqual((first["OB"].value, first["OB"].data_type, first["OB"].number_format),
                                          (1234.5, "n", "General"))
@@ -199,7 +202,7 @@ class ExcelExportTests(unittest.TestCase):
             self.assertEqual(call.kwargs["type"], "primary")
             saved = load_workbook(BytesIO(call.args[1]()))
             headers = [cell.value for cell in saved.active[1]]
-            for header, expected in (("primary_key", "00001234567890123456"), ("Terms", "5156041234567897"), ("indexoneuid", "000019")):
+            for header, expected in (("primary_key", "00001234567890123456"), ("Terms", "5156041234567897"), ("index_one_id", "000019")):
                 cell = saved.active.cell(2, headers.index(header) + 1)
                 self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
             self.assertEqual(saved.active.cell(2, headers.index("OB") + 1).data_type, "n")
@@ -208,7 +211,7 @@ class ExcelExportTests(unittest.TestCase):
             saved.save(reopened_data)
             saved.close()
             reopened = load_workbook(BytesIO(reopened_data.getvalue()))
-            for header, expected in (("primary_key", "00001234567890123456"), ("Terms", "5156041234567897"), ("indexoneuid", "000019")):
+            for header, expected in (("primary_key", "00001234567890123456"), ("Terms", "5156041234567897"), ("index_one_id", "000019")):
                 cell = reopened.active.cell(2, headers.index(header) + 1)
                 self.assertEqual((cell.value, cell.data_type, cell.number_format), (expected, "s", "@"))
             reopened.close()
@@ -272,10 +275,11 @@ class ExcelExportTests(unittest.TestCase):
                                 self.assertTrue(all(name.endswith(suffix) for name in archive.namelist()))
                                 for file in result["files"]:
                                     filename = Path(file.filename).with_suffix(suffix).name
+                                    id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
                                     if excel:
                                         book = load_workbook(BytesIO(archive.read(filename)))
                                         cells = dict(zip([cell.value for cell in book.active[1]], book.active[2]))
-                                        for header, value in (("primary_key", values[0]), ("Terms", values[1]), ("indexoneuid", values[2])):
+                                        for header, value in (("primary_key", values[0]), ("Terms", values[1]), (id_header, values[2])):
                                             self.assertEqual((cells[header].value, cells[header].data_type, cells[header].number_format), (value, "s", "@"))
                                         self.assertEqual((cells["OB"].value, cells["OB"].data_type), (1234.5, "n"))
                                         self.assertEqual(cells["EndoDate"].data_type, "d")
@@ -286,7 +290,7 @@ class ExcelExportTests(unittest.TestCase):
                                         row = next(csv.DictReader(StringIO(expected_data.decode("cp1252"))))
                                         prefix = "\t" if protected else ""
                                         self.assertEqual((row["primary_key"], row["Terms"]), tuple(prefix + value for value in values[:2]))
-                                        self.assertEqual(row["indexoneuid"], values[2])
+                                        self.assertEqual(row[id_header], values[2])
                                         self.assertEqual(row["OB"], "1234.5")
                                         self.assertEqual(row["Promo"], "CARDS")
                                         if file.key == result["files"][0].key:

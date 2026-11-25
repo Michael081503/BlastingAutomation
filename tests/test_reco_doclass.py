@@ -113,11 +113,12 @@ class RecoDoclassTests(unittest.TestCase):
                 self.assertEqual(csv_rows(file.data)[0]["doclass"], "PL Recovery")
                 self.assertEqual(excel_rows(build_export_excel(file))[0]["doclass"], "PL Recovery")
 
-    def test_missing_doclass_header_is_appended_without_changing_existing_columns(self):
+    def test_missing_doclass_header_is_appended(self):
         headers = [header for header in DEFAULT_TEMPLATE_HEADERS if header != "doclass"]
         bundle = build_negative_exports((",".join(headers) + "\n").encode(), records(), "", 1, ".csv")
         for file in bundle.files:
-            self.assertEqual(file.headers, [*headers, "doclass"])
+            id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
+            self.assertEqual(file.headers, [*headers[:2], id_header, *headers[3:], "doclass"])
             self.assertTrue(all(row["doclass"] == CLASSES[file.group_key] for row in csv_rows(file.data)))
 
     def test_geo_keeps_its_area_class_even_when_its_filename_contains_l1(self):

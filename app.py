@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 
 import app_startup
 
-if getattr(app_startup, "STARTUP_INTERFACE_VERSION", None) != 2:
+if getattr(app_startup, "STARTUP_INTERFACE_VERSION", None) != 3:
     app_startup = importlib.reload(app_startup)
 app_startup.refresh_application_modules()
 
@@ -46,6 +46,7 @@ from automation import (
     CSV_OUTPUT_ENCODINGS,
     DEFAULT_TEMPLATE_HEADERS,
     FIELD_MAPPING,
+    CAMPAIGN_SOURCE_ID_HEADER,
     MAPPING_VERSION,
     OB_SORT_VERSION,
     WORKBOOK_READER_VERSION,
@@ -381,7 +382,7 @@ def render_workbook_page() -> None:
     signature = (
         source_digest, source_file.name, template_digest, source_sheet, source_header,
         template_sheet, template_header, template_extension,
-        TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
+        TARGET_HEADERS, DEFAULT_TEMPLATE_HEADERS, CAMPAIGN_SOURCE_ID_HEADER, grouped, tuple(OUTPUT_FILENAMES.items()), ZIP_FILENAME,
         tuple(CHANNEL_SUFFIXES.items()), EMAIL_VALIDATION_VERSION, ".csv", encoding, MAPPING_VERSION, geo,
         tuple(GEO_OUTPUT_FILENAMES.items()), GEO_ZIP_FILENAME,
         "automatic-preparation-v2-selected-sheet", SOURCE_SHEET_SELECTION_VERSION, SOURCE_MEMBERSHIP_VERSION,
@@ -561,7 +562,7 @@ def render_workbook_page() -> None:
             on_click="ignore", type="primary",
             help="Excel files retain account IDs as exact text, with balances and dates in their source types." if excel_output else
             "CSV account numbers include a leading tab to retain all digits in Excel; phone keeps its ten-digit value." if not file.protect_csv_phone else
-            "CSV account numbers and phones include a leading tab to retain all digits in Excel. indexoneuid has no added prefix.",
+            "CSV account numbers and phones include a leading tab to retain all digits in Excel. Source IDs have no added prefix.",
         )
         show_preview(file.preview, file.count, file.headers)
 

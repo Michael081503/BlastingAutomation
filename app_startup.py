@@ -13,7 +13,7 @@ from time import sleep
 if "_REFRESH_LOCK" not in globals():
     _REFRESH_LOCK = RLock()
 STARTUP_RECOVERY_VERSION = 1
-STARTUP_INTERFACE_VERSION = 2
+STARTUP_INTERFACE_VERSION = 3
 _MAX_REFRESH_ATTEMPTS = 3
 
 
@@ -98,6 +98,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ), ()),
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
+            "CAMPAIGN_SOURCE_ID_HEADER", "SOURCE_ID_HEADERS",
             "ASSIGNMENT_SCHEME_VERSION", "assignment_scheme_level",
             "NEW_ENDO_SOURCE_VERSION",
             "TAG_TO_CHCODE_VERSION",
@@ -160,7 +161,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
             "AUTOSTAT_MONTH_FIRST_AM_PM_VERSION",
             "AUTOSTAT_TIME_TEXT_VERSION",
             "build_bel_exports", "has_bel_primary_keys",
-            "ACCOUNT_DEDUP_VERSION", "ACCOUNT_IDENTITY_VERSION", "unique_account_contacts",
+            "ACCOUNT_DEDUP_VERSION", "ACCOUNT_IDENTITY_VERSION", "unique_account_contacts", "_source_id_column",
             "COMPILED_OUTPUT_VERSION", "BLANK_TIMESTAMP_VERSION",
             "AUTOSTAT_EXCLUSIONS_VERSION", "autostat_source_excluded",
             "CONTACT_VALIDATION_VERSION", "_validated_candidates",

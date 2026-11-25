@@ -7,7 +7,10 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any, Sequence
 
-from automation import AutomationError, DEFAULT_TEMPLATE_HEADERS, _identifier, normalize_header, ob_sort_key
+from automation import (
+    AutomationError, CAMPAIGN_SOURCE_ID_HEADER, DEFAULT_TEMPLATE_HEADERS, SOURCE_ID_HEADERS,
+    _identifier, normalize_header, ob_sort_key,
+)
 from autostat import (
     AutostatBundle, ContactRows, ContactSheet, SourceSelection,
     _add_contact_row, _bundle, _contact_summary, _log_file, _workbook,
@@ -23,14 +26,15 @@ B2_BUCKET_DIAGNOSTICS_VERSION = 1
 B4_MATCHING_VERSION = 2
 B2_B4_AGENTS_VERSION = 1
 B2_UPLOAD_ROLES_VERSION = 1
-B2_TEMPLATE_VERSION = 3
+B2_TEMPLATE_VERSION = 4
 B2_CONTACT_PRIORITY_VERSION = 1
 B2_B4_CONTACT_HEADERS_VERSION = 1
 B2_B4_AVAILABILITY_VERSION = 1
 SPM_ENDORSEMENT_VERSION = 1
-# Shared campaign layout, including the renamed Terms, CHCode and Promo headers.
-B2_TEMPLATE_HEADERS = DEFAULT_TEMPLATE_HEADERS
-CAMPAIGN_RECORD_FIELDS = {"Terms": "cardnumber", "CHCode": "Terms", "Promo": "Product"}
+B2_TEMPLATE_HEADERS = tuple(CAMPAIGN_SOURCE_ID_HEADER if header == "indexoneuid" else header
+                            for header in DEFAULT_TEMPLATE_HEADERS)
+CAMPAIGN_RECORD_FIELDS = {CAMPAIGN_SOURCE_ID_HEADER: "indexoneuid",
+                          "Terms": "cardnumber", "CHCode": "Terms", "Promo": "Product"}
 DATAGRID_ROUTING_VERSION = 1
 RAW_FIELDS = {
     "account_key": ("Account Key",),
@@ -51,9 +55,9 @@ RAW_DETAILS = {
     "ChristmasAmnesty": ("ChristmasAmnesty",),
     "NewEndo": ("NewEndo",),
 }
-B4_REFERENCE_FIELDS = {"indexoneuid": ("chcode", "indexoneuid", "Old I.C.")}
+B4_REFERENCE_FIELDS = {"indexoneuid": ("chcode", *SOURCE_ID_HEADERS, "Old I.C.")}
 GRID_DETAILS = {
-    "indexoneuid": ("Old I.C.", "indexoneuid"),
+    "indexoneuid": ("Old I.C.", *SOURCE_ID_HEADERS),
     "FullName": ("Name", "FullName"),
     "OB": ("Amount Referred", "OB (Masterlist)", "OB"),
     "EndoDate": ("EndoDate", "endo date"),
@@ -175,7 +179,7 @@ def _campaign_record(
     raw: dict, grid: dict, raw_columns: dict, raw_details: dict, grid_details: dict,
     group: str, *, bucket: int = 2,
 ) -> dict:
-    record = dict.fromkeys(B2_TEMPLATE_HEADERS, "")
+    record = dict.fromkeys((CAMPAIGN_RECORD_FIELDS.get(header, header) for header in B2_TEMPLATE_HEADERS), "")
     for target in set(raw_details) | set(grid_details):
         value = raw.get(raw_details.get(target))
         if value is None or isinstance(value, str) and not value.strip():

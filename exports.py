@@ -16,6 +16,9 @@ from openpyxl import Workbook
 
 from automation import (
     AutomationError,
+    CAMPAIGN_SOURCE_ID_HEADER,
+    SOURCE_ID_HEADERS,
+    _csv_header,
     assignment_scheme_level,
     IDENTIFIER_FIELDS,
     csv_template_headers,
@@ -188,7 +191,7 @@ def build_export_csv(file: ExportFile, *, protect_identifiers: bool = True) -> b
     A leading tab survives Excel's CSV save/reopen cycle, unlike a text formula.
     This is part of the CSV field value; plain upload bytes remain available.
     Account numbers are prefixed. Phone protection follows the export layout;
-    NEW ENDO keeps plain ten-digit phones. indexoneuid stays unchanged.
+    NEW ENDO keeps plain ten-digit phones. Source IDs have no added prefix.
     """
     if not protect_identifiers:
         return file.data
@@ -382,19 +385,18 @@ def _build_channel_files(
     if reco:
         required.append(("doclass", "doclass"))
     positions = template_column_positions(headers)
-    missing = [header for target, header in required if target not in positions]
-    if missing:
-        output = StringIO(newline="")
-        csv.writer(output).writerow([*headers, *missing])
-        template = output.getvalue().encode("utf-8-sig")
-    headers = csv_template_headers(template)
+    headers.extend(header for target, header in required if target not in positions)
+    source_id_labels = {normalize_header(header) for header in SOURCE_ID_HEADERS}
+    email_headers = [CAMPAIGN_SOURCE_ID_HEADER if normalize_header(header) in source_id_labels else header
+                     for header in headers]
     files = []
     for channel, rows in separate_channels(records).items():
         filename = channel_filename(base_name, channel, ".csv")
         doclass = reco_doclass(filename) if reco else None
         if reco:
             rows = [{**row, "doclass": doclass} for row in rows]
-        data = fill_csv_template(template, rows, encoding=encoding, doclass=doclass)
+        channel_headers = email_headers if channel == "email" else headers
+        data = fill_csv_template(_csv_header(channel_headers), rows, encoding=encoding, doclass=doclass)
         files.append(ExportFile(
             key=f"{group_key}_{channel}",
             group_key=group_key,
@@ -404,7 +406,7 @@ def _build_channel_files(
             data=data,
             count=len(rows),
             missing_emails=sum(not has_contact_value(row.get("email")) for row in rows),
-            headers=headers,
+            headers=channel_headers,
             preview=rows[:100],
             records=rows,
             doclass=doclass,

@@ -69,10 +69,10 @@ class SpmEndorsementTests(unittest.TestCase):
         cards, bel = result.bundle.files
         self.assertEqual([file.count for file in result.bundle.files], [2, 1])
         self.assertEqual([row["primary_key"] for row in rows(cards)], ["0003", "0001"])
-        self.assertEqual([row["indexoneuid"] for row in rows(cards)], ["", "SPM-1"])
+        self.assertEqual([row["index_one_id"] for row in rows(cards)], ["", "SPM-1"])
         self.assertEqual([row["CHCode"] for row in rows(cards)], ["AMRANCELI", "KPALIMA"])
         self.assertEqual(rows(cards)[1]["Terms"], "000000000000000001")
-        self.assertEqual(rows(bel)[0]["indexoneuid"], "SPM-2")
+        self.assertEqual(rows(bel)[0]["index_one_id"], "SPM-2")
         self.assertEqual(rows(bel)[0]["Promo"], "BEL")
         self.assertEqual(rows(bel)[0]["email"], "")
         self.assertEqual(rows(bel)[0]["phone"], "9181234567")
@@ -86,18 +86,18 @@ class SpmEndorsementTests(unittest.TestCase):
         with ZipFile(BytesIO(build_csv_zip(result.bundle.files))) as archive:
             exported = list(csv.DictReader(StringIO(archive.read(cards.filename).decode("cp1252"))))
             self.assertEqual(exported[1]["Terms"], "\t000000000000000001")
-            self.assertEqual(exported[1]["indexoneuid"], "SPM-1")
+            self.assertEqual(exported[1]["index_one_id"], "SPM-1")
 
     def test_database_reference_precedes_account_list_reference_and_blank_reference_can_fall_back(self):
         database = selection(workbook_data())
-        accounts = selection(workbook_data(["Account No.", "Financing/Card No.", "Old I.C."], [
+        accounts = selection(workbook_data(["Account No.", "Financing/Card No.", "index_one_id"], [
             ["0001", "000000000000000001", "OLDER-REFERENCE"], ["0003", "000003", "LIST-REFERENCE"],
         ]), "list.xlsx")
         result = build_b4_exports(database, accounts)
         output = {row["primary_key"]: row for file in result.bundle.files for row in rows(file)}
         self.assertEqual(set(output), {"0001", "0003"})
-        self.assertEqual(output["0001"]["indexoneuid"], "SPM-1")
-        self.assertEqual(output["0003"]["indexoneuid"], "LIST-REFERENCE")
+        self.assertEqual(output["0001"]["index_one_id"], "SPM-1")
+        self.assertEqual(output["0003"]["index_one_id"], "LIST-REFERENCE")
         self.assertEqual(result.stats["DataGrid rows"], 2)
 
     def test_zero_masks_and_long_text_identifiers_survive_database_only_generation(self):
@@ -106,7 +106,7 @@ class SpmEndorsementTests(unittest.TestCase):
             "one@example.com", "09171234567", "First", 100, None,
         ]], masks={"B2": "00000", "C2": "0000"})
         output = rows(build_b4_exports(selection(data)).bundle.files[0])[0]
-        self.assertEqual((output["primary_key"], output["indexoneuid"], output["Terms"]),
+        self.assertEqual((output["primary_key"], output["index_one_id"], output["Terms"]),
                          ("0001", "00037", "000012345678901234567890"))
 
     def test_ambiguous_database_identities_do_not_export_and_b2_still_requires_account_list(self):
