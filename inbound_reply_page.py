@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from html import escape
 from hashlib import sha256
 from functools import partial
@@ -11,7 +11,7 @@ import streamlit as st
 
 from inbound_reply import (
     VIBER_REPLY_VERSION, VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, INBOUND_CSV_DELIMITER_VERSION, SMS_CLIENT_TOUCH_VERSION,
-    SBLEGAL_CAMPAIGN, InboundReplyError, ReplySource, ViberReplyReport,
+    MANILA_TIMEZONE, SBLEGAL_CAMPAIGN, InboundReplyError, ReplySource, ViberReplyReport,
     build_people_csv, build_unreplied_workbook, deduplicate_client_accounts,
     match_client_touches, match_viber_sources, normalized_phone, people_rows, read_reply_source,
 )
@@ -24,14 +24,14 @@ from inbound_campaign_lookup import (
     apply_email_campaign_lookup, apply_phone_campaign_lookup, build_email_campaign_lookup,
     read_saved_campaign_lookup_files, save_campaign_lookup_files,
 )
-from upload_state import upload_widget_key
+from upload_state import INBOUND_LOOKUP_FALLBACK_CACHE_KEY, INBOUND_TOTALS_UPLOAD_KEY, upload_widget_key
 from inbound_summary import (
     BLAST_PERCENTAGE_FORMULAS_VERSION, build_client_accounts_workbook, build_summary_workbook, build_unmatched_workbook,
-    display_cell, overall_blast_row, summary_rows,
+    campaign_totals_key, display_cell, merge_mindanao_totals, overall_blast_row, read_summary_totals, summary_rows,
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 29
+INBOUND_REPLY_PAGE_VERSION = 31
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -112,21 +112,20 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
           </tr>
         </thead>
         <tbody>{''.join(body)}</tbody>
-        <tfoot aria-label="Overall blast coverage"><tr>{footer}</tr></tfoot>
+        <tfoot aria-label="Campaign totals"><tr>{footer}</tr></tfoot>
       </table>
     </div>
     """
 
 
-def prepare_viber_report(agent_upload, customer_upload, lookup: EmailCampaignLookup | None = None,
-                         *, lookup_failed: bool = False) -> ViberReplyReport | None:
+def prepare_viber_report(agent_upload, customer_upload, lookup: EmailCampaignLookup | None = None) -> ViberReplyReport | None:
     """Keep prepared files session-local and invalidate on upload content changes."""
-    if agent_upload is None or customer_upload is None or lookup_failed:
+    if agent_upload is None or customer_upload is None:
         st.session_state.pop("inbound_reply_viber_result", None)
         return None
     agent_bytes, customer_bytes = agent_upload.getvalue(), customer_upload.getvalue()
     signature = (PL_RECOVERY_LOOKUP_VERSION, AGENT_FIRST_UPLOADS_VERSION, VIBER_REPLY_VERSION, INBOUND_CSV_DELIMITER_VERSION,
-                 VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE,
+                 VIBER_AGENT_REPLIED_SOURCE, VIBER_MATCH_MODE, PHONE_CAMPAIGN_LOOKUP_VERSION,
                  sha256(agent_bytes).hexdigest(), sha256(customer_bytes).hexdigest(),
                  agent_upload.name, customer_upload.name, lookup.signature if lookup is not None else None)
     cached = st.session_state.get("inbound_reply_viber_result")
@@ -151,33 +150,36 @@ def prepare_viber_report(agent_upload, customer_upload, lookup: EmailCampaignLoo
     return cached["report"]
 
 
-def prepare_email_lookup(signature, read_files) -> EmailCampaignLookup | None:
+def prepare_email_lookup(signature, read_files, *, cache_key: str) -> tuple[EmailCampaignLookup | None, bool]:
     signature = (EMAIL_CAMPAIGN_LOOKUP_VERSION, signature)
-    cached = st.session_state.get("inbound_reply_email_lookup")
+    cached = st.session_state.get(cache_key)
     if cached is None or cached["signature"] != signature:
         try:
             cached = {"signature": signature, "lookup": build_email_campaign_lookup(read_files())}
         except InboundReplyError as error:
-            cached = {"signature": signature, "error": str(error)}
-        st.session_state["inbound_reply_email_lookup"] = cached
+            cached = {"signature": signature, "error": str(error), "lookup": (cached or {}).get("lookup")}
+        st.session_state[cache_key] = cached
     if "error" in cached:
         st.error(cached["error"])
-        return None
-    return cached["lookup"]
+        if cached.get("lookup") is not None:
+            st.caption("Using the previous valid campaign lookup.")
+        return cached.get("lookup"), False
+    return cached["lookup"], True
 
 
-def render_campaign_lookup(uploads) -> tuple[EmailCampaignLookup | None, bool]:
-    """Use current uploads first and load the saved databases when the uploader is empty."""
+def render_campaign_lookup(uploads) -> EmailCampaignLookup | None:
+    """Check saved databases before using current uploads to fill missing matches."""
     path = SAVED_CAMPAIGN_LOOKUP_PATH
     saved_file = None
-    saved_unavailable = False
+    saved_lookup = None
+    saved_key = "inbound_reply_email_lookup"
     try:
         saved_file = path.stat()
     except FileNotFoundError:
-        pass
+        st.session_state.pop(saved_key, None)
     except OSError:
-        saved_unavailable = True
         st.error("Could not access the saved campaign databases. Check the app's uploads folder.")
+        saved_lookup = st.session_state.get(saved_key, {}).get("lookup")
 
     if saved_file is not None:
         if st.button("Remove saved lookup files", key="inbound_reply_remove_saved_lookup"):
@@ -187,38 +189,39 @@ def render_campaign_lookup(uploads) -> tuple[EmailCampaignLookup | None, bool]:
                 st.error("Could not remove the saved campaign databases.")
             else:
                 st.rerun()
-
-    if uploads:
-        files = [(upload.name, upload.getvalue()) for upload in uploads]
-        signature = ("uploads", tuple((name, sha256(data).hexdigest()) for name, data in files))
-        lookup = prepare_email_lookup(signature, lambda: files)
-        if saved_file is not None:
-            st.caption("Current uploads are in use. The saved lookup files are reused when the uploader is empty.")
-        if lookup is not None:
-            label = "Replace saved lookup files" if saved_file is not None else "Save lookup files"
-            if st.button(label, key="inbound_reply_save_lookup",
-                         help="Save this full set of lookup files for future sessions."):
-                try:
-                    save_campaign_lookup_files(path, files)
-                except InboundReplyError as error:
-                    st.error(str(error))
-                else:
-                    st.rerun()
-        return lookup, lookup is None
-
-    if saved_file is not None:
-        st.caption("Using saved campaign lookup files.")
         signature = (path, saved_file.st_ino, saved_file.st_mtime_ns, saved_file.st_size)
-        lookup = prepare_email_lookup(signature, partial(read_saved_campaign_lookup_files, path))
-        return lookup, lookup is None
+        saved_lookup, _ = prepare_email_lookup(signature, partial(read_saved_campaign_lookup_files, path), cache_key=saved_key)
+        if saved_lookup is not None:
+            st.caption("Using saved campaign lookup files.")
 
-    st.session_state.pop("inbound_reply_email_lookup", None)
-    return None, saved_unavailable
+    if not uploads:
+        st.session_state.pop(INBOUND_LOOKUP_FALLBACK_CACHE_KEY, None)
+        return saved_lookup
+
+    files = [(upload.name, upload.getvalue()) for upload in uploads]
+    signature = ("uploads", tuple((name, sha256(data).hexdigest()) for name, data in files))
+    uploaded_lookup, upload_valid = prepare_email_lookup(signature, lambda: files, cache_key=INBOUND_LOOKUP_FALLBACK_CACHE_KEY)
+    if upload_valid:
+        label = "Replace saved lookup files" if saved_file is not None else "Save lookup files"
+        if st.button(label, key="inbound_reply_save_lookup",
+                     help="Use the full uploaded set as the primary lookup for future sessions."):
+            try:
+                save_campaign_lookup_files(path, files)
+            except InboundReplyError as error:
+                st.error(str(error))
+            else:
+                st.rerun()
+
+    if saved_lookup is None:
+        return uploaded_lookup
+    if uploaded_lookup is None:
+        return saved_lookup
+    st.caption("Uploaded lookup files fill contacts without a match in the saved databases.")
+    return saved_lookup.with_fallback(uploaded_lookup)
 
 
-def prepare_email_report(history_upload, dc_upload, lookup: EmailCampaignLookup | None = None,
-                         *, lookup_failed: bool = False) -> EmailReplyReport | None:
-    if dc_upload is None or lookup_failed:
+def prepare_email_report(history_upload, dc_upload, lookup: EmailCampaignLookup | None = None) -> EmailReplyReport | None:
+    if dc_upload is None:
         st.session_state.pop("inbound_reply_email_result", None)
         return None
     dc_bytes = dc_upload.getvalue()
@@ -250,17 +253,27 @@ def prepare_email_report(history_upload, dc_upload, lookup: EmailCampaignLookup 
     return cached.get("report")
 
 
-def prepare_sms_report(replied_upload, account_upload, lookup: EmailCampaignLookup | None = None,
-                       *, lookup_failed: bool = False) -> ViberReplyReport | None:
+def _merge_sms_sources(sources: list[ReplySource]) -> ReplySource:
+    if len(sources) == 1:
+        return sources[0]
+    return ReplySource(
+        ", ".join(source.filename for source in sources),
+        tuple(row for source in sources for row in source.records),
+        sum(source.excluded_rows for source in sources),
+        has_reply_dates=any(source.has_reply_dates for source in sources),
+    )
+
+
+def prepare_sms_report(replied_upload, account_upload, lookup: EmailCampaignLookup | None = None) -> ViberReplyReport | None:
     """Build the SMS reply report or the Client and Agent Touch report."""
-    if account_upload is None or not replied_upload or lookup_failed:
+    if account_upload is None or not replied_upload:
         st.session_state.pop("inbound_reply_sms_result", None)
         return None
     account_bytes = account_upload.getvalue()
     agent_uploads = replied_upload if isinstance(replied_upload, list) else [replied_upload]
     agent_files = [(upload.name, upload.getvalue()) for upload in agent_uploads]
     signature = (PL_RECOVERY_LOOKUP_VERSION, AGENT_FIRST_UPLOADS_VERSION, SMS_MATCHING_PAGE_VERSION,
-                 VIBER_REPLY_VERSION, INBOUND_CSV_DELIMITER_VERSION, SMS_CLIENT_TOUCH_VERSION,
+                 VIBER_REPLY_VERSION, INBOUND_CSV_DELIMITER_VERSION, SMS_CLIENT_TOUCH_VERSION, PHONE_CAMPAIGN_LOOKUP_VERSION,
                  sha256(account_bytes).hexdigest(), account_upload.name,
                  tuple((name, sha256(content).hexdigest()) for name, content in agent_files),
                  lookup.signature if lookup is not None else None)
@@ -275,17 +288,12 @@ def prepare_sms_report(replied_upload, account_upload, lookup: EmailCampaignLook
             client_mode = accounts.layout == "client" or any(source.layout == "agent_touch" for source in agent_sources)
             if client_mode and accounts.layout != "client":
                 accounts = deduplicate_client_accounts(accounts)
-            replied = agent_sources[0]
-            if len(agent_sources) > 1:
-                replied = ReplySource(
-                    ", ".join(source.filename for source in agent_sources),
-                    tuple(row for source in agent_sources for row in source.records),
-                    sum(source.excluded_rows for source in agent_sources),
-                )
+            replied = _merge_sms_sources([source for source in agent_sources if source.layout != "agent_touch"])
             if lookup is not None:
                 accounts = apply_phone_campaign_lookup(accounts, lookup)
             if client_mode:
-                report = match_client_touches(accounts, replied)
+                touches = _merge_sms_sources([source for source in agent_sources if source.layout == "agent_touch"])
+                report = match_client_touches(accounts, touches, replied)
             else:
                 if lookup is not None:
                     replied = apply_phone_campaign_lookup(replied, lookup)
@@ -300,13 +308,9 @@ def prepare_sms_report(replied_upload, account_upload, lookup: EmailCampaignLook
     return cached["report"]
 
 
-def prepare_campaign_inputs(channels, email_lookup: EmailCampaignLookup | None = None,
-                            *, lookup_failed: bool = False) -> tuple[tuple[str, ...], dict[str, EmailSource | ReplySource]]:
+def prepare_campaign_inputs(channels, email_lookup: EmailCampaignLookup | None = None) -> tuple[
+        tuple[str, ...], dict[str, EmailSource | ReplySource]]:
     """Collect campaign labels and unmatched customer rows, including from pending uploads."""
-    if lookup_failed:
-        st.session_state.pop("inbound_reply_campaign_labels", None)
-        return (), {}
-    lookup_labels = email_lookup.campaigns if email_lookup is not None else ()
     sources, unmatched = [], {}
     for channel, (_, upload), report in channels:
         if report is not None:
@@ -317,14 +321,14 @@ def prepare_campaign_inputs(channels, email_lookup: EmailCampaignLookup | None =
             sources.append((channel, upload.name, upload.getvalue()))
     if not sources:
         st.session_state.pop("inbound_reply_campaign_labels", None)
-        return lookup_labels, unmatched
+        return (), unmatched
     signature = (PL_RECOVERY_LOOKUP_VERSION, VIBER_REPLY_VERSION, EMAIL_REPLY_VERSION, EMAIL_CAMPAIGN_LOOKUP_VERSION,
-                 SMS_CLIENT_TOUCH_VERSION,
+                 SMS_CLIENT_TOUCH_VERSION, PHONE_CAMPAIGN_LOOKUP_VERSION,
                  email_lookup.signature if email_lookup is not None else None,
                  tuple((channel, name, sha256(data).hexdigest()) for channel, name, data in sources))
     cached = st.session_state.get("inbound_reply_campaign_labels")
     if cached is None or cached["signature"] != signature:
-        labels = list(lookup_labels)
+        labels = []
         pending_unmatched = {}
         for channel, name, data in sources:
             try:
@@ -364,21 +368,22 @@ def render_sms_details(report: ViberReplyReport, report_date: date) -> None:
     totals = report.totals
     if report.client_touches is not None:
         unique_touches = len(deduplicate_client_accounts(report.campaign_replies).records)
-        for column, label, count in zip(
-            st.columns(4),
-            ("Unique client accounts", "Clients touched", "Clients with no touch", "Accounts in Agent Touch files"),
-            (totals.unique_people, totals.agent_replied, totals.awaiting_reply, unique_touches),
-        ):
+        clients_touched = sum(touched for _, touched in report.client_touches)
+        for column, label, count in zip(st.columns(5),
+                                       ("Unique client accounts", "Replied by agents", "Awaiting agent reply",
+                                        "Clients touched", "Accounts in Agent Touch files"),
+                                       (totals.unique_people, totals.agent_replied, totals.awaiting_reply,
+                                        clients_touched, unique_touches)):
             column.metric(label, f"{count:,}")
         st.caption(f"Removed {report.message_logs.duplicate_rows:,} duplicate Client rows. "
-                   "The SMS Agent Worked count uses the touched clients in the report.")
+                   "Agent Touch files record calls. Upload SMS agent replies to confirm replies to these clients.")
         if report.message_logs.lookup_applied:
-            st.caption("Client placements are checked against database phone numbers. PL RECOVERY keeps its source campaign.")
+            st.caption("The report keeps Client campaign labels and checks placements against database phone numbers.")
         else:
             st.info("Upload or save campaign lookup files to verify placements by phone. The current labels come from the Client file.")
         if report.message_logs.unmatched_addresses:
-            st.caption(f"{report.message_logs.unmatched_addresses:,} client accounts without a confirmed database placement "
-                       f"are grouped under {SBLEGAL_CAMPAIGN}. See the unmatched accounts download for placement details.")
+            st.caption(f"{report.message_logs.unmatched_addresses:,} client accounts have an unconfirmed placement. "
+                       "See the unmatched accounts download for details.")
         st.download_button(
             "Download unique client accounts (.xlsx)", data=partial(build_client_accounts_workbook, report),
             file_name=f"INBOUND_CLIENT_ACCOUNTS_{report_date.isoformat()}.xlsx",
@@ -391,12 +396,8 @@ def render_sms_details(report: ViberReplyReport, report_date: date) -> None:
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply)):
         column.metric(label, f"{value:,}")
     st.caption(
-        "SMS matches normalized phone numbers within each campaign. Upload agent replies first "
-        "and customer replies second. SMS REPLY counts customer accounts that replied by SMS, regardless of receiving "
-        "inbox or assigned agent. Repeated replies count once per phone number within each campaign. AGENT WORKED counts "
-        "those customers answered by any agent in the same campaign, with repeated agent replies counted once. "
-        "Each file needs a Phone column. "
-        "SMS Unreplied in the main output workbook contains the full account details."
+        "SMS matches normalized phone numbers within each campaign. SMS Unreplied in the main output workbook "
+        "contains the full account details."
     )
     excluded = report.message_logs.excluded_rows + report.campaign_replies.excluded_rows + report.excluded_phone_rows
     if excluded:
@@ -415,15 +416,14 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
     if report.dc.workbook_placements:
         placement_source = "Campaign placements come from the lookup results included in DC Checking. "
     elif report.dc.lookup_applied:
-        placement_source = "DC Checking supplies customer emails and PL RECOVERY labels. Lookup files supply the other campaigns. "
+        placement_source = "Campaigns come from the lookup files and any PL RECOVERY labels in DC Checking. "
     else:
         placement_source = "DC Checking supplies incoming customer emails and campaigns. "
     st.caption(
         placement_source +
         "UNIQUE RESULT — EMAIL REPLY counts customer accounts that replied by email, regardless of receiving mailbox "
         "or assigned agent. Repeated replies count once per customer email address within each campaign. "
-        "AGENT WORKED — EMAIL counts those customers with a matching Email History row containing a nonblank sent value "
-        "from any agent. Repeated agent replies count once per customer email address within each campaign."
+        "A matching Email History row with a nonblank sent value confirms the agent's reply."
     )
     if report.dc.unmatched_addresses:
         st.caption(f"{report.dc.unmatched_addresses:,} email addresses without a campaign match "
@@ -460,8 +460,7 @@ def render_email_details(report: EmailReplyReport, report_date: date) -> None:
         st.caption(
             "Addresses are matched without case or surrounding whitespace. Received-only messages, agent names, "
             "assignment fields, AI suggestions and DC workflow labels do not mark an account as replied. "
-            "Sent replies match the included DC campaigns containing that address. "
-            "All uploaded dates are included."
+            "Sent replies match the included DC campaigns containing that address on the same day."
         )
         excluded = report.dc.excluded_rows + report.history.excluded_rows
         if excluded:
@@ -475,12 +474,8 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
                                     (totals.unique_people, totals.agent_replied, totals.awaiting_reply, totals.matched_both_files)):
         column.metric(label, f"{value:,}")
     st.caption(
-        "Viber Reply counts customer accounts that replied by Viber, regardless of receiving inbox or assigned agent. "
-        "Agent Worked counts those customers with a matching response from any agent in the same campaign, "
-        "divided by Viber Reply for the percentage. Repeated customer or agent replies count once per phone number "
-        "within each campaign. "
-        "Each campaign counts a phone number once; "
-        "the totals above count each phone number once across all campaigns."
+        "Viber matches normalized phone numbers within each campaign. The totals above count each phone number "
+        "once across all campaigns."
     )
     if report.message_logs.unmatched_addresses:
         st.caption(f"{report.message_logs.unmatched_addresses:,} Viber customer phone numbers without a campaign match "
@@ -542,7 +537,7 @@ def render_viber_details(report: ViberReplyReport, report_date: date | None = No
 
 
 def inbound_report_date() -> date:
-    return datetime.now(timezone(timedelta(hours=8))).date()
+    return datetime.now(MANILA_TIMEZONE).date()
 
 
 def render_inbound_reply() -> None:
@@ -552,6 +547,7 @@ def render_inbound_reply() -> None:
     campaign = ""
     report_date = inbound_report_date()
     sent_to_ops = "—"
+    imported_totals = {}
 
     viber_uploads = []
     email_uploads = []
@@ -593,11 +589,21 @@ def render_inbound_reply() -> None:
                 st.caption(f"{channel_count} of 2 upload slots filled")
         st.caption(f"{uploaded_count} of 6 upload slots filled")
 
+        summary_upload = st.file_uploader(
+            "Campaign totals workbook", type=["xlsx"], key=upload_widget_key(INBOUND_TOTALS_UPLOAD_KEY),
+            help="Use an Inbound Reply workbook to carry forward its report date, Active Ticket, and DC Worked counts.",
+        )
+        if summary_upload is not None:
+            try:
+                report_date, imported_totals = read_summary_totals(summary_upload.getvalue())
+            except InboundReplyError as error:
+                st.error(str(error))
+
         st.markdown("**Campaign lookup — Email, SMS and Viber**")
         lookup_uploads = st.file_uploader(
             "Campaign lookup files", type=["xlsx", "csv"], accept_multiple_files=True,
             key=upload_widget_key("inbound_reply_email_lookup_uploads"),
-            help="Upload Regular, GEO, B2 and B4 lookup files together, then save them for future sessions. "
+            help="Saved databases are checked first. Upload newer Regular, GEO, B2 or B4 files to fill missing matches. "
                  "Keep B2 or B4 in those filenames. "
                  "Regular uses LEVEL or placement; GEO uses Area. B4 email matching uses only Email (01). "
                  "Email uses email addresses; SMS and Viber use phone numbers. The OVERALL worksheet is used when available.",
@@ -606,11 +612,14 @@ def render_inbound_reply() -> None:
                    "GEO: Region 3 and Mindanao are grouped under SBC Mindanao. "
                    "B2 → SBC B2; B4 → SBC B4 using only Email (01) for email matching. "
                    "B2 takes priority for contacts in both bucket files. "
-                   "PL RECOVERY keeps its own campaign. "
-                   f"Accounts without a resolved campaign are grouped under {SBLEGAL_CAMPAIGN}.")
-        email_lookup, lookup_failed = render_campaign_lookup(lookup_uploads)
+                   "Area takes priority over product PL within each lookup set. Product PL without an Area match uses PL RECOVERY. "
+                   "SMS and Viber keep the campaigns in the reply files. The lookup fills missing campaigns.")
+        email_lookup = render_campaign_lookup(lookup_uploads)
         if email_lookup is not None:
-            for source in email_lookup.sources:
+            sources = email_lookup.sources
+            if email_lookup.fallback is not None:
+                sources += email_lookup.fallback.sources
+            for source in sources:
                 label = f" ({source.campaign_label})" if source.campaign_label else ""
                 st.caption(f"{source.filename}{label}: {len(source.campaigns_by_email):,} email addresses and "
                            f"{len(source.campaigns_by_phone):,} phone numbers with campaigns "
@@ -618,15 +627,27 @@ def render_inbound_reply() -> None:
                 if source.missing_campaign_rows:
                     st.warning(f"{source.filename}: {source.missing_campaign_rows:,} rows have contact details but no usable campaign.")
 
-    viber_report = prepare_viber_report(*viber_uploads, email_lookup, lookup_failed=lookup_failed)
-    email_report = prepare_email_report(*email_uploads, email_lookup, lookup_failed=lookup_failed)
-    sms_report = prepare_sms_report(*sms_uploads, email_lookup, lookup_failed=lookup_failed)
+    viber_report = prepare_viber_report(*viber_uploads, email_lookup)
+    email_report = prepare_email_report(*email_uploads, email_lookup)
+    sms_report = prepare_sms_report(*sms_uploads, email_lookup)
     channels = (("SMS", sms_uploads, sms_report), ("VIBER", viber_uploads, viber_report), ("EMAIL", email_uploads, email_report))
-    source_campaigns, unmatched_sources = prepare_campaign_inputs(channels, email_lookup, lookup_failed=lookup_failed)
-    manual_totals = st.session_state.get("inbound_reply_campaign_totals")
+    source_campaigns, unmatched_sources = prepare_campaign_inputs(channels, email_lookup)
+    campaign_totals = merge_mindanao_totals(report_date, st.session_state.get("inbound_reply_campaign_totals"))
+    active_ticket_counts = email_lookup.active_ticket_counts if email_lookup is not None else {}
+    has_phone_customers = sms_uploads[1] is not None or viber_uploads[1] is not None
+    if email_lookup is not None and not imported_totals and (email_uploads[1] is not None or not has_phone_customers):
+        source_campaigns = (*source_campaigns, *email_lookup.campaigns, *active_ticket_counts)
+    if active_ticket_counts:
+        for name, count in active_ticket_counts.items():
+            key = campaign_totals_key(report_date, name)
+            campaign_totals[key] = {**campaign_totals.get(key, {}), "active_ticket": count}
+    for name, counts in imported_totals.items():
+        key = campaign_totals_key(report_date, name)
+        campaign_totals[key] = {**campaign_totals.get(key, {}), **counts}
+    source_campaigns = (*source_campaigns, *imported_totals)
     statuses = {channel: channel_source_status(uploads, report) for channel, uploads, report in channels}
     with output_area:
-        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, manual_totals, sms_report,
+        st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
                                   source_campaigns=source_campaigns))
         if email_report is not None and email_lookup is None:
             if email_report.dc.workbook_placements:
@@ -635,20 +656,19 @@ def render_inbound_reply() -> None:
                 st.info("Email uses the source campaign labels. Save account databases under Campaign lookup files "
                         "to look up placements automatically on this app.")
         st.caption(
-            "Enter ACTIVE TICKET and DC WORKED counts in the downloaded Excel report to calculate blast percentages."
+            "GEO and RECO active tickets come from their OVERALL worksheets. Upload a Campaign totals workbook to use "
+            "its report date and entered counts. You can also enter Active Ticket and DC Worked counts in Excel."
         )
         st.caption(
             "For Email, SMS and Viber, UNIQUE RESULT counts customer accounts that replied, regardless of receiving inbox "
-            "or assigned agent. AGENT WORKED counts those accounts answered by any agent. Repeated customer or agent "
-            "replies count once per account within each channel and campaign."
-            + (" In SMS Agent Touch reports, AGENT WORKED counts clients with a logged touch."
-               if sms_report is not None and sms_report.client_touches is not None else "")
+            "or assigned agent. AGENT WORKED counts accounts with a matched agent reply. In SMS Agent Touch reports, "
+            "it counts clients with a logged touch. Each account counts once per channel and campaign."
         )
         if source_campaigns or any(report is not None for _, _, report in channels):
             st.download_button(
                 "Download report (.xlsx)",
                 data=partial(build_summary_workbook, campaign, report_date, sent_to_ops, viber_report, email_report,
-                             manual_totals, sms_report=sms_report, channel_statuses=statuses, source_campaigns=source_campaigns),
+                             campaign_totals, sms_report=sms_report, channel_statuses=statuses, source_campaigns=source_campaigns),
                 file_name=f"INBOUND_REPLY_{report_date.isoformat()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="inbound_reply_summary_download", on_click="ignore", type="primary",

@@ -8,14 +8,15 @@ import unicodedata
 from collections import Counter, defaultdict
 from copy import copy
 from dataclasses import dataclass, field, replace
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO, StringIO
 from pathlib import Path
 from textwrap import TextWrapper
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 9
-SMS_CLIENT_TOUCH_VERSION = 2
+VIBER_REPLY_VERSION = 10
+SMS_CLIENT_TOUCH_VERSION = 3
 CUSTOMER_REPLY_POPULATION_VERSION = 1
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
 CAMPAIGN_COLUMN_ALIASES_VERSION = 1
@@ -33,6 +34,7 @@ EXCEL_CELL_TEXT_LIMIT = 32767
 EXCEL_CELL_LINE_FEED_LIMIT = 253
 SOURCE_NAMES = ("message_logs", "campaign_replies")
 MATCH_MODES = ("name", "phone")
+MANILA_TIMEZONE = timezone(timedelta(hours=8))
 MINDANAO_CAMPAIGN = "SBC Mindanao"
 PL_RECOVERY_CAMPAIGN = "PL RECOVERY"
 SBLEGAL_CAMPAIGN = "sblegal"
@@ -103,6 +105,39 @@ def normalized_phone(value: str) -> str:
     return digits if 7 <= len(digits) <= 15 else ""
 
 
+def reply_day(value: object, *, day_first: bool = False) -> date | None:
+    """Read the Manila calendar day of a message from an export."""
+    if isinstance(value, datetime):
+        return value.astimezone(MANILA_TIMEZONE).date() if value.tzinfo is not None else value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    try:
+        return reply_day(datetime.fromisoformat(text))
+    except ValueError:
+        pass
+    # Viber adds a comma before the time in its day-first timestamp.
+    text = re.split(r"[\s,T]", text, maxsplit=1)[0]
+    orders = ("%d{sep}%m{sep}%Y", "%m{sep}%d{sep}%Y")
+    for separator in ("/", "-"):
+        if separator in text:
+            for pattern in ("%Y{sep}%m{sep}%d", *(orders if day_first else reversed(orders))):
+                try:
+                    return datetime.strptime(text, pattern.format(sep=separator)).date()
+                except ValueError:
+                    continue
+    return None
+
+
+def reply_date_column(keys: list[str], *preferred: str) -> int | None:
+    for key in (*preferred, "timestamp", "datetime", "date"):
+        if key in keys:
+            return keys.index(key)
+    return None
+
+
 @dataclass(frozen=True)
 class ReplyRecord:
     name: str
@@ -114,6 +149,7 @@ class ReplyRecord:
     lookup_phones: tuple[str, ...] = ()
     placement_phone: str = ""
     placement_issue: str = ""
+    reply_days: frozenset[date] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -127,6 +163,7 @@ class ReplySource:
     unmatched_records: tuple[ReplyRecord, ...] = ()
     layout: str = ""
     duplicate_rows: int = 0
+    has_reply_dates: bool = False
 
     @property
     def unmatched_addresses(self) -> int:
@@ -148,6 +185,10 @@ class MatchedPerson:
         groups = [self.campaigns[campaign]] if campaign is not None else self.campaigns.values()
         return sum(group[source] for group in groups)
 
+    def is_replied(self, source: str, campaign: str) -> bool:
+        group = self.campaigns[campaign]
+        return bool(group.get("agent_replied", group[source]))
+
 
 @dataclass(frozen=True)
 class CampaignReplyCounts:
@@ -160,6 +201,10 @@ class CampaignReplyCounts:
     @property
     def agent_percent(self) -> float | None:
         return self.agent_replied / self.unique_people if self.unique_people and self.agent_replied is not None else None
+
+    @property
+    def agent_worked_percent(self) -> float | None:
+        return self.awaiting_reply / self.unique_people if self.unique_people and self.awaiting_reply is not None else None
 
 
 @dataclass(frozen=True)
@@ -196,6 +241,15 @@ def _header_positions(row: Iterable, *, require_campaign: bool = True) -> tuple[
             return None
         if matches:
             positions[field_name] = matches[0]
+    if not layout:
+        for key in ("accountno", "accountnumber", "account"):
+            if key in keys:
+                positions["account"] = keys.index(key)
+                break
+    date_column = reply_date_column(keys, "receiveddatetime", "receivedat", "receiveddate",
+                                    "sentdatetime", "sentat", "sentdate")
+    if date_column is not None:
+        positions["reply_date"] = date_column
     required = {"phone", "campaign"} if require_campaign else {"phone"}
     return (positions, layout) if required <= positions.keys() else None
 
@@ -228,11 +282,15 @@ def _read_rows(rows: Iterable, filename: str, sheet: str, *, require_campaign: b
         if not values.get("account") and not normalized_name(values.get("name", "")) and not normalized_phone(values["phone"]):
             excluded += 1
             continue
+        date_index = positions.get("reply_date", len(row))
+        day = reply_day(row[date_index], day_first=True) if date_index < len(row) else None
         records.append(ReplyRecord(
             values.get("name", ""), values["phone"], inbound_campaign_label(campaign),
             values.get("message_type", ""), tuple(row), values.get("account", ""),
+            reply_days=frozenset((day,)) if day is not None else frozenset(),
         ))
-    source = ReplySource(filename, tuple(records), excluded, sheet, headers, layout=layout)
+    source = ReplySource(filename, tuple(records), excluded, sheet, headers, layout=layout,
+                         has_reply_dates="reply_date" in positions)
     return deduplicate_client_accounts(source) if layout == "client" else source
 
 
@@ -290,7 +348,8 @@ def read_reply_source(filename: str, data: bytes, *, require_campaign: bool = Tr
 def _counts(label: str, people: Iterable[MatchedPerson], replied_source: str,
             campaign: str | None = None) -> CampaignReplyCounts:
     people = tuple(people)
-    replied = sum(person.source_rows(replied_source, campaign) > 0 for person in people)
+    replied = sum(any(person.is_replied(replied_source, key) for key in person.campaigns
+                      if campaign is None or key == campaign) for person in people)
     matched = sum(all(person.source_rows(source, campaign) > 0 for source in SOURCE_NAMES) for person in people)
     return CampaignReplyCounts(label, len(people), replied, len(people) - replied, matched)
 
@@ -315,8 +374,8 @@ def deduplicate_client_accounts(source: ReplySource) -> ReplySource:
             if key in unique:
                 duplicates += 1
                 first = unique[key]
-                if row.campaign == PL_RECOVERY_CAMPAIGN and first.campaign != PL_RECOVERY_CAMPAIGN:
-                    unique[key] = replace(first, campaign=PL_RECOVERY_CAMPAIGN)
+                campaign = PL_RECOVERY_CAMPAIGN if row.campaign == PL_RECOVERY_CAMPAIGN else first.campaign
+                unique[key] = replace(first, campaign=campaign, reply_days=first.reply_days | row.reply_days)
             else:
                 unique[key] = row
             for phone in row.lookup_phones or (normalized_phone(row.phone),):
@@ -327,24 +386,45 @@ def deduplicate_client_accounts(source: ReplySource) -> ReplySource:
                    excluded_rows=source.excluded_rows + skipped, duplicate_rows=source.duplicate_rows + duplicates)
 
 
-def match_client_touches(clients: ReplySource, touches: ReplySource) -> ViberReplyReport:
-    """Count agent touches only for customers in the deduplicated Client list."""
-    accounts = {row.account.casefold() for row in touches.records if row.account}
-    all_phones = {normalized_phone(row.phone) for row in touches.records}
-    phones_without_account = {normalized_phone(row.phone) for row in touches.records if not row.account}
-    client_phones = Counter(normalized_phone(row.phone) for row in clients.records)
+def _client_activity(source: ReplySource) -> dict[tuple[str, str], set[date]]:
+    activity = defaultdict(set)
+    for row in source.records:
+        if row.account:
+            activity["account", row.account.casefold()].update(row.reply_days)
+        phone = normalized_phone(row.phone)
+        if phone:
+            activity["phone", phone].update(row.reply_days)
+            if not row.account:
+                activity["phone without account", phone].update(row.reply_days)
+    return activity
+
+
+def match_client_touches(clients: ReplySource, touches: ReplySource, replies: ReplySource) -> ViberReplyReport:
+    """Match outgoing calls and SMS replies to the deduplicated Client list."""
+    touch_activity = _client_activity(touches)
+    reply_activity = _client_activity(replies)
+    same_day = clients.has_reply_dates and replies.has_reply_dates
+    client_phones = Counter(phone for row in clients.records
+                            for phone in row.lookup_phones or (normalized_phone(row.phone),))
     people, outcomes, groups = [], [], defaultdict(list)
     for row in clients.records:
         phone = normalized_phone(row.phone)
-        found = row.account.casefold() in accounts or bool(phone and client_phones[phone] == 1 and phone in (
-            phones_without_account if row.account else all_phones))
+        phone_key = "phone without account" if row.account else "phone"
+        keys = [(phone_key, candidate) for candidate in row.lookup_phones or (phone,)
+                if candidate and client_phones[candidate] == 1]
+        if row.account:
+            keys.append(("account", row.account.casefold()))
+        touched = any(key in touch_activity for key in keys)
+        matched = any(key in reply_activity for key in keys)
+        replied = (any(row.reply_days.intersection(reply_activity.get(key, ())) for key in keys)
+                   if same_day else matched)
         key = normalized_campaign(row.campaign)
         person = MatchedPerson(row.name or row.account or phone, {phone} if phone else set(), {
-            key: {"label": row.campaign, "message_logs": 1, "campaign_replies": int(found)},
+            key: {"label": row.campaign, "message_logs": 1, "campaign_replies": int(matched), "agent_replied": replied},
         })
         people.append(person)
         groups[key].append(person)
-        outcomes.append((row, found))
+        outcomes.append((row, touched))
     campaigns = tuple(_counts(group[0].campaigns[key]["label"], group, "campaign_replies", key)
                       for key, group in sorted(groups.items()))
     return ViberReplyReport(tuple(people), campaigns, "campaign_replies", "phone",
@@ -357,6 +437,7 @@ def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource
     if agent_replied_source not in SOURCE_NAMES or match_mode not in MATCH_MODES:
         raise InboundReplyError("Choose the agent-replied file and a person matching rule.")
     sources = dict(zip(SOURCE_NAMES, (message_logs, campaign_replies)))
+    same_day = match_mode == "phone" and all(source.has_reply_dates for source in sources.values())
     # Retain the legacy name matcher; phone matching requires an actual number.
     alternate_ids = defaultdict(set)
     if match_mode == "name":
@@ -367,6 +448,7 @@ def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource
                     alternate_ids[phone].add(name)
     people = {}
     campaign_labels = {}
+    days = {source: defaultdict(set) for source in SOURCE_NAMES}
     excluded_phone_rows = 0
     for source_name, source in sources.items():
         for row in source.records:
@@ -387,11 +469,18 @@ def match_viber_sources(message_logs: ReplySource, campaign_replies: ReplySource
                 "label": campaign_labels[campaign_key], "message_logs": 0, "campaign_replies": 0,
             })
             group[source_name] += 1
+            if same_day and row.reply_days:
+                days[source_name][identity, campaign_key].update(row.reply_days)
     if match_mode == "phone":
         customer_source = next(source for source in SOURCE_NAMES if source != agent_replied_source)
         customers = {}
         for identity, person in people.items():
             person.campaigns = {key: group for key, group in person.campaigns.items() if group[customer_source]}
+            if same_day:
+                for key, group in person.campaigns.items():
+                    match_key = (identity, key)
+                    group["agent_replied"] = not days[customer_source].get(match_key, set()).isdisjoint(
+                        days[agent_replied_source].get(match_key, ()))
             if person.campaigns:
                 customers[identity] = person
         people = customers
@@ -409,8 +498,9 @@ def people_rows(report: ViberReplyReport) -> list[dict]:
     """Export one row per matched identity, retaining its name and campaigns."""
     rows = []
     for person in report.people:
-        replied = [group["label"] for group in person.campaigns.values() if group[report.agent_replied_source]]
-        pending = [group["label"] for group in person.campaigns.values() if not group[report.agent_replied_source]]
+        replied, pending = [], []
+        for key, group in person.campaigns.items():
+            (replied if person.is_replied(report.agent_replied_source, key) else pending).append(group["label"])
         rows.append({
             "Person": person.name,
             "Phones": "; ".join(sorted(person.phones)),
@@ -438,14 +528,15 @@ def build_people_csv(report: ViberReplyReport) -> bytes:
 def unreplied_records(report: ViberReplyReport) -> tuple[ReplyRecord, ...]:
     """Return the first source row per unreplied phone and campaign."""
     if report.client_touches is not None:
-        return tuple(row for row, touched in report.client_touches if not touched)
+        return tuple(row for (row, _), person in zip(report.client_touches, report.people)
+                     if not person.is_replied(report.agent_replied_source, normalized_campaign(row.campaign)))
     if report.match_mode != "phone":
         raise InboundReplyError("The unreplied report requires phone-number matching.")
     pending = {
         (campaign_key, phone)
         for person in report.people
-        for campaign_key, group in person.campaigns.items()
-        if not group[report.agent_replied_source]
+        for campaign_key in person.campaigns
+        if not person.is_replied(report.agent_replied_source, campaign_key)
         for phone in person.phones
     }
     source = report.message_logs if report.agent_replied_source == "campaign_replies" else report.campaign_replies

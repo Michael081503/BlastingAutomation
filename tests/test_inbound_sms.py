@@ -45,10 +45,10 @@ class SmsOutputTests(unittest.TestCase):
         clients = Upload("CLIENT.xlsx", workbook_bytes([
             ("Comparison", [("Client", "Account No.", "Phone Number"), ("Sample", "0999", "09991234567")]),
             ("Incoming", [client_headers,
-                          ("11/24", "One", "SBC CARDS B2", "0001", "09171234567", first_message),
-                          ("11/24", "One", "SBC CARDS L1", "0001", "09181234567", "Repeated account"),
-                          ("11/24", "Two", "SBC CARDS L1", "0002", "+63 9171234567", "Shared phone"),
-                          ("11/24", "Three", "SBC CARDS L1", "0003", "09191234567", "Third account")]),
+                          ("2026-11-24", "One", "SBC CARDS B2", "0001", "09171234567", first_message),
+                          ("2026-11-24", "One", "SBC CARDS L1", "0001", "09181234567", "Repeated account"),
+                          ("2026-11-24", "Two", "SBC CARDS L1", "0002", "+63 9171234567", "Shared phone"),
+                          ("2026-11-24", "Three", "SBC CARDS L1", "0003", "09191234567", "Third account")]),
         ]))
         first = Upload("AGENT TOUCH RECO.xlsx", workbook_bytes([("Calls", [agent_headers,
             ("Outgoing Call", "One", "SBC CARDS B2", "0001", "09341234567"),
@@ -58,14 +58,18 @@ class SmsOutputTests(unittest.TestCase):
         second = Upload("AGENT TOUCH INSURANCE.xlsx", workbook_bytes([("Calls", [agent_headers,
             ("Outgoing Call", "Three", "SBC INSURANCE", "0003", "09191234567"),
         ])]))
-        uploads = {"inbound_reply_sms_1_upload": [first, second], "inbound_reply_sms_2_upload": clients}
+        replies = Upload("sms-replies.csv", csv_bytes(("Phone", "Account No.", "Timestamp"), [
+            ("09191234567", "", "2026-11-24 15:00"), ("09171234567", "0001", "2026-11-25 09:00"),
+        ]))
+        uploads = {"inbound_reply_sms_1_upload": [first, second, replies], "inbound_reply_sms_2_upload": clients}
         with patch("branding.render_bank_branding"), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
                 patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
                 patch("streamlit.download_button") as downloads:
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
             self.assertFalse(app.error)
-            self.assertEqual([metric.value for metric in app.metric], ["3", "2", "1", "3"])
+            self.assertEqual([metric.value for metric in app.metric], ["3", "1", "2", "2", "3"])
             self.assertTrue(any("Removed 1 duplicate Client" in caption.value for caption in app.caption))
             call = next(call for call in downloads.call_args_list
                         if call.kwargs.get("key") == "inbound_reply_client_accounts_download")
@@ -77,10 +81,24 @@ class SmsOutputTests(unittest.TestCase):
                     ("0003", "Touched", "Third account"),
                 ])
                 self.assertTrue(all(row[headers.index("Placement Source")] == "Client file (unverified)" for row in rows))
+                self.assertEqual([row[headers.index("Reply Status")] for row in rows], ["Not replied", "Not replied", "Replied"])
                 self.assertEqual(book["Client Accounts"]["H2"].hyperlink.location, "'Client Accounts Text'!A2")
             finally:
                 book.close()
 
+            def campaign_summary():
+                call = next(call for call in reversed(downloads.call_args_list)
+                            if call.kwargs.get("key") == "inbound_reply_summary_download")
+                book = load_workbook(BytesIO(call.kwargs["data"]()), data_only=True)
+                try:
+                    sheet = book["Summary"]
+                    return [(row[0], row[9], row[14]) for row in sheet.iter_rows(
+                        min_row=4, max_row=sheet.max_row - 1, values_only=True)]
+                finally:
+                    book.close()
+
+            expected_summary = [("SBC CARDS B2", 1, 1), ("SBC CARDS L1", 2, 1)]
+            self.assertEqual(campaign_summary(), expected_summary)
             uploads["inbound_reply_email_lookup_uploads"] = [
                 Upload("Regular.csv", b"Phone,LEVEL\n09171234567,1\n09191234567,1\n"),
                 Upload("B2.csv", b"Phone\n09171234567\n"),
@@ -90,9 +108,10 @@ class SmsOutputTests(unittest.TestCase):
             report = app.session_state["inbound_reply_sms_result"]["report"]
             self.assertEqual(report.message_logs.sheet, "Incoming")
             self.assertEqual([(row.account, row.campaign) for row, _ in report.client_touches], [
-                ("0001", "SBC B2"), ("0002", "SBC Level 1"), ("0003", "SBC Level 1"),
+                ("0001", "SBC CARDS B2"), ("0002", "SBC CARDS L1"), ("0003", "SBC CARDS L1"),
             ])
-            self.assertEqual((report.totals.unique_people, report.totals.agent_replied), (3, 2))
+            self.assertEqual(campaign_summary(), expected_summary)
+            self.assertEqual((report.totals.unique_people, report.totals.agent_replied), (3, 1))
             self.assertEqual([row.placement_phone for row, _ in report.client_touches],
                              ["09171234567", "09171234567", "09191234567"])
 
@@ -103,34 +122,73 @@ class SmsOutputTests(unittest.TestCase):
 
         headers = ("Received Date / Time", "Debtor Name", "Client", "Account No.", "Phone Number", "Message")
         clients = read_reply_source("CLIENT.csv", csv_bytes(headers, [
-            ("11/24", "One", "Source label", "0001", "09161234567", "First message"),
-            ("11/24", "One", "Source label", "0001", "+63 917 123 4567", "Alternate phone"),
-            ("11/24", "Two", "Source label", "0002", "09181234567", "Two database memberships"),
+            ("11/24", "One", "", "0001", "09161234567", "First message"),
+            ("11/24", "One", "", "0001", "+63 917 123 4567", "Alternate phone"),
+            ("11/24", "Two", "", "0002", "09181234567", "Two database memberships"),
             ("11/24", "Three", "Source label", "0003", "09191234567", "First message"),
             ("11/24", "Three", "PL RECOVERY", "0003", "09191234567", "Explicit PL RECOVERY"),
             ("11/24", "Four", "SBC B2", "0004", "09201234567", "Phone absent from database"),
+            ("11/24", "Five", "SBC Insurance", "0005", "09211234567", "Different database campaign"),
         ]))
         lookup = build_email_campaign_lookup([
-            ("Regular.csv", b"Phone,LEVEL\n09171234567,6\n09181234567,1\n09191234567,6\n"),
+            ("Regular.csv", b"Phone,LEVEL\n09171234567,6\n09181234567,1\n09191234567,6\n09211234567,1\n"),
             ("B2.csv", b"Phone\n09181234567\n"),
         ])
         result = apply_phone_campaign_lookup(clients, lookup)
         self.assertEqual(result.duplicate_rows, 2)
         self.assertEqual([(row.account, row.campaign, row.placement_phone) for row in result.records], [
             ("0001", "SBC Level 6", "09171234567"), ("0002", "sblegal", ""),
-            ("0003", "PL RECOVERY", ""), ("0004", "sblegal", ""),
+            ("0003", "PL RECOVERY", ""), ("0004", "SBC B2", ""), ("0005", "SBC Insurance", ""),
         ])
         self.assertEqual(result.records[0].source_values[4:6], ("09161234567", "First message"))
 
         book = load_workbook(BytesIO(build_unmatched_workbook({"SMS": result})))
         try:
             headers, *rows = book["SMS Unmatched"].values
-            self.assertEqual([row[headers.index("Account No.")] for row in rows], ["0002", "0004"])
-            self.assertEqual([row[headers.index("Phones Checked")] for row in rows], ["09181234567", "09201234567"])
+            self.assertEqual([row[headers.index("Account No.")] for row in rows], ["0002", "0004", "0005"])
+            self.assertEqual([row[headers.index("Phones Checked")] for row in rows], ["09181234567", "09201234567", "09211234567"])
             self.assertIn("Conflicting database placements", rows[0][-1])
             self.assertEqual(rows[1][-1], "Phone not found in placement databases")
+            self.assertEqual(rows[2][-1], "Database placements differ from Client campaign: SBC Level 1")
         finally:
             book.close()
+
+    def test_client_checks_all_saved_phones_before_using_uploaded_lookup(self):
+        from inbound_campaign_lookup import apply_phone_campaign_lookup, build_email_campaign_lookup
+
+        headers = ("Received Date / Time", "Debtor Name", "Client", "Account No.", "Phone Number", "Message")
+        clients = read_reply_source("CLIENT.csv", csv_bytes(headers, [
+            ("11/24", "One", "", "0001", "09161234567", "First message"),
+            ("11/24", "One", "", "0001", "+63 917 123 4567", "Alternate phone"),
+            ("11/24", "Two", "", "0002", "09181234567", "New match"),
+        ]))
+        saved = build_email_campaign_lookup([("Regular.csv", b"Phone,LEVEL\n09171234567,6\n")])
+        uploaded = build_email_campaign_lookup([("B2.csv", b"Phone\n09161234567\n09181234567\n")])
+        result = apply_phone_campaign_lookup(clients, saved.with_fallback(uploaded))
+        self.assertEqual([(row.account, row.campaign, row.placement_phone) for row in result.records], [
+            ("0001", "SBC Level 6", "09171234567"), ("0002", "SBC B2", "09181234567"),
+        ])
+
+    def test_client_area_match_on_an_alternate_phone_takes_priority_over_product(self):
+        from inbound_campaign_lookup import apply_phone_campaign_lookup, build_email_campaign_lookup
+
+        headers = ("Received Date / Time", "Debtor Name", "Client", "Account No.", "Phone Number", "Message")
+        clients = read_reply_source("CLIENT.csv", csv_bytes(headers, [
+            ("11/24", "One", "", "0001", "09161234567", "First message"),
+            ("11/24", "One", "", "0001", "+63 917 123 4567", "Alternate phone"),
+        ]))
+        regular = ("Regular.csv", b"Phone,LEVEL,Product Type\n09161234567,6,PL\n")
+        geo = ("GEO.csv", b"Phone,Area,Product\n09171234567,Region 3,PL\n")
+        result = apply_phone_campaign_lookup(clients, build_email_campaign_lookup([regular, geo]))
+        self.assertEqual([(row.campaign, row.placement_phone) for row in result.records], [
+            ("SBC Mindanao", "09171234567"),
+        ])
+        saved = build_email_campaign_lookup([regular])
+        uploaded = build_email_campaign_lookup([geo])
+        result = apply_phone_campaign_lookup(clients, saved.with_fallback(uploaded))
+        self.assertEqual([(row.campaign, row.placement_phone) for row in result.records], [
+            ("PL RECOVERY", "09161234567"),
+        ])
 
     def test_sms_only_upload_accepts_a_fully_replied_account_list(self):
         from openpyxl import load_workbook

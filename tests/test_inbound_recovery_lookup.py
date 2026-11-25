@@ -74,6 +74,71 @@ def recovery_uploads():
 
 
 class RecoveryLookupPageTests(unittest.TestCase):
+    def test_lookup_area_takes_priority_over_personal_loan_product_in_summary(self):
+        from streamlit.testing.v1 import AppTest
+
+        lookup_uploads = [Upload(name, workbook_bytes([("OVERALL", rows)])) for name, rows in (
+            ("Regular.xlsx", [
+                ("debtor_email", "LEVEL", "Product Type", "phone_1"),
+                ("regular@example.com", 6, " pl ", "09171234567"),
+                ("card@example.com", 1, "CARDS", "09181234567"),
+                ("shared@example.com", 6, "PL", "09201234567"),
+            ]),
+            ("GEO.xlsx", [
+                ("email", "placement", "Area", "Product", "Phone 2"),
+                ("geo@example.com", 6, "Region 3", "PL", "09191234567"),
+                (" SHARED@EXAMPLE.COM ", 6, "Mindanao", "CARDS", "+63 920 123 4567"),
+                ("blankarea@example.com", 6, " ", "PL", "09211234567"),
+            ]),
+            ("B2.xlsx", [
+                ("Email (01)", "Mobile 1"),
+                ("regular@example.com", "09171234567"),
+            ]),
+        )]
+        phone_agents = Upload("agents.csv", csv_bytes(("Phone",), [("+63 917 123 4567",)]))
+        phone_customers = Upload("customers.csv", csv_bytes(("Phone",), [
+            ("09171234567",), ("09181234567",), ("09191234567",), ("09201234567",), ("09211234567",),
+        ]))
+        uploads = {
+            "inbound_reply_email_lookup_uploads": lookup_uploads,
+            "inbound_reply_email_1_upload": Upload("history.csv", csv_bytes(("email", "sent"), [
+                ("regular@example.com", "Agent response"),
+            ])),
+            "inbound_reply_email_2_upload": Upload("dc.csv", csv_bytes(("sender",), [
+                ("regular@example.com",), ("geo@example.com",), ("card@example.com",),
+                ("shared@example.com",), ("blankarea@example.com",),
+            ])),
+            "inbound_reply_sms_1_upload": [phone_agents],
+            "inbound_reply_sms_2_upload": phone_customers,
+            "inbound_reply_viber_1_upload": phone_agents,
+            "inbound_reply_viber_2_upload": phone_customers,
+        }
+        with patch("branding.render_bank_branding"), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
+                patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            call = next(call for call in downloads.call_args_list
+                        if call.kwargs.get("key") == "inbound_reply_summary_download")
+            workbook = load_workbook(BytesIO(call.kwargs["data"]()), data_only=True)
+            try:
+                summary = workbook["Summary"]
+                rows = list(summary.iter_rows(min_row=4, max_row=summary.max_row - 1, values_only=True))
+                self.assertEqual({row[0]: row[8:11] for row in rows}, {
+                    "PL RECOVERY": (2, 2, 2), "SBC B2": (None, None, None), "SBC Level 1": (1, 1, 1),
+                    "SBC Mindanao": (2, 2, 2),
+                })
+                recovery = next(row for row in rows if row[0] == "PL RECOVERY")
+                self.assertEqual((recovery[12], recovery[14], recovery[16]), (1, 1, 1))
+                unreplied = workbook["Email Unreplied"]
+                self.assertEqual({row[4]: row[1] for row in unreplied.iter_rows(min_row=4, values_only=True)}, {
+                    "blankarea@example.com": "PL RECOVERY", "card@example.com": "SBC Level 1",
+                    "geo@example.com": "SBC Mindanao", "shared@example.com": "SBC Mindanao",
+                })
+            finally:
+                workbook.close()
+
     def test_pending_recovery_uploads_show_one_campaign(self):
         from streamlit.testing.v1 import AppTest
 
@@ -136,6 +201,16 @@ class RecoveryLookupPageTests(unittest.TestCase):
                     data = call.kwargs["data"]
                     book = load_workbook(BytesIO(data() if callable(data) else data))
                     try:
+                        if key == "inbound_reply_summary_download":
+                            summary = book["Summary"]
+                            campaign_rows = list(summary.iter_rows(min_row=4, max_row=summary.max_row - 1,
+                                                                   values_only=True))
+                            self.assertEqual([row[0] for row in campaign_rows], CAMPAIGNS)
+                            recovery = campaign_rows[0]
+                            self.assertEqual(recovery[8:11], (8, 8, 8))
+                            self.assertEqual((recovery[12], recovery[14], recovery[16]), (2, 1, 1))
+                            for row in campaign_rows[1:]:
+                                self.assertEqual(row[8:11], (None, None, None))
                         first_row = 4 if key == "inbound_reply_summary_download" else 2
                         for title, count in sheets.items():
                             rows = list(book[title].iter_rows(min_row=first_row, values_only=True))

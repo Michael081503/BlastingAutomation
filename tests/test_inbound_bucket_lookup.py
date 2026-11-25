@@ -137,12 +137,12 @@ class BucketLookupPageTests(unittest.TestCase):
         for channel in ("sms", "viber"):
             key = f"inbound_reply_{channel}_2_upload"
             uploads[key] = append_csv(uploads[key], [
-                (f"BUCKET-{i}", "Customer", f"093{i}1234567", "Original Campaign", "Customer message") for i in range(5)
+                (f"BUCKET-{i}", "Customer", f"093{i}1234567", "", "Customer message") for i in range(5)
             ])
             key = f"inbound_reply_{channel}_1_upload"
             uploads[key] = append_csv(uploads[key], [
-                ("BUCKET-0", "Customer", "09301234567", "Original Campaign", "Agent response"),
-                ("BUCKET-2", "Customer", "09321234567", "Original Campaign", "Agent response"),
+                ("BUCKET-0", "Customer", "09301234567", "", "Agent response"),
+                ("BUCKET-2", "Customer", "09321234567", "", "Agent response"),
             ])
         with patch("branding.render_bank_branding"), \
                 patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \

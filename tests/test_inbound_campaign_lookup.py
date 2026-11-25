@@ -91,7 +91,7 @@ class CampaignLookupTests(unittest.TestCase):
         try:
             self.assertEqual(book.sheetnames, ["Summary", "SMS Unreplied", "Viber Unreplied", "Email Unreplied"])
             self.assertEqual([book["Summary"].cell(row, 1).value for row in (4, 5)], ["SBC Level 1", "SBC Level 6"])
-            self.assertEqual([book["Summary"].cell(4, col).value for col in (9, 10, 11, 13, 15, 17)], [1] * 6)
+            self.assertEqual([book["Summary"].cell(4, col).value for col in (9, 10, 11, 13, 15, 17)], [1, 1, 1, 1, 1, 1])
             for name in ("SMS Unreplied", "Viber Unreplied", "Email Unreplied"):
                 self.assertEqual(book[name]["B4"].value, "SBC Level 6")
         finally:
@@ -346,9 +346,8 @@ class CampaignLookupPageTests(unittest.TestCase):
             app.run(timeout=20)
             self.assertFalse(app.exception)
             self.assertTrue(app.error)
-            self.assertNotIn("inbound_reply_email_result", app.session_state)
-            self.assertNotIn("inbound_reply_campaign_labels", app.session_state)
-            self.assertEqual(len(app.metric), 0)
+            self.assertEqual([row[0] for row in rows(html)], ["SBC Level 7", "sblegal"])
+            self.assertEqual([metric.value for metric in app.metric], ["2", "1", "1"])
             uploads["inbound_reply_email_lookup_uploads"] = []
             app.run(timeout=20)
             self.assertFalse(app.exception)

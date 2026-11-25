@@ -341,7 +341,7 @@ class InboundReplyPageTests(unittest.TestCase):
         values = [cell.split("</td>")[0] for cell in cells]
         self.assertEqual(len(values), 18)
         self.assertEqual(values[10], "2")
-        self.assertEqual(values[16:], ["1", "50.00%"])
+        self.assertEqual(values[16:], ["0", "0.00%"])
         self.assertTrue(all(values[index] == "—" for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15)))
 
     def test_uploads_replacements_errors_removal_and_clear_invalidate_results(self):
@@ -367,8 +367,9 @@ class InboundReplyPageTests(unittest.TestCase):
         with patch("branding.render_bank_branding", side_effect=render_clear_all_files), patch("streamlit.file_uploader", side_effect=uploader):
             app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
             self.assertFalse(app.exception)
-            self.assertEqual(len(set(seen)), 7)
+            self.assertEqual(len(set(seen)), 8)
             self.assertIn("inbound_reply_email_lookup_uploads", seen)
+            self.assertIn("inbound_reply_totals_upload", seen)
             for channel in ("SMS", "EMAIL", "VIBER"):
                 for number, role in ((1, "Agent replies"), (2, "Customer replies")):
                     self.assertEqual(seen_labels[f"inbound_reply_{channel.lower()}_{number}_upload"],

@@ -26,6 +26,8 @@ EMAIL_CAMPAIGN_LOOKUP_UPLOADS_VERSION = 1
 ENCRYPTED_SOURCE_UPLOADS_VERSION = 1
 NEW_ENDO_OUTPUT_UPLOADS_VERSION = 1
 UPLOAD_GENERATION_KEY = "_upload_generation"
+INBOUND_LOOKUP_FALLBACK_CACHE_KEY = "inbound_reply_lookup_fallback"
+INBOUND_TOTALS_UPLOAD_KEY = "inbound_reply_totals_upload"
 UPLOAD_KEYS = (
     "source_upload", "template_upload", "geo_b2_autostat_uploads",
     "autostat_uploads", "autostat_b2_uploads", "b2_database_upload", "b2_grid_upload",
@@ -35,7 +37,7 @@ UPLOAD_KEYS = (
     "inbound_reply_sms_1_upload", "inbound_reply_sms_2_upload",
     "inbound_reply_email_1_upload", "inbound_reply_email_2_upload",
     "inbound_reply_viber_1_upload", "inbound_reply_viber_2_upload",
-    "inbound_reply_email_lookup_uploads",
+    "inbound_reply_email_lookup_uploads", INBOUND_TOTALS_UPLOAD_KEY,
 )
 FILE_STATE_KEYS = {
     "result", "source_info", "template_info", "source_previews", "sheet_output_modes",
@@ -49,6 +51,7 @@ FILE_STATE_KEYS = {
     "inbound_reply_sms_result",
     "inbound_reply_campaign_labels",
     "inbound_reply_email_lookup",
+    INBOUND_LOOKUP_FALLBACK_CACHE_KEY,
 }
 FILE_STATE_PREFIXES = (
     "new_endo_source_",

@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import csv
+from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
 from io import BytesIO, StringIO
 from pathlib import Path
 
 from email_validation import validated_email
 from inbound_reply import (
     CAMPAIGN_HEADER_ALIASES, SBLEGAL_CAMPAIGN, CampaignReplyCounts, InboundReplyError, build_reply_workbook,
-    excluded_inbound_campaign, inbound_campaign_label, inbound_csv_delimiter, normalized_campaign,
+    excluded_inbound_campaign, inbound_campaign_label, inbound_csv_delimiter, normalized_campaign, reply_date_column,
+    reply_day,
 )
 
 
-EMAIL_REPLY_VERSION = 8
+EMAIL_REPLY_VERSION = 9
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 
@@ -34,6 +37,7 @@ class EmailRecord:
     sent: bool
     agent: str
     source_values: tuple[object, ...]
+    reply_day: date | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,7 @@ class EmailSource:
     lookup_applied: bool = False
     unmatched_records: tuple[EmailRecord, ...] = ()
     workbook_placements: bool = False
+    has_reply_dates: bool = False
 
     @property
     def unmatched_addresses(self) -> int:
@@ -57,14 +62,18 @@ class EmailReplyReport:
     dc: EmailSource
     history: EmailSource | None
     accounts: tuple[EmailRecord, ...]
-    replied_emails: frozenset[str]
+    replied_accounts: frozenset[tuple[str, str]]
     campaigns: tuple[CampaignReplyCounts, ...]
 
     @property
     def totals(self) -> CampaignReplyCounts:
         addresses = {row.email for row in self.accounts}
         history_emails = {row.email for row in self.history.records} if self.history is not None else None
-        return _reply_counts("All campaigns", addresses, self.replied_emails, history_emails)
+        replied_emails = {email for _, email in self.replied_accounts}
+        return _reply_counts("All campaigns", addresses, replied_emails, history_emails)
+
+    def is_replied(self, record: EmailRecord) -> bool:
+        return (normalized_campaign(record.campaign), record.email) in self.replied_accounts
 
     @property
     def history_only_addresses(self) -> int | None:
@@ -90,6 +99,10 @@ def _positions(row, kind: str, *, require_campaign: bool = True) -> dict[str, in
         matches = [index for index, key in enumerate(keys) if key in names]
         if len(matches) == 1:
             result[field] = matches[0]
+    date_column = (reply_date_column(keys, "receiveddatetime", "receivedat", "receiveddate", "datecreated")
+                   if kind == "dc" else reply_date_column(keys, "sentdatetime", "sentat", "sentdate"))
+    if date_column is not None:
+        result["reply_date"] = date_column
     return result
 
 
@@ -123,8 +136,9 @@ def _read_rows(rows, filename: str, kind: str, sheet: str, *, require_campaign: 
         records.append(EmailRecord(
             email, inbound_campaign_label(campaign),
             bool(str(values.get("sent") or "").strip()), str(values.get("agent") or "").strip(), tuple(row),
+            reply_day(values.get("reply_date")),
         ))
-    return EmailSource(filename, headers, tuple(records), excluded, sheet)
+    return EmailSource(filename, headers, tuple(records), excluded, sheet, has_reply_dates="reply_date" in positions)
 
 
 def read_email_source(filename: str, data: bytes, *, kind: str, require_campaign: bool = True) -> EmailSource:
@@ -178,7 +192,7 @@ def read_email_source(filename: str, data: bytes, *, kind: str, require_campaign
         workbook.close()
 
 
-def _reply_counts(label: str, addresses: set[str], replied_emails: frozenset[str],
+def _reply_counts(label: str, addresses: set[str], replied_emails: set[str],
                   history_emails: set[str] | None) -> CampaignReplyCounts:
     if history_emails is None:
         return CampaignReplyCounts(label, len(addresses), None, None, None)
@@ -190,19 +204,25 @@ def _reply_counts(label: str, addresses: set[str], replied_emails: frozenset[str
 def match_email_sources(dc: EmailSource, history: EmailSource | None) -> EmailReplyReport:
     """DC contains incoming customer emails; sent history entries identify agent responses."""
     history_rows = history.records if history is not None else ()
-    replied_emails = frozenset(row.email for row in history_rows if row.sent)
     history_emails = {row.email for row in history_rows} if history is not None else None
+    same_day = history is not None and dc.has_reply_dates and history.has_reply_dates
+    sent = {(row.email, row.reply_day if same_day else None)
+            for row in history_rows if row.sent and (not same_day or row.reply_day is not None)}
     accounts = {}
     labels = {}
+    addresses = defaultdict(set)
+    replied = defaultdict(set)
     for row in dc.records:
         key = normalized_campaign(row.campaign)
         labels.setdefault(key, row.campaign)
         accounts.setdefault((key, row.email), row)
-    campaigns = []
-    for key, label in sorted(labels.items(), key=lambda item: item[1].casefold()):
-        addresses = {email for campaign, email in accounts if campaign == key}
-        campaigns.append(_reply_counts(label, addresses, replied_emails, history_emails))
-    return EmailReplyReport(dc, history, tuple(accounts.values()), replied_emails, tuple(campaigns))
+        addresses[key].add(row.email)
+        if (row.email, row.reply_day if same_day else None) in sent:
+            replied[key].add(row.email)
+    campaigns = tuple(_reply_counts(label, addresses[key], replied[key], history_emails)
+                      for key, label in sorted(labels.items(), key=lambda item: item[1].casefold()))
+    replied_accounts = frozenset((campaign, email) for campaign, emails in replied.items() for email in emails)
+    return EmailReplyReport(dc, history, tuple(accounts.values()), replied_accounts, campaigns)
 
 
 def build_email_unreplied_workbook(report: EmailReplyReport) -> bytes:
@@ -212,7 +232,7 @@ def build_email_unreplied_workbook(report: EmailReplyReport) -> bytes:
     details = []
     headers = report.dc.headers
     for row in sorted(report.accounts, key=lambda row: (normalized_campaign(row.campaign), row.email)):
-        if row.email in report.replied_emails:
+        if report.is_replied(row):
             continue
         values = row.source_values[:len(headers)] + (None,) * max(0, len(headers) - len(row.source_values))
         details.append((*values, row.email, "Not replied"))

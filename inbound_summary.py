@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import date
+from collections import Counter
+from datetime import date, datetime
 from io import BytesIO
 from xml.etree import ElementTree
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 from inbound_email import EmailSource
 from inbound_reply import (
     INBOUND_MESSAGE_COLUMN_WIDTH, MINDANAO_CAMPAIGN, PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplySource,
     append_report_detail_rows, fit_report_text,
-    inbound_campaign_label, normalized_campaign, normalized_phone, unreplied_records,
+    inbound_campaign_label, normalized_campaign, normalized_name, normalized_phone, unreplied_records,
 )
 
 
-INBOUND_SUMMARY_VERSION = 8
+INBOUND_SUMMARY_VERSION = 11
 BLAST_PERCENTAGE_FORMULAS_VERSION = 1
 OVERALL_BLAST_COVERAGE_VERSION = 1
 OVERALL_BLAST_LABEL = "TOTAL — ALL CAMPAIGNS"
@@ -48,6 +49,42 @@ def nonnegative_count(value) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
+def read_summary_totals(data: bytes) -> tuple[date, dict[str, dict[str, int]]]:
+    """Read the report date and entered counts from an Inbound Reply workbook."""
+    from openpyxl import load_workbook
+    from openpyxl.utils.exceptions import InvalidFileException
+
+    fields = ((1, "active_ticket"), (2, "dc_email"), (4, "dc_sms"), (6, "dc_viber"))
+    try:
+        workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
+        try:
+            rows = workbook["Summary"].iter_rows(max_col=7, values_only=True)
+            title, groups, channels = next(rows), next(rows), next(rows)
+            if (groups[:3] != ("CAMPAIGN", "ACTIVE TICKET", "DC WORKED") or
+                    tuple(channels[i] for i in (2, 4, 6)) != ("EMAIL", "SMS", "VIBER")):
+                raise ValueError
+            heading = next(value for value in title if isinstance(value, str) and value.endswith(" DATA"))
+            report_date = datetime.strptime(heading[:-5], "%B %d, %Y").date()
+            totals = {}
+            for row in rows:
+                if not isinstance(row[0], str) or not row[0].strip():
+                    continue
+                label = inbound_campaign_label(row[0].strip())
+                if normalized_name(label) == normalized_name(OVERALL_BLAST_LABEL):
+                    break
+                counts = {field: count for column, field in fields
+                          if (count := nonnegative_count(row[column])) is not None}
+                if counts:
+                    totals[label] = counts
+        finally:
+            workbook.close()
+    except (BadZipFile, ElementTree.ParseError, InvalidFileException, KeyError, OSError, StopIteration, ValueError) as error:
+        raise InboundReplyError("Upload an Inbound Reply Excel report with a dated Summary sheet.") from error
+    if not totals:
+        raise InboundReplyError("Enter Active Ticket or DC Worked counts on the Summary sheet before uploading it.")
+    return report_date, totals
+
+
 def merge_mindanao_totals(report_date: date, campaign_totals: dict | None) -> dict:
     """Fold the previous Region 3 totals into Mindanao for this report date."""
     totals = dict(campaign_totals or {})
@@ -69,19 +106,38 @@ def summary_rows(campaign: str, report_date: date, sent_to_ops: str, viber_repor
                   email_report=None, campaign_totals: dict | None = None, sms_report=None,
                   *, source_campaigns=()) -> list[list]:
     campaign_totals = merge_mindanao_totals(report_date, campaign_totals)
+    sms_touches = None if sms_report is None or sms_report.client_touches is None else Counter(
+        normalized_campaign(record.campaign) for record, touched in sms_report.client_touches if touched
+    )
     rows = []
     for group in campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns) or [None]:
-        cells = [campaign.strip() or "—", *([None] * 10), sent_to_ops, *([None] * 6)]
+        label = group["label"] if group is not None else (campaign.strip() or "—")
+        totals = campaign_totals.get(campaign_totals_key(report_date, label), {})
+        cells = [label, *([None] * 10), sent_to_ops, *([None] * 6)]
         if group is not None:
-            cells[0] = group["label"]
-            for channel, indexes in (("email", (8, 12, 13)), ("sms", (9, 14, 15)), ("viber", (10, 16, 17))):
+            for channel, report, indexes in (("email", email_report, (8, 12, 13)),
+                                             ("sms", sms_report, (9, 14, 15)),
+                                             ("viber", viber_report, (10, 16, 17))):
                 counts = group.get(channel)
-                if counts is not None:
-                    reply_index, agent_index, percent_index = indexes
-                    cells[reply_index] = counts.unique_people
-                    cells[agent_index] = counts.agent_replied
-                    cells[percent_index] = counts.agent_percent
-        totals = campaign_totals.get(campaign_totals_key(report_date, cells[0]), {})
+                reply_index, agent_index, percent_index = indexes
+                if counts is None:
+                    if totals and channel != "email" and report is not None:
+                        cells[reply_index] = cells[agent_index] = cells[percent_index] = 0
+                    continue
+                cells[reply_index] = counts.unique_people
+                if channel == "sms" and sms_touches is not None:
+                    worked = sms_touches[normalized_campaign(counts.campaign)]
+                elif channel == "email":
+                    worked = counts.agent_replied
+                else:
+                    worked = counts.matched_both_files
+                cells[agent_index] = worked
+                if worked is not None and counts.unique_people:
+                    cells[percent_index] = worked / counts.unique_people
+                elif totals and channel != "email" and worked == counts.unique_people == 0:
+                    cells[percent_index] = 0
+        if totals and email_report is None and (sms_report is not None or viber_report is not None):
+            cells[12] = "N/A"
         active = nonnegative_count(totals.get("active_ticket"))
         cells[1] = active
         for channel, index in (("email", 2), ("sms", 4), ("viber", 6)):
@@ -101,9 +157,10 @@ def display_cell(value, column: int) -> str:
 
 
 def overall_blast_row(rows: list[list]) -> list:
-    """Sum current campaigns; calculate coverage only from complete entered counts."""
+    """Sum the displayed campaigns and calculate percentages from the totals."""
     totals = [OVERALL_BLAST_LABEL, *([None] * 17)]
-    counts = {column: [nonnegative_count(row[column]) for row in rows] for column in (1, 2, 4, 6)}
+    counts = {column: [nonnegative_count(row[column]) for row in rows]
+              for column in (1, 2, 4, 6, 8, 9, 10, 12, 14, 16)}
     for column, values in counts.items():
         known = [value for value in values if value is not None]
         totals[column] = sum(known) if known else None
@@ -111,6 +168,9 @@ def overall_blast_row(rows: list[list]) -> list:
         for column in (2, 4, 6):
             if all(value is not None for value in counts[column]):
                 totals[column + 1] = totals[column] / totals[1]
+    for reply, worked in ((8, 12), (9, 14), (10, 16)):
+        if totals[reply] and totals[worked] is not None:
+            totals[worked + 1] = totals[worked] / totals[reply]
     return totals
 
 
@@ -126,9 +186,9 @@ def percentage_formula(numerator: str, denominator: str) -> str:
             f'{numerator}/{denominator},"")')
 
 
-def _cache_summary_percentages(workbook: BytesIO, percentages: dict[str, float]) -> bytes:
-    """Keep calculated rates visible in workbook previews before Excel recalculates."""
-    if not percentages:
+def _cache_summary_formulas(workbook: BytesIO, values: dict[str, int | float]) -> bytes:
+    """Keep calculated values visible in workbook previews before Excel recalculates."""
+    if not values:
         return workbook.getvalue()
     output = BytesIO()
     with ZipFile(workbook) as original, ZipFile(output, "w") as updated:
@@ -137,9 +197,9 @@ def _cache_summary_percentages(workbook: BytesIO, percentages: dict[str, float])
             if member.filename == "xl/worksheets/sheet1.xml":
                 summary = ElementTree.fromstring(data)
                 for cell in summary.iterfind("{*}sheetData/{*}row/{*}c"):
-                    rate = percentages.get(cell.get("r"))
-                    if rate is not None:
-                        cell.find("{*}v").text = str(rate)
+                    value = values.get(cell.get("r"))
+                    if value is not None:
+                        cell.find("{*}v").text = str(value)
                 data = ElementTree.tostring(summary, encoding="utf-8")
             updated.writestr(member, data)
     return output.getvalue()
@@ -153,7 +213,7 @@ def _channel_details(channel: str, report):
     if report is not None and channel == "EMAIL":
         source_headers = report.dc.headers
         for record in report.accounts:
-            if record.email not in report.replied_emails:
+            if not report.is_replied(record):
                 records.append(("EMAIL", record.campaign, "", "", record.email,
                                 source_headers, record.source_values))
     elif report is not None:
@@ -167,14 +227,13 @@ def _channel_details(channel: str, report):
         # Column position distinguishes repeated headers in an original workbook.
         fields.append((header or f"Column {index + 1}", sum(item == header for item in source_headers[:index])))
     rows = []
-    reply_status = "No agent touch" if channel == "SMS" and report is not None and report.client_touches is not None else "Not replied"
     for channel, campaign, name, phone, email, headers, values in sorted(
             records, key=lambda row: (normalized_campaign(row[1]), row[0], row[3] or row[4])):
         source_values = {}
         for index, header in enumerate(headers):
             field = (header or f"Column {index + 1}", sum(item == header for item in headers[:index]))
             source_values[field] = values[index] if index < len(values) else None
-        rows.append([channel, campaign, name, phone, email, reply_status,
+        rows.append([channel, campaign, name, phone, email, "Not replied",
                      *(source_values.get(field) for field in fields)])
     expected = sum(campaign.awaiting_reply for campaign in report.campaigns) if report is not None else 0
     if len(rows) != expected:
@@ -191,10 +250,11 @@ def build_client_accounts_workbook(report) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Client Accounts"
-    headers = ("Reported Campaign", "Agent Touch", *report.message_logs.headers, "Placement Source", "Matched Database Phone")
+    headers = ("Reported Campaign", "Agent Touch", *report.message_logs.headers, "Placement Source",
+               "Matched Database Phone", "Reply Status")
     sheet.append(headers)
     rows = []
-    for row, touched in report.client_touches:
+    for (row, touched), person in zip(report.client_touches, report.people):
         placement_source = "Client file (unverified)"
         if row.campaign == PL_RECOVERY_CAMPAIGN:
             placement_source = PL_RECOVERY_CAMPAIGN
@@ -203,7 +263,9 @@ def build_client_accounts_workbook(report) -> bytes:
         elif row.placement_issue:
             placement_source = row.placement_issue
         values = (row.source_values + (None,) * len(report.message_logs.headers))[:len(report.message_logs.headers)]
-        rows.append((row.campaign, "Touched" if touched else "No touch", *values, placement_source, row.placement_phone))
+        replied = person.is_replied(report.agent_replied_source, normalized_campaign(row.campaign))
+        rows.append((row.campaign, "Touched" if touched else "No touch", *values, placement_source,
+                     row.placement_phone, "Replied" if replied else "Not replied"))
     full_text = append_report_detail_rows(sheet, rows)
     _format_detail_sheet(sheet, headers, header_row=1)
     fit_report_text(workbook, {sheet.title: full_text}, separate_text=True)
@@ -307,28 +369,21 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     sheet["I3"].comment = Comment(
         "Unique customer accounts that replied by email, regardless of receiving mailbox or assigned agent. "
         "Repeated replies count once per customer email address within each campaign from DC Checking. "
-        "Customer replies remain counted after an agent responds. Agent responses appear under AGENT WORKED - EMAIL.",
+        "Customer replies remain counted after an agent responds.",
         "INBOUND REPLY")
-    for reply_column, channel, count_column, percent_column in (("J", "SMS", "O", "P"), ("K", "Viber", "Q", "R")):
+    for reply_column, channel in (("J", "SMS"), ("K", "Viber")):
         sheet[f"{reply_column}3"].comment = Comment(
             f"Unique customer accounts that replied through {channel}, regardless of receiving inbox or assigned agent. "
             "Repeated replies count once per phone number within each campaign. "
             "Contacts found only in the agent-replies file are excluded.", "INBOUND REPLY")
-        sheet[f"{count_column}3"].comment = Comment(
-            f"Customers from {channel} REPLY who received a response from any agent in the same campaign. "
-            "Repeated agent replies count once per phone number within each campaign.", "INBOUND REPLY")
+    for channel, count_column, percent_column, definition in (
+        ("EMAIL", "M", "N", "Unique customers with a matched sent email."),
+        ("SMS", "O", "P", "Unique customers in the agent-reply upload, or clients with a logged touch in Agent Touch reports."),
+        ("VIBER", "Q", "R", "Unique customers in the agent-reply upload for the same campaign."),
+    ):
+        sheet[f"{count_column}3"].comment = Comment(definition, "INBOUND REPLY")
         sheet[f"{percent_column}3"].comment = Comment(
-            f"Customers answered by agents divided by {channel} REPLY × 100. Recalculates when the counts change.",
-            "INBOUND REPLY")
-    if sms_report is not None and sms_report.client_touches is not None:
-        sheet["O3"].comment = Comment("Unique SMS clients with a matching Agent Touch record.", "INBOUND REPLY")
-        sheet["P3"].comment = Comment("Clients touched divided by unique SMS clients.", "INBOUND REPLY")
-    sheet["M3"].comment = Comment(
-        "Customers from EMAIL REPLY who received a response from any agent. "
-        "Repeated agent replies count once per customer email address within each campaign.", "INBOUND REPLY")
-    sheet["N3"].comment = Comment(
-        "Customers answered by agents divided by EMAIL REPLY × 100. Recalculates when the counts change.",
-        "INBOUND REPLY")
+            f"{channel} AGENT WORKED divided by {channel} REPLY × 100.", "INBOUND REPLY")
     campaign_rows = summary_rows(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
                                  source_campaigns=source_campaigns)
     for row in campaign_rows:
@@ -349,8 +404,11 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
                 cell.data_type = "s"
             if cell.row >= 4:
                 cell.number_format = "0.00%" if cell.column - 1 in PERCENT_COLUMNS else "#,##0"
-    sheet["B2"].comment = Comment("Enter the total active accounts for this campaign manually.", "INBOUND REPLY")
-    for column in ("B", "C", "E", "G"):
+    sheet["B2"].comment = Comment(
+        "GEO and RECO active accounts are counted from their OVERALL worksheets. Enter active totals for the remaining campaigns.",
+        "INBOUND REPLY")
+    total_columns = ("B", "C", "E", "G", "I", "J", "K", "M", "O", "Q")
+    for column in total_columns:
         values = f"{column}4:{column}{last_campaign_row}"
         sheet[f"{column}{total_row}"] = f'=IF(COUNT({values})=0,"",SUM({values}))'
     sheet[f"A{total_row}"].comment = Comment(
@@ -367,7 +425,13 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
         sheet[f"{percent_column}{total_row}"] = overall_blast_formula(4, last_campaign_row, blast_column)
     for reply_column, agent_column, percent_column in (("I", "M", "N"), ("J", "O", "P"), ("K", "Q", "R")):
         for row in range(4, last_campaign_row + 1):
-            sheet[f"{percent_column}{row}"] = percentage_formula(f"{agent_column}{row}", f"{reply_column}{row}")
+            cell = sheet[f"{percent_column}{row}"]
+            agent, replies = f"{agent_column}{row}", f"{reply_column}{row}"
+            formula = percentage_formula(agent, replies)
+            if cell.value == 0 and sheet[replies].value == 0:
+                formula = f'=IF(AND(COUNT({agent},{replies})=2,{agent}=0,{replies}=0),0,{formula[1:]})'
+            cell.value = formula
+        sheet[f"{percent_column}{total_row}"] = percentage_formula(f"{agent_column}{total_row}", f"{reply_column}{total_row}")
     for column in range(1, 19):
         sheet.column_dimensions[get_column_letter(column)].width = 36 if column == 1 else 18 if column == 12 else 12
     for row in range(1, sheet.max_row + 1):
@@ -401,9 +465,15 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
     output = BytesIO()
     workbook.save(output)
     workbook.close()
-    rates = {}
+    formula_values = {}
     for row_number, values in enumerate((*campaign_rows, overall), start=4):
         for column in PERCENT_COLUMNS:
             if values[column] is not None:
-                rates[f"{get_column_letter(column + 1)}{row_number}"] = values[column]
-    return _cache_summary_percentages(output, rates)
+                address = f"{get_column_letter(column + 1)}{row_number}"
+                if sheet[address].data_type == "f":
+                    formula_values[address] = values[column]
+    for column in total_columns:
+        cell = sheet[f"{column}{total_row}"]
+        if overall[cell.column - 1] is not None:
+            formula_values[cell.coordinate] = overall[cell.column - 1]
+    return _cache_summary_formulas(output, formula_values)

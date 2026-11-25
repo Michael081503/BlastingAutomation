@@ -99,7 +99,7 @@ class OverallBlastCoverageTests(unittest.TestCase):
         html = build_report_html("", self.report_date, "", campaign_totals=self.totals(),
                                  source_campaigns=("Small", "Large"))
         self.assertEqual([row[0] for row in table_cells(html)], ["Large", "Small"])
-        footer = html.split('<tfoot aria-label="Overall blast coverage">')[1].split('</tfoot>')[0]
+        footer = html.split('<tfoot aria-label="Campaign totals">')[1].split('</tfoot>')[0]
         cells = [cell.split('</td>')[0] for cell in footer.split('<td>')[1:]]
         self.assertEqual(cells[:8], [OVERALL_BLAST_LABEL, "1,000", "140", "14.00%", "200", "20.00%", "500", "50.00%"])
 
@@ -126,7 +126,8 @@ class OverallBlastCoverageTests(unittest.TestCase):
             self.assertEqual(sheet.print_area, "'Summary'!$A$1:$R$6")
             self.assertEqual(book.calculation.calcMode, "auto")
             self.assertTrue(book.calculation.fullCalcOnLoad)
-            self.assertIsNone(sheet["I6"].value)
+            self.assertEqual(sheet["I6"].value, '=IF(COUNT(I4:I5)=0,"",SUM(I4:I5))')
+            self.assertEqual(sheet["R6"].value, '=IF(AND(ISNUMBER(K6),K6>0,ISNUMBER(Q6),Q6>=0),Q6/K6,"")')
         finally:
             book.close()
 
@@ -164,7 +165,7 @@ class GroupedSummaryTests(unittest.TestCase):
         label = "SAMPLE CAMPAIGN"
         report_date = date(2026, 11, 12)
         email = SimpleNamespace(campaigns=(CampaignReplyCounts(label, 51, 20, 31, 20),))
-        sms = SimpleNamespace(campaigns=(CampaignReplyCounts(label, 512, 500, 12, 500),))
+        sms = SimpleNamespace(campaigns=(CampaignReplyCounts(label, 512, 500, 12, 500),), client_touches=None)
         viber = SimpleNamespace(campaigns=(CampaignReplyCounts(label, 321, 10, 311, 10),))
         totals = {campaign_totals_key(report_date, label): {
             "active_ticket": 58431, "dc_email": 46104, "dc_sms": 58412, "dc_viber": 1000,
