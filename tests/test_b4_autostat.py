@@ -86,6 +86,20 @@ class B4AutostatTests(unittest.TestCase):
 
 
 class B4AutostatPageTests(unittest.TestCase):
+    def test_upload_appears_before_log_settings_in_every_mode(self):
+        app = AppTest.from_file(str(ROOT / "pages" / "AUTOSTAT.py")).run(timeout=20)
+        for mode, upload_label, remarks_label in (
+            ("Standard", "GEO & RECO output files", "Remark By"),
+            ("B2", "B2 output files", "Remarks By"),
+            ("B4", "B4 output files", "Remarks By"),
+        ):
+            with self.subTest(mode=mode):
+                app.radio(key="autostat_upload_type").set_value(mode).run(timeout=20)
+                fields = [(element.type, element.proto.label) for element in app.main
+                          if element.type in {"file_uploader", "text_input"}]
+                self.assertEqual(fields[0], ("file_uploader", upload_label))
+                self.assertIn(("text_input", remarks_label), fields[1:])
+
     def test_standalone_b4_prepares_downloads_automatically_with_compact_options(self):
         uploads = {"autostat_b4_uploads": [Upload()]}
         with patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \

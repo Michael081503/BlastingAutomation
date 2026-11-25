@@ -50,7 +50,6 @@ def _render_autostat_uploads(
     result_key = state_prefix + "result"
     bucket_label = f"B{bucket}"
     workbook_name = f"AUTOSTAT_{bucket_label}" if b2 else "AUTOSTAT"
-    options = st.container(border=True) if compact else None
     with st.sidebar:
         output_format = st.selectbox(
             "Output files", ("Excel (.xlsx)", "CSV (.csv)"), key=f"{state_prefix}output_format",
@@ -67,7 +66,8 @@ def _render_autostat_uploads(
     )
     fixed_timestamp = None
     default_collector = ""
-    with options if compact else st.container(border=True):
+    options = st.container(border=True)
+    with options:
         st.session_state[f"{state_prefix}remark_by"] = AUTOSTAT_REMARK_BY
         st.text_input("Remarks By" if b2 else "Remark By", key=f"{state_prefix}remark_by", disabled=True)
         remark_by = AUTOSTAT_REMARK_BY
