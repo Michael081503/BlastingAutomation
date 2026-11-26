@@ -232,10 +232,17 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(book["SMS Unreplied"]["B1"].value, "Not uploaded")
             self.assertIsNone(book["SMS Unreplied"]["B2"].value)
             self.assertEqual(detail_rows(book["SMS Unreplied"]), [])
+            for title in OUTPUT_SHEETS[1:]:
+                tab = book[title]
+                self.assertEqual(tab.sheet_view.zoomScale, 70)
+                self.assertEqual(tab.freeze_panes, "A4")
+                self.assertEqual(tab.row_dimensions[3].height, 33)
+                self.assertEqual(tab["A3"].fill.fgColor.rgb, "00E2EAFB")
+            self.assertEqual(details.row_dimensions[4].height, 21)
         finally:
             book.close()
 
-    def test_unreplied_message_columns_wrap_and_fit_multiline_text_in_both_downloads(self):
+    def test_unreplied_message_columns_wrap_in_compact_main_report_and_expanded_detail_download(self):
         from openpyxl import load_workbook
 
         body = ("This sample message needs more than one line in the worksheet. " * 4).strip() + "\nSecond paragraph."
@@ -258,7 +265,10 @@ class GroupedSummaryTests(unittest.TestCase):
                     self.assertEqual(message.value, body)
                     self.assertTrue(message.alignment.wrap_text)
                     self.assertGreater(sheet.column_dimensions[message.column_letter].width, 75)
-                    self.assertGreater(sheet.row_dimensions[message.row].height, 30)
+                    if header_row == 3:
+                        self.assertEqual(sheet.row_dimensions[message.row].height, 21)
+                    else:
+                        self.assertGreater(sheet.row_dimensions[message.row].height, 30)
                 finally:
                     workbook.close()
 
@@ -278,7 +288,7 @@ class GroupedSummaryTests(unittest.TestCase):
             self.assertEqual(sheet["B2"].value, 1)
             self.assertEqual(sheet.auto_filter.ref, "A3:I4")
             self.assertEqual(source.value, body)
-            self.assertLessEqual(sheet.row_dimensions[4].height, INBOUND_ACCOUNT_ROW_HEIGHT)
+            self.assertEqual(sheet.row_dimensions[4].height, 21)
             self.assertEqual(source.hyperlink.location, "'Email Unreplied'!A7")
             parts = [sheet.cell(row, 2) for row in range(7, sheet.max_row + 1)]
             self.assertGreater(len(parts), 1)
@@ -310,7 +320,8 @@ class GroupedSummaryTests(unittest.TestCase):
                     sheet = book[title]
                     source = sheet.cell(account_row, message_column)
                     self.assertTrue(source.alignment.wrap_text)
-                    self.assertEqual(sheet.row_dimensions[account_row].height, INBOUND_ACCOUNT_ROW_HEIGHT)
+                    expected_height = 21 if title == "Viber Unreplied" else INBOUND_ACCOUNT_ROW_HEIGHT
+                    self.assertEqual(sheet.row_dimensions[account_row].height, expected_height)
                     self.assertEqual(source.value, message)
                     self.assertEqual(source.hyperlink.location, f"'{title}'!A{account_row + 3}")
                     self.assertEqual("".join(sheet.cell(row, 2).value for row in range(account_row + 3, sheet.max_row + 1)),

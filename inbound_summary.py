@@ -25,6 +25,9 @@ ALL_CHANNEL_REPLY_LABELS_VERSION = 1
 CHANNEL_UNREPLIED_SHEETS_VERSION = 1
 SOURCE_CAMPAIGN_LABELS_VERSION = 1
 PERCENT_COLUMNS = frozenset({3, 5, 7, 13, 15, 17})
+UNREPLIED_SHEET_ZOOM = 70
+UNREPLIED_HEADER_ROW_HEIGHT = 33
+UNREPLIED_ACCOUNT_ROW_HEIGHT = 21
 
 
 def campaign_groups(viber_report=None, email_report=None, sms_report=None, *, source_campaigns=()) -> list[dict]:
@@ -467,7 +470,9 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
         detail_text[title] = append_report_detail_rows(details, rows)
         _format_detail_sheet(details, headers, header_row=3)
         details["A1"].font = details["A2"].font = Font(bold=True)
-    fit_report_text(workbook, detail_text)
+        details.sheet_view.zoomScale = UNREPLIED_SHEET_ZOOM
+        details.row_dimensions[3].height = UNREPLIED_HEADER_ROW_HEIGHT
+    fit_report_text(workbook, detail_text, account_row_height=UNREPLIED_ACCOUNT_ROW_HEIGHT)
     output = BytesIO()
     workbook.save(output)
     workbook.close()

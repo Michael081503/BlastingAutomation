@@ -631,13 +631,18 @@ def _add_report_text_continuations(sheet, text_sheet, full_text: dict[tuple[int,
             row += 1
 
 
-def fit_report_text(workbook, detail_text: dict[str, dict[tuple[int, int], str]], *, separate_text: bool = False) -> None:
+def fit_report_text(workbook, detail_text: dict[str, dict[tuple[int, int], str]], *,
+                    separate_text: bool = False, account_row_height: int | None = None) -> None:
     """Wrap text and keep account rows compact, with links to longer entries."""
-    from openpyxl.utils import column_index_from_string
+    from openpyxl.utils import column_index_from_string, range_boundaries
 
     for sheet in workbook:
         full_text = detail_text.get(sheet.title)
         height_limit = INBOUND_ACCOUNT_ROW_HEIGHT if full_text is not None else EXCEL_MAX_ROW_HEIGHT
+        compact_rows = range(0)
+        if full_text is not None and account_row_height is not None:
+            _, header_row, _, last_row = range_boundaries(sheet.auto_filter.ref)
+            compact_rows = range(header_row + 1, last_row + 1)
         widths = dict.fromkeys(range(1, sheet.max_column + 1), sheet.sheet_format.defaultColWidth or 13)
         for dimension in sheet.column_dimensions.values():
             first_column = dimension.min or column_index_from_string(dimension.index)
@@ -673,11 +678,16 @@ def fit_report_text(workbook, detail_text: dict[str, dict[tuple[int, int], str]]
                     needed_height = max(needed_height, text_height)
                     if full_text is not None and text_height > height_limit:
                         full_text.setdefault((cell.row, cell.column), cell.value)
-            dimension = sheet.row_dimensions.get(row[0].row)
+            row_number = row[0].row
+            if row_number in compact_rows:
+                # Keep the existing full-text links while displaying a shorter account preview.
+                sheet.row_dimensions[row_number].height = account_row_height
+                continue
+            dimension = sheet.row_dimensions.get(row_number)
             current_height = (dimension.height if dimension else None) or sheet.sheet_format.defaultRowHeight or 15
             height = min(height_limit, max(current_height, needed_height))
             if height != current_height:
-                sheet.row_dimensions[row[0].row].height = height
+                sheet.row_dimensions[row_number].height = height
         if full_text:
             text_sheet = sheet
             if separate_text:
