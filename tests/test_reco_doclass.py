@@ -117,7 +117,7 @@ class RecoDoclassTests(unittest.TestCase):
         headers = [header for header in DEFAULT_TEMPLATE_HEADERS if header != "doclass"]
         bundle = build_negative_exports((",".join(headers) + "\n").encode(), records(), "", 1, ".csv")
         for file in bundle.files:
-            id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
+            id_header = "index_one_uid" if file.channel == "email" else "indexoneuid"
             self.assertEqual(file.headers, [*headers[:2], id_header, *headers[3:], "doclass"])
             self.assertTrue(all(row["doclass"] == CLASSES[file.group_key] for row in csv_rows(file.data)))
 

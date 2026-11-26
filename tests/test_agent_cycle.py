@@ -211,7 +211,7 @@ class AgentCycleTests(unittest.TestCase):
         assignments = {}
         with ZipFile(BytesIO(bundle.zip_data)) as csv_zip, ZipFile(BytesIO(build_excel_zip(bundle.files))) as excel_zip:
             for file in bundle.files:
-                id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
+                id_header = "index_one_uid" if file.channel == "email" else "indexoneuid"
                 expected_headers = [id_header if header == "indexoneuid" else header for header in headers]
                 self.assertEqual(file.headers, [*expected_headers, "Monthly", "CHCode"])
                 exported = rows(file)

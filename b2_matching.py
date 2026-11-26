@@ -8,7 +8,7 @@ from datetime import date, datetime
 from typing import Any, Sequence
 
 from automation import (
-    AutomationError, CAMPAIGN_SOURCE_ID_HEADER, DEFAULT_TEMPLATE_HEADERS, SOURCE_ID_HEADERS,
+    AutomationError, CAMPAIGN_SOURCE_UID_HEADER, DEFAULT_TEMPLATE_HEADERS, SOURCE_ID_HEADERS,
     _identifier, normalize_header, ob_sort_key,
 )
 from autostat import (
@@ -26,14 +26,14 @@ B2_BUCKET_DIAGNOSTICS_VERSION = 1
 B4_MATCHING_VERSION = 2
 B2_B4_AGENTS_VERSION = 1
 B2_UPLOAD_ROLES_VERSION = 1
-B2_TEMPLATE_VERSION = 4
+B2_TEMPLATE_VERSION = 5
 B2_CONTACT_PRIORITY_VERSION = 1
 B2_B4_CONTACT_HEADERS_VERSION = 1
 B2_B4_AVAILABILITY_VERSION = 1
 SPM_ENDORSEMENT_VERSION = 1
-B2_TEMPLATE_HEADERS = tuple(CAMPAIGN_SOURCE_ID_HEADER if header == "indexoneuid" else header
+B2_TEMPLATE_HEADERS = tuple(CAMPAIGN_SOURCE_UID_HEADER if header == "indexoneuid" else header
                             for header in DEFAULT_TEMPLATE_HEADERS)
-CAMPAIGN_RECORD_FIELDS = {CAMPAIGN_SOURCE_ID_HEADER: "indexoneuid",
+CAMPAIGN_RECORD_FIELDS = {CAMPAIGN_SOURCE_UID_HEADER: "indexoneuid",
                           "Terms": "cardnumber", "CHCode": "Terms", "Promo": "Product"}
 DATAGRID_ROUTING_VERSION = 1
 RAW_FIELDS = {

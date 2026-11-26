@@ -133,7 +133,7 @@ class B2AutostatTests(unittest.TestCase):
 
     def test_validation_deduplication_source_identity_metadata_and_ob_order(self):
         first = source(
-            b"cardnumber,index_one_id,Name,email,phone,Collector,OB\n"
+            b"cardnumber,index_one_uid,Name,email,phone,Collector,OB\n"
             b"0001,ID1,Invalid row,bad,123,WRONG,9000\n"
             b"0001,ID1,First valid,one@example.com,09171234567,FIRST,100\n"
             b"0001,ID1,Duplicate,two@example.com,09181234567,WRONG,8000\n"

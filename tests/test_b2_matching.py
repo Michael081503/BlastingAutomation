@@ -237,7 +237,7 @@ class B2Tests(unittest.TestCase):
 
     def test_exact_blasting_headers_metadata_and_one_row_with_both_contacts(self):
         self.assertEqual(B2_TEMPLATE_HEADERS, (
-            'email', 'primary_key', 'index_one_id', 'Terms', 'FullName', 'phone', 'OB',
+            'email', 'primary_key', 'index_one_uid', 'Terms', 'FullName', 'phone', 'OB',
             'Monthly', 'CHCode', 'doclass', 'Level', 'Promo', 'EndoDate', 'AREA', 'ChristmasAmnesty', 'NewEndo',
         ))
         raw = workbook_data(RAW_HEADERS + ['Name', 'Total Outstanding', 'Assignment Date', 'Area', 'Monthly', 'Terms'], [
@@ -258,7 +258,7 @@ class B2Tests(unittest.TestCase):
         self.assertEqual([len(cards), len(bel)], [2, 1])
         self.assertEqual(cards[0]['primary_key'], '0001')
         self.assertEqual(cards[0]['Terms'], '000001')
-        self.assertEqual(cards[0]['index_one_id'], 'SBCC03-001')
+        self.assertEqual(cards[0]['index_one_uid'], 'SBCC03-001')
         self.assertEqual(cards[0]['FullName'], 'Database name')
         self.assertEqual(cards[0]['OB'], '1234.5')
         self.assertEqual(cards[0]['EndoDate'], '2026-10-02 00:00:00')
@@ -268,7 +268,7 @@ class B2Tests(unittest.TestCase):
         self.assertEqual(cards[0]['phone'], '9171234567')
         self.assertEqual(cards[1]['FullName'], 'Grid fallback')
         self.assertEqual(cards[1]['OB'], '0')
-        self.assertEqual(cards[1]['index_one_id'], '')
+        self.assertEqual(cards[1]['index_one_uid'], '')
         self.assertEqual(cards[1]['EndoDate'], '2026-10-05 00:00:00')
         self.assertEqual(cards[1]['email'], 'email-only@example.com')
         self.assertEqual(cards[1]['phone'], '')

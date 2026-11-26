@@ -333,7 +333,7 @@ class AutostatTests(unittest.TestCase):
             self.assertFalse(autostat_source_excluded(name), name)
 
     def test_distinct_source_ids_survive_shared_card_numbers_and_true_repeats_are_removed(self):
-        for identity_header in ("indexoneuid", "index_one_id", "Old I.C."):
+        for identity_header in ("indexoneuid", "index_one_uid", "index_one_id", "Old I.C."):
             with self.subTest(identity_header=identity_header):
                 workbook = Workbook()
                 sheet = workbook.active

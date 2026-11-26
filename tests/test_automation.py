@@ -43,7 +43,7 @@ APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
 
 
 def expected_channel_headers(headers, channel):
-    return ["index_one_id" if channel == "email" and header == "indexoneuid" else header for header in headers]
+    return ["index_one_uid" if channel == "email" and header == "indexoneuid" else header for header in headers]
 
 
 def save(workbook: Workbook) -> bytes:

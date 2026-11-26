@@ -13,7 +13,7 @@ from time import sleep
 if "_REFRESH_LOCK" not in globals():
     _REFRESH_LOCK = RLock()
 STARTUP_RECOVERY_VERSION = 1
-STARTUP_INTERFACE_VERSION = 3
+STARTUP_INTERFACE_VERSION = 4
 _MAX_REFRESH_ATTEMPTS = 3
 
 
@@ -98,7 +98,7 @@ def _refresh_application_modules(refreshed: set[str]) -> set[str]:
         ), ()),
         ("automation", (
             "MAPPING_VERSION", "OPTIONAL_FIELD_MAPPING", "CSV_OUTPUT_ENCODINGS",
-            "CAMPAIGN_SOURCE_ID_HEADER", "SOURCE_ID_HEADERS",
+            "CAMPAIGN_SOURCE_UID_HEADER", "SOURCE_ID_HEADERS",
             "ASSIGNMENT_SCHEME_VERSION", "assignment_scheme_level",
             "NEW_ENDO_SOURCE_VERSION",
             "TAG_TO_CHCODE_VERSION",

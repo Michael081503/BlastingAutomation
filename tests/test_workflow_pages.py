@@ -206,7 +206,7 @@ class WorkflowPageTests(unittest.TestCase):
             })
             for file in result["files"]:
                 rows = csv_rows(file)
-                id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
+                id_header = "index_one_uid" if file.channel == "email" else "indexoneuid"
                 self.assertEqual(tuple(rows[0]), (*DEFAULT_TEMPLATE_HEADERS[:2], id_header, *DEFAULT_TEMPLATE_HEADERS[3:]))
                 self.assertTrue(all(row["primary_key"] in {"GEOM001", "GEOM006", "GEORBEL"} for row in rows))
                 self.assertTrue(all(row["Terms"] == "CARD-" + row["primary_key"] for row in rows))

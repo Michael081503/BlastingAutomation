@@ -16,7 +16,7 @@ from openpyxl import Workbook
 
 from automation import (
     AutomationError,
-    CAMPAIGN_SOURCE_ID_HEADER,
+    CAMPAIGN_SOURCE_UID_HEADER,
     SOURCE_ID_HEADERS,
     _csv_header,
     assignment_scheme_level,
@@ -387,7 +387,7 @@ def _build_channel_files(
     positions = template_column_positions(headers)
     headers.extend(header for target, header in required if target not in positions)
     source_id_labels = {normalize_header(header) for header in SOURCE_ID_HEADERS}
-    email_headers = [CAMPAIGN_SOURCE_ID_HEADER if normalize_header(header) in source_id_labels else header
+    email_headers = [CAMPAIGN_SOURCE_UID_HEADER if normalize_header(header) in source_id_labels else header
                      for header in headers]
     files = []
     for channel, rows in separate_channels(records).items():

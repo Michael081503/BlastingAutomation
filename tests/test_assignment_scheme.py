@@ -113,7 +113,7 @@ class AssignmentSchemeTests(unittest.TestCase):
         validate_source_exports(bundle.files, source_account_counts(mapped.records), source_sheet="SPM List")
         for file in bundle.files:
             rows = list(csv.DictReader(StringIO(file.data.decode("cp1252"))))
-            id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
+            id_header = "index_one_uid" if file.channel == "email" else "indexoneuid"
             self.assertEqual(tuple(rows[0]), (*DEFAULT_TEMPLATE_HEADERS[:2], id_header, *DEFAULT_TEMPLATE_HEADERS[3:]))
             expected_class = "SBC Cards L1" if "L1" in file.filename else "SBC Cards L6" if "L6" in file.filename else "PL Recovery"
             self.assertEqual(rows[0]["doclass"], expected_class)

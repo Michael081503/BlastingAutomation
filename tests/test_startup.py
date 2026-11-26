@@ -413,14 +413,14 @@ class StartupTests(unittest.TestCase):
             import export_config, exports
             del export_config.NEW_ENDO_OUTPUT_FILENAMES
             del export_config.NEW_ENDO_AGENT_CODES
-            app_startup.STARTUP_INTERFACE_VERSION = 2
+            app_startup.STARTUP_INTERFACE_VERSION = 3
             legacy_refresh = Mock(return_value=set())
             app_startup.refresh_application_modules = legacy_refresh
 
             import app
 
             legacy_refresh.assert_not_called()
-            assert app_startup.STARTUP_INTERFACE_VERSION == 3
+            assert app_startup.STARTUP_INTERFACE_VERSION == 4
             assert app.NEW_ENDO_OUTPUT_FILENAMES is export_config.NEW_ENDO_OUTPUT_FILENAMES
             assert exports.NEW_ENDO_OUTPUT_FILENAMES is export_config.NEW_ENDO_OUTPUT_FILENAMES
             assert app.NEW_ENDO_AGENT_CODES is export_config.NEW_ENDO_AGENT_CODES
@@ -998,7 +998,7 @@ class StartupTests(unittest.TestCase):
             assert b2_matching.is_datagrid_sheet(['Account No.', 'Financing/Card No.', 'Status Code'])
             assert b2_matching.B2_MATCHING_VERSION == 8
             assert len(b2_page.B2_TEMPLATE_HEADERS) == 16
-            assert b2_page.B2_TEMPLATE_HEADERS[2] == 'index_one_id'
+            assert b2_page.B2_TEMPLATE_HEADERS[2] == 'index_one_uid'
             assert 'Time' not in b2_page.B2_TEMPLATE_HEADERS
             assert 'timestamp' not in inspect.signature(b2_matching.build_b2_exports).parameters
             from app_startup import refresh_application_modules
@@ -1104,7 +1104,7 @@ class StartupTests(unittest.TestCase):
             refreshed = refresh_application_modules()
             assert {'export_config', 'b2_matching', 'b2_page', 'upload_state'} <= refreshed
             assert b2_page.build_b4_exports is b2_matching.build_b4_exports
-            assert b2_matching.B2_TEMPLATE_VERSION == 4
+            assert b2_matching.B2_TEMPLATE_VERSION == 5
             assert export_config.AUTOSTAT_B4_FILENAMES['CARDS'] == 'NEGATIVE B4 - CARDS'
             assert export_config.COLLECTION_AGENTS == (('Almera Ranceli', 'AMRANCELI'), ('Kyarill Palima', 'KPALIMA'))
             assert 'b4_database_upload' in upload_state.UPLOAD_KEYS

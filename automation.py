@@ -39,8 +39,8 @@ FIELD_MAPPING = {
     "Christmas Amnesty": "ChristmasAmnesty",
 }
 OPTIONAL_FIELD_MAPPING = {"Area": "AREA", "CMS TAGGING": "cms_tagging"}
-CAMPAIGN_SOURCE_ID_HEADER = "index_one_id"
-SOURCE_ID_HEADERS = ("indexoneuid", "indexonuid", CAMPAIGN_SOURCE_ID_HEADER)
+CAMPAIGN_SOURCE_UID_HEADER = "index_one_uid"
+SOURCE_ID_HEADERS = (CAMPAIGN_SOURCE_UID_HEADER, "index_one_id", "indexonuid")
 SOURCE_ALIASES = {
     "debtor_email": ("email", "email address", "e-mail address", "email 1", "debtor email address", "email id", "EMAIL ADD"),
     "OLD I.C": SOURCE_ID_HEADERS,

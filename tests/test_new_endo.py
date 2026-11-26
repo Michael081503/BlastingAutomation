@@ -115,7 +115,7 @@ class NewEndoMappingTests(unittest.TestCase):
                 for bundle in bundles:
                     for file in bundle.files:
                         rows = csv_rows(file)
-                        id_header = "index_one_id" if file.channel == "email" else "indexoneuid"
+                        id_header = "index_one_uid" if file.channel == "email" else "indexoneuid"
                         self.assertEqual(tuple(file.headers), (*DEFAULT_TEMPLATE_HEADERS[:2], id_header, *DEFAULT_TEMPLATE_HEADERS[3:]))
                         self.assertTrue(all(row["CHCode"] == expected[row["primary_key"]] for row in rows))
                         self.assertTrue(all(row["Monthly"] == "" and row["NewEndo"] == "" for row in rows))
@@ -145,7 +145,7 @@ class NewEndoMappingTests(unittest.TestCase):
         headers = [header for header in DEFAULT_TEMPLATE_HEADERS if header not in {"Monthly", "CHCode"}]
         template = (",".join(headers) + "\n").encode()
         file = build_sheet_exports(template, records[:1], "", 1, template_extension=".csv", base_name="NEW ENDO", label="NEW ENDO").files[0]
-        self.assertEqual(file.headers, [*headers[:2], "index_one_id", *headers[3:], "CHCode"])
+        self.assertEqual(file.headers, [*headers[:2], "index_one_uid", *headers[3:], "CHCode"])
         self.assertEqual(csv_rows(file)[0]["CHCode"], "FROM-SOURCE")
         self.assertEqual(csv_rows(file)[0]["Terms"], "CARD-SOURCE")
 
