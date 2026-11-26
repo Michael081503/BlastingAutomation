@@ -15,7 +15,7 @@ from textwrap import TextWrapper
 from typing import Iterable
 
 
-VIBER_REPLY_VERSION = 10
+VIBER_REPLY_VERSION = 11
 SMS_CLIENT_TOUCH_VERSION = 3
 CUSTOMER_REPLY_POPULATION_VERSION = 1
 SBF_CAMPAIGN_EXCLUSION_VERSION = 1
@@ -74,6 +74,11 @@ def normalized_campaign(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
+def sbc_level_campaign(value: str) -> str | None:
+    match = re.fullmatch(r"sbc(?: cards)? (?:l|level) ?([16])", normalized_name(value))
+    return f"SBC Level {match[1]}" if match else None
+
+
 def inbound_campaign_label(value: str) -> str:
     """Normalize source labels for shared reporting campaigns."""
     name = normalized_name(value)
@@ -83,7 +88,7 @@ def inbound_campaign_label(value: str) -> str:
         return PL_RECOVERY_CAMPAIGN
     if name.replace(" ", "") in MINDANAO_CAMPAIGN_ALIASES:
         return MINDANAO_CAMPAIGN
-    return value
+    return sbc_level_campaign(name) or value
 
 
 def excluded_inbound_campaign(value: str) -> bool:

@@ -140,6 +140,65 @@ class PhonePopulationTests(unittest.TestCase):
 
 
 class AllChannelsPageTests(unittest.TestCase):
+    def test_cards_level_aliases_join_lookup_levels_before_matching_and_export(self):
+        from streamlit.testing.v1 import AppTest
+
+        regular = workbook_bytes([("OVERALL", [
+            ("debtor_email", "LEVEL", "Product", "Account No."),
+            ("one@example.com", 2, "CARDS", "0001"),
+            ("six@example.com", 6, "CARDS", "0006"),
+        ])])
+        headers = ("Phone", "Campaign")
+        customers = csv_bytes(headers, [
+            ("09171234567", "SBC Cards L1"), ("+63 917 123 4567", "SBC Level 1"),
+            ("09181234567", "SBC Cards L6"), ("09191234567", "SBC Cards B4"),
+        ])
+        uploads = {
+            "inbound_reply_email_lookup_uploads": [Upload("regular.xlsx", regular)],
+            "inbound_reply_email_1_upload": Upload("history.csv", csv_bytes(("email", "sent"), [])),
+            "inbound_reply_email_2_upload": Upload("dc.csv", csv_bytes(("sender",), [
+                ("one@example.com",), ("six@example.com",),
+            ])),
+        }
+        for channel, replies in (("sms", [("09171234567", "SBC Level 1")]),
+                                 ("viber", [("09181234567", "SBC Level 6")])):
+            uploads[f"inbound_reply_{channel}_1_upload"] = Upload("agents.csv", csv_bytes(headers, replies))
+            uploads[f"inbound_reply_{channel}_2_upload"] = Upload("customers.csv", customers)
+        indexes = (0, 1, 8, 9, 10, 12, 14, 16)
+        expected = [
+            ("SBC Cards B4", None, None, 1, 1, None, 0, 0),
+            ("SBC Level 1", 1, 1, 1, 1, 0, 1, 0),
+            ("SBC Level 6", 1, 1, 1, 1, 0, 0, 1),
+        ]
+        with patch("branding.render_bank_branding"), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kwargs: uploads.get(kwargs["key"])), \
+                patch("streamlit.html") as html, \
+                patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py")).run(timeout=20)
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            summary = next(call.args[0] for call in html.call_args_list if "inbound-campaign-report" in call.args[0])
+            self.assertEqual([tuple(row[index] for index in indexes) for row in table_cells(summary)], [
+                tuple("\u2014" if value is None else str(value) for value in row) for row in expected
+            ])
+            call = next(call for call in downloads.call_args_list
+                        if call.kwargs.get("key") == "inbound_reply_summary_download")
+            book = load_workbook(BytesIO(call.kwargs["data"]()), data_only=True)
+            try:
+                self.assertEqual([tuple(row[index] for index in indexes) for row in book["Summary"].iter_rows(
+                    min_row=4, max_row=6, values_only=True,
+                )], expected)
+                self.assertEqual(tuple(book["Summary"][7][index].value for index in indexes[1:]),
+                                 (2, 2, 3, 3, 0, 1, 1))
+                for title, label, alias in (("SMS Unreplied", "SBC Level 6", "SBC Cards L6"),
+                                            ("Viber Unreplied", "SBC Level 1", "SBC Cards L1")):
+                    sheet = book[title]
+                    self.assertEqual(sheet["B2"].value, 2)
+                    self.assertEqual((sheet["B5"].value, sheet["H5"].value), (label, alias))
+            finally:
+                book.close()
+
     def test_agent_worked_and_same_day_unreplied_counts_on_page_and_in_excel(self):
         from streamlit.testing.v1 import AppTest
 

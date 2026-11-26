@@ -97,7 +97,7 @@ class SmsOutputTests(unittest.TestCase):
                 finally:
                     book.close()
 
-            expected_summary = [("SBC CARDS B2", 1, 1), ("SBC CARDS L1", 2, 1)]
+            expected_summary = [("SBC CARDS B2", 1, 1), ("SBC Level 1", 2, 1)]
             self.assertEqual(campaign_summary(), expected_summary)
             uploads["inbound_reply_email_lookup_uploads"] = [
                 Upload("Regular.csv", b"Phone,LEVEL\n09171234567,1\n09191234567,1\n"),
@@ -108,7 +108,7 @@ class SmsOutputTests(unittest.TestCase):
             report = app.session_state["inbound_reply_sms_result"]["report"]
             self.assertEqual(report.message_logs.sheet, "Incoming")
             self.assertEqual([(row.account, row.campaign) for row, _ in report.client_touches], [
-                ("0001", "SBC CARDS B2"), ("0002", "SBC CARDS L1"), ("0003", "SBC CARDS L1"),
+                ("0001", "SBC CARDS B2"), ("0002", "SBC Level 1"), ("0003", "SBC Level 1"),
             ])
             self.assertEqual(campaign_summary(), expected_summary)
             self.assertEqual((report.totals.unique_people, report.totals.agent_replied), (3, 1))

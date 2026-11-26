@@ -27,7 +27,7 @@ from inbound_campaign_lookup import (
 from upload_state import INBOUND_LOOKUP_FALLBACK_CACHE_KEY, INBOUND_TOTALS_UPLOAD_KEY, upload_widget_key
 from inbound_summary import (
     BLAST_PERCENTAGE_FORMULAS_VERSION, build_client_accounts_workbook, build_summary_workbook, build_unmatched_workbook,
-    campaign_totals_key, display_cell, merge_mindanao_totals, overall_blast_row, read_summary_totals, summary_rows,
+    campaign_totals_key, display_cell, merge_campaign_totals, overall_blast_row, read_summary_totals, summary_rows,
 )
 
 
@@ -49,7 +49,7 @@ def build_report_html(campaign: str, report_date: date, sent_to_ops: str,
                       viber_report: ViberReplyReport | None = None,
                       email_report: EmailReplyReport | None = None,
                       campaign_totals: dict | None = None, sms_report=None, *, source_campaigns=()) -> str:
-    """Fill each uploaded channel independently, joining campaign labels exactly."""
+    """Fill each uploaded channel independently, joining by reporting campaign."""
     date_label = f"{report_date.strftime('%B').upper()} {report_date.day}, {report_date.year} DATA"
     channel_headers = "".join(
         f'<th scope="col">{channel}</th><th scope="col">%</th>'
@@ -632,7 +632,7 @@ def render_inbound_reply() -> None:
     sms_report = prepare_sms_report(*sms_uploads, email_lookup)
     channels = (("SMS", sms_uploads, sms_report), ("VIBER", viber_uploads, viber_report), ("EMAIL", email_uploads, email_report))
     source_campaigns, unmatched_sources = prepare_campaign_inputs(channels, email_lookup)
-    campaign_totals = merge_mindanao_totals(report_date, st.session_state.get("inbound_reply_campaign_totals"))
+    campaign_totals = merge_campaign_totals(report_date, st.session_state.get("inbound_reply_campaign_totals"))
     active_ticket_counts = email_lookup.active_ticket_counts if email_lookup is not None else {}
     has_phone_customers = sms_uploads[1] is not None or viber_uploads[1] is not None
     has_email_replies = email_report is not None and bool(email_report.campaigns)

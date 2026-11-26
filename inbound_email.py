@@ -17,7 +17,7 @@ from inbound_reply import (
 )
 
 
-EMAIL_REPLY_VERSION = 10
+EMAIL_REPLY_VERSION = 11
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 

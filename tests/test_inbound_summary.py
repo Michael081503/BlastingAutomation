@@ -13,8 +13,9 @@ from inbound_reply import (
 )
 from inbound_summary import (
     OVERALL_BLAST_LABEL, build_summary_workbook, campaign_totals_key, display_cell,
-    overall_blast_row, summary_rows,
+    overall_blast_row, read_summary_totals, summary_rows,
 )
+from test_inbound_campaign_lookup import workbook_bytes
 from test_inbound_email import DC_HEADERS, HISTORY_HEADERS, csv_bytes
 
 
@@ -158,6 +159,35 @@ class OverallBlastCoverageTests(unittest.TestCase):
 
 
 class GroupedSummaryTests(unittest.TestCase):
+    def test_level_alias_totals_fill_missing_counts_without_double_counting(self):
+        report_date = date(2026, 11, 27)
+        level = ("SBC Level 1", 4566, 800, None, None, None, None)
+        alias = ("SBC Cards L1", 4566, 700, None, 400, None, None)
+        for rows in ((level, alias), (alias, level)):
+            data = workbook_bytes([("Summary", [
+                ("NOVEMBER 27, 2026 DATA",),
+                ("CAMPAIGN", "ACTIVE TICKET", "DC WORKED"),
+                (None, None, "EMAIL", "%", "SMS", "%", "VIBER"),
+                *rows,
+            ])])
+            self.assertEqual(read_summary_totals(data), (report_date, {
+                "SBC Level 1": {"active_ticket": 4566, "dc_email": 800, "dc_sms": 400},
+            }))
+        self.assertEqual(campaign_totals_key(report_date, "SBC Cards L1"),
+                         campaign_totals_key(report_date, "SBC Level 1"))
+        legacy_totals = {
+            "2026-11-27|sbc cards l1": {"active_ticket": 4566, "dc_sms": 400},
+            "2026-11-27|sbc level 1": {"active_ticket": 4566, "dc_email": 800},
+            "2026-11-27|sbc cards l6": {"active_ticket": 5754},
+            "2026-11-26|sbc cards l6": {"active_ticket": 6000},
+        }
+        levels = summary_rows("", report_date, "", campaign_totals=legacy_totals, source_campaigns=(
+            "SBC Level 1", "SBC Cards L1", "SBC Cards L6", "SBC Level 6",
+        ))
+        self.assertEqual([(row[0], row[1], row[2], row[4]) for row in levels], [
+            ("SBC Level 1", 4566, 800, 400), ("SBC Level 6", 5754, None, None),
+        ])
+
     def test_all_eighteen_sample_columns_match_the_reference_order_and_percentages(self):
         from inbound_reply_page import build_report_html
         from test_inbound_display import table_cells

@@ -12,7 +12,7 @@ from inbound_email import EmailSource
 from inbound_reply import (
     INBOUND_MESSAGE_COLUMN_WIDTH, MINDANAO_CAMPAIGN, PL_RECOVERY_CAMPAIGN, InboundReplyError, ReplySource,
     append_report_detail_rows, fit_report_text,
-    inbound_campaign_label, normalized_campaign, normalized_name, normalized_phone, unreplied_records,
+    inbound_campaign_label, normalized_campaign, normalized_name, normalized_phone, sbc_level_campaign, unreplied_records,
 )
 
 
@@ -45,7 +45,7 @@ def campaign_groups(viber_report=None, email_report=None, sms_report=None, *, so
 
 
 def campaign_totals_key(report_date: date, campaign: str) -> str:
-    return f"{report_date.isoformat()}|{normalized_campaign(campaign)}"
+    return f"{report_date.isoformat()}|{normalized_campaign(sbc_level_campaign(campaign) or campaign)}"
 
 
 def nonnegative_count(value) -> int | None:
@@ -72,12 +72,20 @@ def read_summary_totals(data: bytes) -> tuple[date, dict[str, dict[str, int]]]:
             for row in rows:
                 if not isinstance(row[0], str) or not row[0].strip():
                     continue
-                label = inbound_campaign_label(row[0].strip())
+                raw_label = row[0].strip()
+                level = sbc_level_campaign(raw_label)
+                label = level or inbound_campaign_label(raw_label)
                 if normalized_name(label) == normalized_name(OVERALL_BLAST_LABEL):
                     break
                 counts = {field: count for column, field in fields
                           if (count := nonnegative_count(row[column])) is not None}
                 if counts:
+                    if level is not None:
+                        previous = totals.get(label, {})
+                        if normalized_campaign(raw_label) == normalized_campaign(label):
+                            counts = previous | counts
+                        else:
+                            counts = counts | previous
                     totals[label] = counts
         finally:
             workbook.close()
@@ -88,9 +96,15 @@ def read_summary_totals(data: bytes) -> tuple[date, dict[str, dict[str, int]]]:
     return report_date, totals
 
 
-def merge_mindanao_totals(report_date: date, campaign_totals: dict | None) -> dict:
-    """Fold the previous Region 3 totals into Mindanao for this report date."""
+def merge_campaign_totals(report_date: date, campaign_totals: dict | None) -> dict:
+    """Resolve legacy level aliases and fold Region 3 into Mindanao for this report date."""
     totals = dict(campaign_totals or {})
+    prefix = f"{report_date.isoformat()}|"
+    for key in tuple(totals):
+        if key.startswith(prefix):
+            canonical_key = campaign_totals_key(report_date, key[len(prefix):])
+            if canonical_key != key:
+                totals[canonical_key] = totals.pop(key) | totals.get(canonical_key, {})
     region_totals = totals.pop(campaign_totals_key(report_date, "SBC Region 3"), None)
     if not region_totals:
         return totals
@@ -108,7 +122,7 @@ def merge_mindanao_totals(report_date: date, campaign_totals: dict | None) -> di
 def summary_rows(campaign: str, report_date: date, sent_to_ops: str, viber_report=None,
                   email_report=None, campaign_totals: dict | None = None, sms_report=None,
                   *, source_campaigns=()) -> list[list]:
-    campaign_totals = merge_mindanao_totals(report_date, campaign_totals)
+    campaign_totals = merge_campaign_totals(report_date, campaign_totals)
     sms_touches = None if sms_report is None or sms_report.client_touches is None else Counter(
         normalized_campaign(record.campaign) for record, touched in sms_report.client_touches if touched
     )
