@@ -17,7 +17,7 @@ from inbound_reply import (
 )
 
 
-EMAIL_REPLY_VERSION = 9
+EMAIL_REPLY_VERSION = 10
 EMAIL_CAMPAIGN_LOOKUP_VERSION = 1
 
 
@@ -51,6 +51,7 @@ class EmailSource:
     unmatched_records: tuple[EmailRecord, ...] = ()
     workbook_placements: bool = False
     has_reply_dates: bool = False
+    sbf_rows_excluded: int = 0
 
     @property
     def unmatched_addresses(self) -> int:
@@ -122,12 +123,14 @@ def _read_rows(rows, filename: str, kind: str, sheet: str, *, require_campaign: 
     headers = tuple(str(value) if value is not None else "" for value in row)
     records = []
     excluded = 0
+    sbf_rows_excluded = 0
     for row in rows:
         if not any(value is not None and str(value).strip() for value in row):
             continue
         values = {field: row[index] if index < len(row) else None for field, index in positions.items()}
         campaign = str(values.get("campaign") or "").strip() or SBLEGAL_CAMPAIGN
         if excluded_inbound_campaign(campaign):
+            sbf_rows_excluded += 1
             continue
         email = normalized_email(values["email"])
         if not email:
@@ -138,7 +141,8 @@ def _read_rows(rows, filename: str, kind: str, sheet: str, *, require_campaign: 
             bool(str(values.get("sent") or "").strip()), str(values.get("agent") or "").strip(), tuple(row),
             reply_day(values.get("reply_date")),
         ))
-    return EmailSource(filename, headers, tuple(records), excluded, sheet, has_reply_dates="reply_date" in positions)
+    return EmailSource(filename, headers, tuple(records), excluded, sheet, has_reply_dates="reply_date" in positions,
+                       sbf_rows_excluded=sbf_rows_excluded)
 
 
 def read_email_source(filename: str, data: bytes, *, kind: str, require_campaign: bool = True) -> EmailSource:

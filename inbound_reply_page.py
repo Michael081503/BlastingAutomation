@@ -31,7 +31,7 @@ from inbound_summary import (
 )
 
 
-INBOUND_REPLY_PAGE_VERSION = 31
+INBOUND_REPLY_PAGE_VERSION = 32
 INBOUND_REPLY_TITLE = "INBOUND REPLY"
 VIBER_MATCHING_PAGE_VERSION = 4
 EMAIL_MATCHING_PAGE_VERSION = 1
@@ -635,7 +635,8 @@ def render_inbound_reply() -> None:
     campaign_totals = merge_mindanao_totals(report_date, st.session_state.get("inbound_reply_campaign_totals"))
     active_ticket_counts = email_lookup.active_ticket_counts if email_lookup is not None else {}
     has_phone_customers = sms_uploads[1] is not None or viber_uploads[1] is not None
-    if email_lookup is not None and not imported_totals and (email_uploads[1] is not None or not has_phone_customers):
+    has_email_replies = email_report is not None and bool(email_report.campaigns)
+    if email_lookup is not None and not imported_totals and (has_email_replies or not has_phone_customers):
         source_campaigns = (*source_campaigns, *email_lookup.campaigns, *active_ticket_counts)
     if active_ticket_counts:
         for name, count in active_ticket_counts.items():
@@ -649,7 +650,11 @@ def render_inbound_reply() -> None:
     with output_area:
         st.html(build_report_html(campaign, report_date, sent_to_ops, viber_report, email_report, campaign_totals, sms_report,
                                   source_campaigns=source_campaigns))
-        if email_report is not None and email_lookup is None:
+        if email_report is not None and not has_email_replies:
+            dc = email_report.dc
+            reason = (f" The SBF filter excluded {dc.sbf_rows_excluded:,} rows." if dc.sbf_rows_excluded else "")
+            st.warning(f"{dc.filename} has no eligible Email replies.{reason}")
+        elif email_report is not None and email_lookup is None:
             if email_report.dc.workbook_placements:
                 st.caption("Email placements use the lookup results included in DC Checking.")
             else:
@@ -686,7 +691,7 @@ def render_inbound_reply() -> None:
         with st.container(border=True, key="inbound_sms_details"):
             st.subheader("SMS account details")
             render_sms_details(sms_report, report_date)
-    if email_report is not None:
+    if has_email_replies:
         with st.container(border=True, key="inbound_email_details"):
             st.subheader("Email account details")
             render_email_details(email_report, report_date)

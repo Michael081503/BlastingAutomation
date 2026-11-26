@@ -285,6 +285,78 @@ class AllChannelsPageTests(unittest.TestCase):
                 finally:
                     book.close()
 
+    def test_sbf_only_email_upload_keeps_existing_campaigns_and_totals(self):
+        from streamlit.testing.v1 import AppTest
+
+        phone_file = csv_bytes(("Phone", "Campaign"), [("09171234567", "SBC Level 1")])
+        uploads = {
+            "inbound_reply_sms_1_upload": [Upload("sms-agent.csv", phone_file)],
+            "inbound_reply_sms_2_upload": Upload("sms-client.csv", phone_file),
+            "inbound_reply_viber_1_upload": Upload("viber-agent.csv", phone_file),
+            "inbound_reply_viber_2_upload": Upload("viber-client.csv", phone_file),
+            "inbound_reply_email_lookup_uploads": [Upload("Regular.csv", csv_bytes(
+                ("email", "LEVEL"), [("one@example.com", 1), ("outside@example.com", 6)],
+            ))],
+        }
+
+        with patch("branding.render_bank_branding"), \
+                patch("inbound_reply_page.inbound_report_date", return_value=REPORT_DATE), \
+                patch("inbound_reply_page.SAVED_CAMPAIGN_LOOKUP_PATH", ROOT / "tests" / "missing-lookup.zip"), \
+                patch("streamlit.file_uploader", side_effect=lambda label, **kw: uploads.get(kw["key"])), \
+                patch("streamlit.html") as html, patch("streamlit.download_button") as downloads:
+            app = AppTest.from_file(str(ROOT / "pages" / "INBOUND_REPLY.py"))
+            app.session_state["inbound_reply_campaign_totals"] = {
+                campaign_totals_key(REPORT_DATE, "SBC Level 1"): {
+                    "active_ticket": 100, "dc_email": 20, "dc_sms": 30, "dc_viber": 40,
+                },
+            }
+
+            def snapshot():
+                html.reset_mock()
+                downloads.reset_mock()
+                app.run(timeout=20)
+                self.assertFalse(app.exception)
+                self.assertFalse(app.error)
+                markup = next(call.args[0] for call in html.call_args_list
+                              if 'aria-label="Inbound reply summary"' in call.args[0])
+                call = next(call for call in downloads.call_args_list
+                            if call.kwargs.get("key") == "inbound_reply_summary_download")
+                book = load_workbook(BytesIO(call.kwargs["data"]()), read_only=True, data_only=True)
+                try:
+                    return table_cells(markup), list(book["Summary"].values), book["Email Unreplied"]["B1"].value
+                finally:
+                    book.close()
+
+            baseline_page, baseline_sheet, _ = snapshot()
+            self.assertEqual([row[0] for row in baseline_page], ["SBC Level 1"])
+            uploads["inbound_reply_email_1_upload"] = Upload(
+                "EMAIL AGENT.xlsx", workbook_bytes([("email_history", [
+                    ("email", "sent"), ("one@example.com", "Agent reply"),
+                ])]),
+            )
+            uploads["inbound_reply_email_2_upload"] = Upload(
+                "EMAIL CLIENT.xlsx", workbook_bytes([("mc4_emails", [
+                    ("sender", "Campaign"), ("one@example.com", "MC4 SBF SALAD EMAIL INBOUND"),
+                    ("two@example.com", "MC4 SBF SALAD EMAIL INBOUND"),
+                ])]),
+            )
+            page_rows, sheet_rows, status = snapshot()
+            self.assertEqual(page_rows, baseline_page)
+            self.assertEqual(sheet_rows, baseline_sheet)
+            self.assertEqual(status, "No eligible Email replies (2 SBF rows excluded)")
+            self.assertTrue(any("The SBF filter excluded 2 rows." in warning.value for warning in app.warning))
+
+            uploads["inbound_reply_email_2_upload"] = Upload(
+                "EMAIL CLIENT.xlsx", workbook_bytes([("mc4_emails", [
+                    ("sender", "Campaign"), ("one@example.com", "SBC Level 1"),
+                ])]),
+            )
+            page_rows, sheet_rows, status = snapshot()
+            self.assertEqual([row[0] for row in page_rows], ["SBC Level 1", "SBC Level 6"])
+            self.assertEqual(sheet_rows[3][8:11], (1, 1, 1))
+            self.assertEqual(sheet_rows[3][12:18], (1, 1, 1, 1, 1, 1))
+            self.assertEqual(status, "Processed")
+
     def test_blank_campaigns_share_one_summary_row_without_lookup(self):
         from streamlit.testing.v1 import AppTest
 

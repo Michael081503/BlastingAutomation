@@ -16,7 +16,7 @@ from inbound_reply import (
 )
 
 
-INBOUND_SUMMARY_VERSION = 11
+INBOUND_SUMMARY_VERSION = 12
 BLAST_PERCENTAGE_FORMULAS_VERSION = 1
 OVERALL_BLAST_COVERAGE_VERSION = 1
 OVERALL_BLAST_LABEL = "TOTAL — ALL CAMPAIGNS"
@@ -109,6 +109,7 @@ def summary_rows(campaign: str, report_date: date, sent_to_ops: str, viber_repor
     sms_touches = None if sms_report is None or sms_report.client_touches is None else Counter(
         normalized_campaign(record.campaign) for record, touched in sms_report.client_touches if touched
     )
+    has_email_replies = email_report is not None and bool(email_report.campaigns)
     rows = []
     for group in campaign_groups(viber_report, email_report, sms_report, source_campaigns=source_campaigns) or [None]:
         label = group["label"] if group is not None else (campaign.strip() or "—")
@@ -136,7 +137,7 @@ def summary_rows(campaign: str, report_date: date, sent_to_ops: str, viber_repor
                     cells[percent_index] = worked / counts.unique_people
                 elif totals and channel != "email" and worked == counts.unique_people == 0:
                     cells[percent_index] = 0
-        if totals and email_report is None and (sms_report is not None or viber_report is not None):
+        if totals and not has_email_replies and (sms_report is not None or viber_report is not None):
             cells[12] = "N/A"
         active = nonnegative_count(totals.get("active_ticket"))
         cells[1] = active
@@ -451,9 +452,14 @@ def build_summary_workbook(campaign: str, report_date: date, sent_to_ops: str,
                                     ("EMAIL", "Email Unreplied", email_report)):
         details = workbook.create_sheet(title)
         status = "Processed" if report is not None else (channel_statuses or {}).get(channel, "Not uploaded")
-        if channel == "EMAIL" and report is not None and report.history is None:
-            status = "Incomplete: upload Email History in EMAIL file 1"
-            report = None
+        if channel == "EMAIL" and report is not None:
+            if not report.campaigns:
+                status = "No eligible Email replies"
+                if report.dc.sbf_rows_excluded:
+                    status += f" ({report.dc.sbf_rows_excluded:,} SBF rows excluded)"
+            elif report.history is None:
+                status = "Incomplete: upload Email History in EMAIL file 1"
+                report = None
         headers, rows = _channel_details(channel, report)
         details.append(["Source status", status])
         details.append(["Unreplied accounts", len(rows) if report is not None else None])

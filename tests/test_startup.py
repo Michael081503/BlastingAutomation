@@ -413,14 +413,14 @@ class StartupTests(unittest.TestCase):
             import export_config, exports
             del export_config.NEW_ENDO_OUTPUT_FILENAMES
             del export_config.NEW_ENDO_AGENT_CODES
-            app_startup.STARTUP_INTERFACE_VERSION = 3
+            app_startup.STARTUP_INTERFACE_VERSION = 4
             legacy_refresh = Mock(return_value=set())
             app_startup.refresh_application_modules = legacy_refresh
 
             import app
 
             legacy_refresh.assert_not_called()
-            assert app_startup.STARTUP_INTERFACE_VERSION == 4
+            assert app_startup.STARTUP_INTERFACE_VERSION == 5
             assert app.NEW_ENDO_OUTPUT_FILENAMES is export_config.NEW_ENDO_OUTPUT_FILENAMES
             assert exports.NEW_ENDO_OUTPUT_FILENAMES is export_config.NEW_ENDO_OUTPUT_FILENAMES
             assert app.NEW_ENDO_AGENT_CODES is export_config.NEW_ENDO_AGENT_CODES

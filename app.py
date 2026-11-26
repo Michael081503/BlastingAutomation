@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 
 import app_startup
 
-if getattr(app_startup, "STARTUP_INTERFACE_VERSION", None) != 4:
+if getattr(app_startup, "STARTUP_INTERFACE_VERSION", None) != 5:
     app_startup = importlib.reload(app_startup)
 app_startup.refresh_application_modules()
 
