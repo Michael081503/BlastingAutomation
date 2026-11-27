@@ -8,4 +8,4 @@ Assets were retrieved on October 29, 2026. The logo and bank name belong to Secu
 
 Streamlit's native theme in `.streamlit/config.toml` and the shared `security-bank.css` use evergreen surfaces, warm ivory text and gold accents. The file reset action has a cranberry accent, and the Inbound Reply table keeps its campaign column visible while scrolling horizontally.
 
-The shared header uses a full-width garland with a gold and cranberry border. Santa Spider-Man and the winter artwork appear on wider screens, with a static snow pattern behind the workspace. On small screens the header keeps the garland and stacks the file reset action below the name.
+The shared header uses a full-width garland with a gold and cranberry border. Santa Spider-Man sways from his web, and two layers of snow fall behind the workspace. The winter artwork sits in the main area's left margin when there is room. On small screens the file reset action stacks under the header. The scene stays still when the browser requests reduced motion.

@@ -20,20 +20,56 @@
 }
 
 [data-testid="stAppViewContainer"] {
+    position: relative;
+    isolation: isolate;
     background:
-        radial-gradient(circle at 29px 53px, rgb(223 241 230 / 32%) 0.6px, transparent 1.5px),
-        radial-gradient(circle at 177px 98px, rgb(255 224 172 / 27%) 0.9px, transparent 2px),
         radial-gradient(ellipse at 66% 0%, rgb(58 125 86 / 24%), transparent 50%),
         radial-gradient(ellipse at 100% 5%, rgb(139 64 71 / 19%), transparent 30%),
         var(--sbc-canvas);
-    background-size: 191px 221px, 319px 307px, auto, auto;
     color: var(--sbc-text);
+}
+
+[data-testid="stAppViewContainer"]::before,
+[data-testid="stAppViewContainer"]::after {
+    content: "";
+    position: fixed;
+    inset: -320px 0;
+    z-index: -1;
+    pointer-events: none;
+    user-select: none;
+    background-repeat: repeat;
+}
+
+[data-testid="stAppViewContainer"]::before {
+    background-image:
+        radial-gradient(circle at 18px 38px, #edf6f4 1px, transparent 1.6px),
+        radial-gradient(circle at 92px 156px, #edf6f4 1px, transparent 1.6px),
+        radial-gradient(circle at 184px 82px, #edf6f4 1.3px, transparent 1.9px),
+        radial-gradient(circle at 242px 244px, #edf6f4 1px, transparent 1.6px),
+        radial-gradient(circle at 306px 294px, #edf6f4 1px, transparent 1.6px);
+    background-size: 340px 320px;
+    opacity: 0.42;
+}
+
+[data-testid="stAppViewContainer"]::after {
+    background-image:
+        radial-gradient(circle at 42px 84px, #fff 2px, transparent 2.8px),
+        radial-gradient(circle at 192px 224px, #fff 2.4px, transparent 3.2px),
+        radial-gradient(circle at 350px 146px, #fff 1.7px, transparent 2.5px),
+        radial-gradient(circle at 456px 298px, #fff 2px, transparent 2.8px);
+    background-size: 490px 320px;
+    opacity: 0.35;
 }
 
 [data-testid="stHeader"] {
     background: rgb(11 25 23 / 94%);
     border-bottom: 1px solid var(--sbc-border);
     backdrop-filter: blur(12px);
+}
+
+[data-testid="stMain"] {
+    background: var(--sbc-winter-art) left 12px bottom 18px /
+        clamp(0px, calc((100% - 1280px) / 2 - 28px), 420px) auto no-repeat;
 }
 
 [data-testid="stMainBlockContainer"] {
@@ -112,8 +148,9 @@
 }
 
 .sbc-header-mascot {
-    flex: 0 0 68px;
-    height: 91px;
+    flex: 0 0 116px;
+    height: 164px;
+    margin-block: -0.15rem;
     pointer-events: none;
     user-select: none;
 }
@@ -123,6 +160,7 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+    transform-origin: 50% 0;
 }
 
 .st-key-sbc_workspace_actions {
@@ -177,23 +215,6 @@
 
 [data-testid="stSidebarContent"] {
     background: transparent;
-}
-
-@media (min-width: 900px) and (min-height: 840px) {
-    [data-testid="stSidebarContent"]::after {
-        content: "";
-        display: block;
-        flex: 0 0 auto;
-        width: min(12rem, 75%);
-        aspect-ratio: 440 / 500;
-        margin: 0.5rem auto 0.75rem;
-        background:
-            var(--sbc-winter-art) center / contain no-repeat,
-            radial-gradient(ellipse at 50% 70%, rgb(126 183 151 / 16%), transparent 68%);
-        mask-image: linear-gradient(#000 80%, transparent);
-        opacity: 0.84;
-        pointer-events: none;
-    }
 }
 
 [data-testid="stSidebarHeader"] {
@@ -441,11 +462,54 @@ button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
     outline-offset: 3px;
 }
 
-@media (max-width: 680px) {
-    [data-testid="stAppViewContainer"] {
-        background-size: 243px 291px, 419px 407px, auto, auto;
+@media (prefers-reduced-motion: no-preference) {
+    [data-testid="stAppViewContainer"]::before {
+        animation: sbc-snowfall 32s linear -14s infinite;
     }
 
+    [data-testid="stAppViewContainer"]::after {
+        animation: sbc-snowfall 17s linear -6s infinite;
+    }
+
+    .sbc-spiderman {
+        animation: sbc-spider-sway 5.5s ease-in-out infinite;
+    }
+
+    [data-testid="stVerticalBlock"][class*="st-key-sbc_page_"]:not(:empty) {
+        animation: sbc-page-enter 180ms ease-out;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-testid="stAppViewContainer"]::before,
+    [data-testid="stAppViewContainer"]::after {
+        opacity: 0.2;
+    }
+}
+
+@keyframes sbc-snowfall {
+    from { transform: translate3d(0, -320px, 0); }
+    to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes sbc-spider-sway {
+    0%, 100% { transform: rotate(-4deg); }
+    50% { transform: rotate(4deg); }
+}
+
+@keyframes sbc-page-enter {
+    from { opacity: 0.72; }
+    to { opacity: 1; }
+}
+
+@media (max-width: 920px) {
+    .sbc-header-mascot {
+        flex-basis: 92px;
+        height: 138px;
+    }
+}
+
+@media (max-width: 680px) {
     [data-testid="stMainBlockContainer"] {
         padding-top: 4.15rem;
     }
@@ -464,11 +528,13 @@ button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
 
     .sbc-bank-mark {
         flex: 0 1 8.8rem;
+        min-width: 6rem;
         padding: 0.35rem 0.45rem;
     }
 
     .sbc-header-mascot {
-        display: none;
+        flex-basis: clamp(3.25rem, 19vw, 4.75rem);
+        height: clamp(5.4rem, 32vw, 7.875rem);
     }
 
     .st-key-sbc_workspace_actions {
