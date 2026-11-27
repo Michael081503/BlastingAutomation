@@ -6,10 +6,6 @@ The Security Bank wordmark and icon are copied from the bank's official support 
 
 Assets were retrieved on October 29, 2026. The logo and bank name belong to Security Bank Corporation. They are bundled locally so the application does not depend on third-party image requests while running.
 
-The current seasonal presentation uses a deep evergreen background, cranberry red buttons, warm gold accents and falling snow. Streamlit's native theme in `.streamlit/config.toml` uses the same palette as `security-bank.css`.
+Streamlit's native theme in `.streamlit/config.toml` and the shared `security-bank.css` use evergreen surfaces, warm ivory text and gold accents. The file reset action has a cranberry accent, and the Inbound Reply table keeps its campaign column visible while scrolling horizontally.
 
-`christmas-spiderman.svg` restores the hanging Spider-Man in the shared header, wearing a red Santa hat with white trim and a pom-pom. He gently sways from his web; the hat stays attached and fits inside the illustration at every screen size. `christmas-garland.svg` adds evergreen garlands and red/gold baubles across the header. `christmas-winter.svg` places a snowy forest and snowman in the main page's free left margin on wide screens. The scene shrinks with the available margin and disappears on narrow screens. These are local vector illustrations.
-
-Two repeating CSS snow layers move at different speeds behind the workspace. Snow uses no JavaScript, remote requests or extra dependencies, and its layers cannot capture clicks or file drops. When the browser requests reduced motion, the snow becomes a static background and Spider-Man stops swaying.
-
-`christmas-snowflake.svg` supplies the gold snowflake icon on **Clear all files**. The header rearranges on small screens to keep the logo, seasonal badge and controls readable. The Christmas tree and earlier Halloween illustrations remain in the repository as unused assets.
+The shared header uses a full-width garland with a gold and cranberry border. Santa Spider-Man and the winter artwork appear on wider screens, with a static snow pattern behind the workspace. On small screens the header keeps the garland and stacks the file reset action below the name.

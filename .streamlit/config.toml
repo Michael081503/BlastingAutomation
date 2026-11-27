@@ -10,8 +10,17 @@ gatherUsageStats = false
 
 [theme]
 base = "dark"
-primaryColor = "#C84350"
-backgroundColor = "#071D20"
-secondaryBackgroundColor = "#112D2B"
-textColor = "#F4F8F5"
+primaryColor = "#E5BD78"
+backgroundColor = "#0B1917"
+secondaryBackgroundColor = "#182C26"
+textColor = "#F7F3E9"
+linkColor = "#FFDCA0"
+borderColor = "#405C4F"
+dataframeHeaderBackgroundColor = "#203930"
+showWidgetBorder = true
+baseRadius = "medium"
 font = "sans serif"
+
+[theme.sidebar]
+backgroundColor = "#10211D"
+secondaryBackgroundColor = "#1B312A"
